@@ -1,3 +1,3 @@
-# <img src="./static/favicon.svg" style="width: 1.3em; height: 1.3em;" alt="Renew Icon" class="icon" style="vertical-align: middle;" /> Renew Editor
+# <img src="./static/favicon.svg" align="bottom" width="32" height="32" alt="Renew Icon" /> Renew Editor
 
 [Renew](http://renew.de) Web Editor WIP
