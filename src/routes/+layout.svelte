@@ -4,10 +4,10 @@
 </script>
 
 <svelte:head>
-	<title>Renew</title>
+	<title>Renew Editor</title>
 </svelte:head>
 
-<h2 class="app-name"><img src={favicon} alt="Renew" class="icon" /> Renew</h2>
+<h2 class="app-name"><img src={favicon} alt="Renew" class="icon" /> Renew Editor</h2>
 
 {@render children()}
 
