@@ -1,13 +1,17 @@
 <script>
 	const favicon = '/favicon.svg';
-	const { children } = $props();
+	import * as env from '../env';
+
+	const appTitle = env.APP_NAME;
+
+	const { children, data } = $props();
 </script>
 
 <svelte:head>
-	<title>Renew Editor</title>
+	<title>{appTitle}</title>
 </svelte:head>
 
-<h2 class="app-name"><img src={favicon} alt="Renew" class="icon" /> Renew Editor</h2>
+<h2 class="app-name"><img src={favicon} alt="Renew" class="icon" /> {appTitle}</h2>
 
 {@render children()}
 
