@@ -2,6 +2,6 @@
 	export let data;
 </script>
 
-<a href="/" title="Back">Back</a>
+<a href="/documents" title="Back">Back</a>
 
 <h2>Document {data.document_id}</h2>

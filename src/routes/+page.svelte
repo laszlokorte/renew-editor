@@ -1,18 +1,21 @@
 <script>
-	const { data } = $props();
+	const favicon = '/favicon.svg';
+	import * as env from '../env';
+	import Logout from './auth/Logout.svelte'
 
-	const { documents } = $derived(data);
+	const appTitle = env.APP_NAME;
+
+	const { data } = $props();
 </script>
 
 <h2>Welcome</h2>
 
-
-<form action="logout" method="post">
-	<button>Logout</button>
-</form>
+{#if data.authed}
+<Logout />
+{:else}
+<a href="/auth">Login</a>
+{/if}
 
 <ul>
-	{#each documents as d}
-		<li><a href="/document/{d}/editor" title="Document {d}">{d}</a></li>
-	{/each}
+	<li><a href="/documents">Show Documents</a></li>
 </ul>

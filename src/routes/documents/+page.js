@@ -5,9 +5,11 @@ export const ssr = false;
 export async function load(x) {
 	return new Promise(
 		(resolver) => {
-			localStorage.removeItem("authed")
-
-			resolver(redirect(307, '/'))
+			if(localStorage.getItem("authed")){
+				resolver({documents: [1,2,3]})
+			} else {
+				resolver(redirect(307, '/auth'))
+			}
 		}
 	)
 }
