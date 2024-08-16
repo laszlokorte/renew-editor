@@ -1,13 +1,13 @@
 <script>
 	import { goto } from '$app/navigation';
-	import { enhance } from '$app/forms';
+	import authState from './auth_state.svelte.js'
 </script>
 
 
-<form style="border: 1px solid red" onsubmit={evt => {
+<form onsubmit={evt => {
 		evt.preventDefault()
 
-		localStorage.removeItem("authed")
+		authState.isAuthenticated = false
 
 		goto("/", {invalidateAll: true});
 	}}>

@@ -1,13 +1,16 @@
 <script>
-	import Logout from '../auth/Logout.svelte'
+	import AuthState from '../auth/AuthState.svelte'
 	const { data } = $props();
 
 	const { documents } = $derived(data);
 </script>
 
-<h2>Welcome</h2>
+<AuthState />
 
-<Logout />
+<a href="/" title="Back">Back</a>
+
+
+<h2>Documents</h2>
 
 <ul>
 	{#each documents as d}
