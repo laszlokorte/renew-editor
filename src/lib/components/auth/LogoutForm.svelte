@@ -1,13 +1,14 @@
 <script>
 	import { goto } from '$app/navigation';
-	import authState from './auth_state.svelte.js'
+
+	const {auth} = $props()
 </script>
 
 
 <form onsubmit={evt => {
 		evt.preventDefault()
 
-		authState.isAuthenticated = false
+		auth.isAuthenticated = false
 
 		goto("/", {invalidateAll: true});
 	}}>

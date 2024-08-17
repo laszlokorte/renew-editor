@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import authState from '../auth/auth_state.svelte.js'
+import authState from '$lib/components/auth/local_state.svelte.js'
 
 export const ssr = false;
 

@@ -1,6 +1,7 @@
 <script>
-	const favicon = '/favicon.svg';
 	import * as env from '../env';
+	import CurrentAuthState from './auth/CurrentAuthState.svelte'
+	const favicon = '/favicon.svg';
 
 	const appTitle = env.APP_NAME;
 
@@ -11,7 +12,11 @@
 	<title>{appTitle}</title>
 </svelte:head>
 
-<h2 class="app-name"><img src={favicon} alt="Renew" class="icon" /> {appTitle}</h2>
+<div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 1ex 1em;">
+	<a href="/"><h2 class="app-name"><img src={favicon} alt="Renew" class="icon" /> {appTitle}</h2></a>
+
+	<CurrentAuthState auth={data.authState} />
+</div>
 
 {@render children()}
 

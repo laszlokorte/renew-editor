@@ -1,5 +1,7 @@
 <script>
-	import LoginForm from './Login.svelte'
+	import LoginForm from '$lib/components/auth/LoginForm.svelte'
+
+	const { data } = $props();
 </script>
 
-<LoginForm />
+<LoginForm auth={data.authState} />

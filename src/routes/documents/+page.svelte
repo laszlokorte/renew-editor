@@ -1,11 +1,8 @@
 <script>
-	import AuthState from '../auth/AuthState.svelte'
 	const { data } = $props();
 
 	const { documents } = $derived(data);
 </script>
-
-<AuthState />
 
 <a href="/" title="Back">Back</a>
 
