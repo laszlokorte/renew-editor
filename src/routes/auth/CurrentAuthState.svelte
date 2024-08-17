@@ -9,3 +9,10 @@
 {:else}
 <a href="/auth">Login</a>
 {/if}
+
+<style>
+	a {
+		color: inherit;
+		text-decoration: none;
+	}
+</style>

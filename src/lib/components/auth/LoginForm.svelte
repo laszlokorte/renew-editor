@@ -20,7 +20,7 @@
 		)
 
 		if(!formData.api_url) {
-			currentError.value = {error: "url", message: "Invalid API URL"};
+			currentError = {error: "url", message: "Invalid API URL"};
 		} else {
 			authenticate(formData.api_url, formData.email, formData.password)
 			.then(token => {

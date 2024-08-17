@@ -14,3 +14,14 @@
 	}}>
 	<button>Logout</button>
 </form>
+
+<style>
+
+	button {
+		padding: 0.5ex;
+		border: none;
+		background: black;
+		color: #fff;
+		font: inherit;
+	}
+</style>

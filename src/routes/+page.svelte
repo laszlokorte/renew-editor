@@ -9,8 +9,16 @@
 
 
 
-<h2>Renew Web</h2>
+<section>
+	<h2>Renew Web</h2>
 
-<p>Welcome to the Renew Web Editor</p>
+	<p>Welcome to the Renew Web Editor</p>
 
-<a href="/documents">View Documents</a>
+	<a href="/documents">View Documents</a>
+</section>
+
+<style>
+	section {
+		margin: 1ex 1.5em;
+	}
+</style>
