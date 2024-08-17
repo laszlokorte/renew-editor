@@ -1,33 +1,20 @@
+import { fetchJson } from './json'
+
 export const authenticate = (url, email, password) => {
-	return fetch(url, {
-		method: "POST",
-		mode: "cors",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
-			email,
-			password,
-		})
-	}).catch(e => {
-		throw {error: "network", details: {message: e.message}}
-	}).then((r) => {
-		if (r.ok) {
-			return r.json().then((json)=> {
-				return {
-					token: json.token,
-					url: url,
-					email: email,
-				}
-			}).catch(e => {
-				throw {error: "auth", status: r.status, details: {message: "Invalid JSON", data: e}}
-			})
+	return fetchJson(url, "POST", {
+		email,
+		password,
+	}).then((json)=> {
+		return {
+			token: json.token,
+			url: url,
+			email: email,
+		}
+	}).catch(error => {
+		if(error.error == 'http') {
+			throw {error: "auth", message: error.message, original: error}
 		} else {
-			return r.json().catch(e => {
-				throw {error: "auth", status: r.status, details: {message: "Unexpected Server Response", data: e}}
-			}).then((json) => {
-				throw {error: "auth", status: r.status, details: json.error}
-			})
+			throw error
 		}
 	})
 }

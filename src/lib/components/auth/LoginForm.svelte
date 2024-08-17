@@ -4,11 +4,14 @@
 
 	const { auth } = $props()
 
-	/* @type any */
+	/** @type undefined | {error: string, message:string} */
 	let currentError = $state(undefined)
+
+	/** @type undefined | HTMLInputElement */
 	let passwordField = $state(undefined)
 
 
+	/** @type {(evt: SubmitEvent) => void} */
 	const onSubmit = (evt) => {
 		evt.preventDefault()
 
@@ -17,7 +20,7 @@
 		)
 
 		if(!formData.api_url) {
-			currentError.value = "Invalid API URL";
+			currentError.value = {error: "url", message: "Invalid API URL"};
 		} else {
 			authenticate(formData.api_url, formData.email, formData.password)
 			.then(token => {
@@ -31,6 +34,7 @@
 					passwordField.value = ""
 				}
 				auth.logout()
+				console.log(e)
 				currentError = e
 			})
 		}
@@ -39,7 +43,7 @@
 </script>
 <form onsubmit={onSubmit}>
 	{#if currentError}
-	<div style="color: red"><strong>{currentError.error}:</strong> {currentError.details.message}</div>
+	<div style="color: red"><strong>{currentError.error}:</strong> {currentError.message}</div>
 	{/if}
 
 	<dl>

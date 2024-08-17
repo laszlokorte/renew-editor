@@ -26,13 +26,13 @@ if($_SERVER['REQUEST_METHOD'] === "OPTIONS") {
 			header("HTTP/1.1 405 Authentication Failed");
 			header("Access-Control-Allow-Origin: *");
 
-			echo json_encode(['error' => ["message" => "Invalid email or password."]]);
+			echo json_encode(["message" => "Invalid email or password."]);
 		}
 	} else {
 		header("HTTP/1.1 405 Method Not Allowed");
 		header("Access-Control-Allow-Origin: *");
 
-		echo json_encode(['error' => ["messasge" => "invalid json"]]);
+		echo json_encode(["messasge" => "invalid json"]);
 	}
 } else if (isset($_GET['page']) && $_GET['page'] === 'documents') {
 	if(isset($_SERVER['HTTP_AUTHORIZATION']) && $_SERVER['HTTP_AUTHORIZATION'] === "Bearer ".AUTH_TOKEN) {
@@ -43,7 +43,7 @@ if($_SERVER['REQUEST_METHOD'] === "OPTIONS") {
 		header("HTTP/1.1 401 Unauthorized");
 		header("Access-Control-Allow-Origin: *");
 
-		echo json_encode(['error' => ["messasge" => "not authorized"]]);
+		echo json_encode(["messasge" => "not authorized"]);
 	}
 } else if (isset($_GET['page']) && $_GET['page'] === 'document' && isset($_GET['id'])) {
 
@@ -61,11 +61,11 @@ if($_SERVER['REQUEST_METHOD'] === "OPTIONS") {
 		header("HTTP/1.1 401 Unauthorized");
 		header("Access-Control-Allow-Origin: *");
 
-		echo json_encode(['error' => ["messasge" => "not authorized"]]);
+		echo json_encode(["messasge" => "not authorized"]);
 	}
 } else {
 	header("HTTP/1.1 405 Method Not Allowed");
 	header("Content-Type: application/json");
 	header("Access-Control-Allow-Origin: *");
-	echo json_encode(['error' => ["messasge" => "Invalid Request"]]);
+	echo json_encode(["messasge" => "Invalid Request"]);
 }
