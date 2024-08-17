@@ -8,7 +8,7 @@
 <form onsubmit={evt => {
 		evt.preventDefault()
 
-		auth.isAuthenticated = false
+		auth.logout()
 
 		goto("/", {invalidateAll: true});
 	}}>

@@ -14,7 +14,11 @@ export const authenticate = (url, email, password) => {
 	}).then((r) => {
 		if (r.ok) {
 			return r.json().then((json)=> {
-				return json.token
+				return {
+					token: json.token,
+					url: url,
+					email: email,
+				}
 			}).catch(e => {
 				throw {error: "auth", status: r.status, details: {message: "Invalid JSON", data: e}}
 			})

@@ -1,6 +1,14 @@
+function tryParse(str) {
+	try {
+		return JSON.parse(str)
+	} catch(_) {
+		return null
+	}
+}
+
 export default (() => {
 	const isBrowser = typeof localStorage !== "undefined"
-	let currentValue = $state(isBrowser && localStorage.getItem("authed"))
+	let currentValue = $state(isBrowser && tryParse(localStorage.getItem("authed")))
 
 	if(isBrowser) {
 		window.addEventListener('storage', onChange)
@@ -8,30 +16,30 @@ export default (() => {
 
 	function onChange(evt) {
 		if(evt.key === "authed") {
-			currentValue = evt.newValue
+			currentValue = JSON.parse(evt.newValue)
 		}
 	}
 
 	return {
-		set token(authData) {
+		set value(authData) {
 			currentValue = authData
 			if(currentValue) {
-				localStorage.setItem("authed", authData)
+				localStorage.setItem("authed", JSON.stringify(authData))
 			} else {
-
 				localStorage.removeItem("authed")
 			}
 		},
-		get token() {
+		get value() {
 			return currentValue
 		},
-		get isAuthenticated() {
-			return !!this.token
+		logout() {
+			this.value = null
 		},
-		set isAuthenticated(v) {
-			if(!v) {
-				this.token = null
-			}
+		get authHeader() {
+			return `Bearer ${currentValue.token}`
+		},
+		get isAuthenticated() {
+			return !!currentValue
 		}
 	}
 })()

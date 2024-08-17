@@ -11,6 +11,6 @@
 
 <ul>
 	{#each documents as d}
-		<li><a href="/documents/{d}/editor" title="Document {d}">{d}</a></li>
+		<li><a href="/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
 	{/each}
 </ul>

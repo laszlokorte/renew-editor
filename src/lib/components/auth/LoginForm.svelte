@@ -22,7 +22,7 @@
 			authenticate(formData.api_url, formData.email, formData.password)
 			.then(token => {
 				currentError = undefined
-				auth.token = token
+				auth.value = token
 
 				goto("/", {invalidateAll: true});
 			})
@@ -30,7 +30,7 @@
 				if(passwordField) {
 					passwordField.value = ""
 				}
-				auth.isAuthenticated = false
+				auth.logout()
 				currentError = e
 			})
 		}

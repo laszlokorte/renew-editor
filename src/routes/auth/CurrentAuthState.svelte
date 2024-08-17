@@ -1,10 +1,11 @@
 <script>
-	import authState from '$lib/components/auth/local_state.svelte.js'
 	import LogoutForm from '$lib/components/auth/LogoutForm.svelte'
+
+	const {auth} = $props()
 </script>
 
-{#if authState.isAuthenticated}
-<LogoutForm auth={authState} />
+{#if auth.isAuthenticated}
+<LogoutForm auth={auth} />
 {:else}
 <a href="/auth">Login</a>
 {/if}
