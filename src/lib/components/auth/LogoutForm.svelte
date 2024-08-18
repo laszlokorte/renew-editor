@@ -1,7 +1,5 @@
 <script>
-	import { goto } from '$app/navigation';
-
-	const {auth} = $props()
+	const {auth, onSuccess} = $props()
 </script>
 
 
@@ -10,7 +8,7 @@
 
 		auth.logout()
 
-		goto("/", {invalidateAll: true});
+		onSuccess(auth)
 	}}>
 	<button>Logout</button>
 </form>
@@ -18,10 +16,11 @@
 <style>
 
 	button {
-		padding: 0.5ex;
+		padding: 1ex;
 		border: none;
 		background: black;
 		color: #fff;
 		font: inherit;
+		cursor: pointer;
 	}
 </style>

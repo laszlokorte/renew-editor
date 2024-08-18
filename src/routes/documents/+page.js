@@ -5,7 +5,7 @@ export const ssr = false;
 
 export async function load({fetch}) {
 	if(authState.isAuthenticated) {
-		return fetch("http://127.0.0.1:9999/?page=documents", {
+		return fetch(authState.value.routes.documents.href, {
 			headers: {
 				"Content-Type": "application/json",
 				"Authorization" : authState.authHeader,

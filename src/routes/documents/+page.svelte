@@ -70,4 +70,13 @@
 	a {
 		color: inherit;
 	}
+
+	button {
+		background: #333d;
+		color: #fff;
+		padding: 1ex;
+		border: none;
+		cursor: pointer;
+		font: inherit;
+	}
 </style>

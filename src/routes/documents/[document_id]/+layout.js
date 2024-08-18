@@ -5,7 +5,8 @@ export const ssr = false;
 
 export async function load({params, fetch}) {
 	if(authState.isAuthenticated) {
-		return fetch("http://127.0.0.1:9999/?page=document&id="+params.document_id, {
+		console.log(authState.value.routes.document.href)
+		return fetch(authState.value.routes.document.href.replace(':id', params.document_id), {
 			headers: {
 				"Content-Type": "application/json",
 				"Authorization" : authState.authHeader,
