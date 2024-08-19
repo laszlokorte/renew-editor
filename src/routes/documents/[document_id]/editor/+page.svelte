@@ -1,5 +1,5 @@
 <script>
-	import Canvas from '$lib/components/canvas/Canvas.svelte'
+	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte'
 
 	const {data} = $props()
 </script>
@@ -7,13 +7,13 @@
 <header>
 	<a href="/documents" title="Back">Back</a>
 
-	<h2>Edit: {data.document.name} </h2>
+	<h2>Edit: {data.document.name}</h2>
 </header>
 
 <div class="toolbar">Tools</div>
 
 <div class="full–page">
-	<Canvas />
+	<SVGViewport />
 </div>
 
 <style>

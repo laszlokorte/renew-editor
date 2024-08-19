@@ -40,7 +40,7 @@ if($_SERVER['REQUEST_METHOD'] === "OPTIONS") {
 		header("HTTP/1.1 405 Method Not Allowed");
 		header("Access-Control-Allow-Origin: *");
 
-		echo json_encode(["messasge" => "invalid json"]);
+		echo json_encode(["message" => "invalid json"]);
 	}
 } elseif (isset($_GET['page'])) {
 	if($_GET['page'] === 'documents') {
@@ -62,12 +62,12 @@ if($_SERVER['REQUEST_METHOD'] === "OPTIONS") {
 			header("HTTP/1.1 401 Unauthorized");
 			header("Access-Control-Allow-Origin: *");
 
-			echo json_encode(["messasge" => "not authorized"]);
+			echo json_encode(["message" => "not authorized"]);
 		}
 	} else {
 		header("HTTP/1.1 404 Not Found");
 		header("Access-Control-Allow-Origin: *");
-		echo json_encode(["messasge" => "Page Not Found"]);
+		echo json_encode(["message" => "Page Not Found"]);
 	}
 } elseif($_SERVER['REQUEST_METHOD'] === "GET") {
 	header("HTTP/1.1 200 Ok");
@@ -92,5 +92,5 @@ if($_SERVER['REQUEST_METHOD'] === "OPTIONS") {
 	header("HTTP/1.1 404 Not Found");
 	header("Access-Control-Allow-Origin: *");
 
-	echo json_encode(["messasge" => "Invalid Request"]);
+	echo json_encode(["message" => "Invalid Request"]);
 }
