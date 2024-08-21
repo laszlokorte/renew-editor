@@ -450,3 +450,29 @@ export function delayed(lens, someAtom) {
 
 	return later;
 }
+
+
+export function viewCombined(lens, mapOfAtoms, writables = null) {
+	return view(lens, combine(mapOfAtoms, writables))
+}
+
+export function viewCombinedWithRest(lens, mapOfAtoms, rest = atom({}), writables = null) {
+	return view(lens, combine(mapOfAtoms, rest, writables))
+}
+
+export function viewCombinedArray(lens, listOfAtoms) {
+	return view(lens, combine(listOfAtoms))
+}
+
+
+export function readCombined(lens, mapOfAtoms, writables = null) {
+	return read(lens, combine(mapOfAtoms, writables))
+}
+
+export function readCombinedWithRest(lens, mapOfAtoms, rest = atom({}), writables = null) {
+	return read(lens, combine(mapOfAtoms, rest, writables))
+}
+
+export function readCombinedArray(lens, listOfAtoms) {
+	return read(lens, combine(listOfAtoms))
+}

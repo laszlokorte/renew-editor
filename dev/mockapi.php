@@ -34,7 +34,7 @@ if($_SERVER['REQUEST_METHOD'] === "OPTIONS") {
 			header("HTTP/1.1 405 Authentication Failed");
 			header("Access-Control-Allow-Origin: *");
 
-			echo json_encode(["message" => "Invalid email or password."]);
+			echo json_encode(["message" => "Invalid E-mail or Password."]);
 		}
 	} else {
 		header("HTTP/1.1 405 Method Not Allowed");

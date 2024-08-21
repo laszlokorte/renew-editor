@@ -1,10 +1,13 @@
 <script>
+	import {atom} from '$lib/reactivity/atom.svelte'
 	import AppBar from '../../../AppBar.svelte';
 
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte'
 	import Scroller from '$lib/components/scroller/Scroller.svelte';
 
 	const {data} = $props()
+
+	const scrollPosition = atom({x:0,y:0});
 </script>
 
 
@@ -14,11 +17,18 @@
 	<header>
 		<a href="/documents" title="Back">Back</a>
 
-		<h2>Edit: {data.document.name}</h2>
+		<h2>Document: {data.document.name}</h2>
 	</header>
 
-	<Scroller>
-		<SVGViewport />
+	<Scroller
+		allowOverscroll={false}
+		alignment={atom("center")}
+		extraScrollPadding={atom(true)}
+		scrollPosition={scrollPosition}
+		contentSize={atom({x:500,y:500})}
+		scrollWindowSize={atom({x:0,y:0})}
+	>
+		<SVGViewport {scrollPosition} />
 
 		<div class="toolbar">Tools</div>
 
@@ -41,6 +51,7 @@
 		background: #395c45;
 		color: #fff;
 		display: grid;
+		justify-items: start;
 		padding: 1ex 1.5em;
 	}
 

@@ -2,62 +2,78 @@ import * as L from "partial.lenses";
 import * as R from "ramda";
 import {
 	atom,
-	view,
-	read,
-	combine,
+	viewCombined,
+	readCombined,
 } from "$lib/reactivity/atom.svelte.js"
 
+function combineScrollPadding({alignment, extraScrollPadding, scrollWindowSize, contentSize}){
+ 	if(extraScrollPadding) {
+ 		return ({
+			left: scrollWindowSize.x,
+			top: scrollWindowSize.y,
+			right: scrollWindowSize.x + (alignment == 'center' ? 0 : Math.max(0, scrollWindowSize.x - contentSize.x)),
+			bottom: scrollWindowSize.y + (alignment == 'center' ? 0 : Math.max(0, scrollWindowSize.y - contentSize.y)),
+		})
+	} else {
+ 		return ({top:0,left:0,bottom:0,right:0})
+	}
+}
+
+function combinePaddedContentSize({scrollPadding, contentSize}) {
+	return {
+		x: scrollPadding.left + scrollPadding.right + contentSize.x,
+		y: scrollPadding.top + scrollPadding.bottom + contentSize.y
+	}
+}
+
+function getAdjustedScrollPosition({ scrollPosition, scrollWindowSize, contentSize, overscroll, scrollPadding }) {
+	return ({
+		x: R.clamp(-scrollPadding.left, Math.max(0, contentSize.x - Math.floor(scrollWindowSize.x) - scrollPadding.left + 1), scrollPosition.x) + overscroll.x + scrollPadding.left,
+		y: R.clamp(-scrollPadding.top, Math.max(0, contentSize.y - Math.floor(scrollWindowSize.y) - scrollPadding.top + 1), scrollPosition.y) + overscroll.y + scrollPadding.top,
+	})
+}
+
+function setAdjustedScrollPosition(scrollPosition, { scrollWindowSize, contentSize, scrollPadding }) {
+	const clampedX = R.clamp(-scrollPadding.left, Math.max(scrollPadding.left, contentSize.x - Math.floor(scrollWindowSize.x)- scrollPadding.left + 1), scrollPosition.x - scrollPadding.left)
+	const clampedY = R.clamp(-scrollPadding.top, Math.max(scrollPadding.top, contentSize.y - Math.floor(scrollWindowSize.y)- scrollPadding.top + 1), scrollPosition.y - scrollPadding.top)
+
+
+	return {
+		scrollWindowSize,
+		contentSize,
+		scrollPosition: {
+			atMinX: scrollPosition.atMinX,
+			atMaxX: scrollPosition.atMaxX,
+			atMinY: scrollPosition.atMinY,
+			atMaxY: scrollPosition.atMaxY,
+			x: clampedX,
+			y: clampedY,
+		},
+		overscroll: {
+			x:  scrollPosition.x - scrollPadding.left - clampedX,
+			y:  scrollPosition.y - scrollPadding.top - clampedY,
+		}
+	}
+}
+
+const combineScrollPaddingLens = L.reread(combineScrollPadding)
+const combinePaddedContentSizeLens = L.reread(combinePaddedContentSize)
+const adjustedScrollPositionLens = L.lens(getAdjustedScrollPosition, setAdjustedScrollPosition)
+
 export default function scrollerViewModel(alignment, scrollPosition, contentSize, scrollWindowSize, extraScrollPadding, allowOverscroll) {
-	const numberFormat = new Intl.NumberFormat("en-US", {
-	    minimumFractionDigits: 2,
-	    maximumFractionDigits: 2,
-	    useGrouping: false,
+	const overscroll = atom({x:0,y:0})
+	const scrollPadding = readCombined(combineScrollPaddingLens, {alignment, extraScrollPadding, scrollWindowSize, contentSize}, {})
+	const paddedContentSize = readCombined(combinePaddedContentSizeLens, {scrollPadding, contentSize}, {})
+	const adjustedScrollPosition = viewCombined(adjustedScrollPositionLens, {
+		scrollPosition,
+		scrollWindowSize,
+		contentSize: paddedContentSize,
+		overscroll,
+		scrollPadding
+	}, {
+		scrollPosition: true,
+		overscroll: true,
 	});
-
-
-	const browserChromeOverscroll = atom({x:0,y:0})
-
-	const scrollPadding = read(L.reread(({auto, winSize, conSize}) => auto ? ({
-		left: winSize.x,
-		top: winSize.y,
-		right: winSize.x + (alignment == 'center' ? 0 : Math.max(0, winSize.x - conSize.x)),
-		bottom: winSize.y + (alignment == 'center' ? 0 : Math.max(0, winSize.y - conSize.y)),
-	}) : ({top:0,left:0,bottom:0,right:0})), combine({auto: extraScrollPadding, winSize: scrollWindowSize, conSize: contentSize}, {}))
-	const paddedContentSize = read(L.reread(({pad, conSize}) => ({
-		x: pad.left + pad.right + conSize.x,
-		y: pad.top + pad.bottom + conSize.y
-	})), combine({pad: scrollPadding, conSize: contentSize}, {}))
-
-	const adjustedScrollPosition = view(L.lens(({ pos, windowSize, conSize, o, pad }) => ({
-			x: R.clamp(-pad.left, Math.max(0, conSize.x - Math.floor(windowSize.x) - pad.left + 1), pos.x) + o.x + pad.left,
-			y: R.clamp(-pad.top, Math.max(0, conSize.y - Math.floor(windowSize.y) - pad.top + 1), pos.y) + o.y + pad.top,
-		}), (pos, { windowSize, conSize, pad }) => {
-			const clampedX = R.clamp(-pad.left, Math.max(pad.left, conSize.x - Math.floor(windowSize.x)- pad.left + 1), pos.x - pad.left)
-			const clampedY = R.clamp(-pad.top, Math.max(pad.top, conSize.y - Math.floor(windowSize.y)- pad.top + 1), pos.y - pad.top)
-
-
-			return {
-				windowSize,
-				conSize,
-				pos: {
-					atMinX: pos.atMinX,
-					atMaxX: pos.atMaxX,
-					atMinY: pos.atMinY,
-					atMaxY: pos.atMaxY,
-					x: clampedX,
-					y: clampedY,
-				},
-				o: {
-					x:  pos.x - pad.left - clampedX,
-					y:  pos.y - pad.top - clampedY,
-				}
-			}
-		}),
-		combine({ pos: scrollPosition, windowSize: scrollWindowSize, conSize: paddedContentSize, o: browserChromeOverscroll, pad: scrollPadding }, {
-			pos: true,
-			o: true,
-		}),
-	);
 
 	return {
 		get values() {

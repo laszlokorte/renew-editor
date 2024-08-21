@@ -1,5 +1,4 @@
 export function fetchJson(url, method = "GET", body = undefined) {
-	console.log(url, body)
 	return fetch(url, {
 		method: method,
 		mode: "cors",
@@ -12,7 +11,6 @@ export function fetchJson(url, method = "GET", body = undefined) {
 	}).then((r) => {
 		if (r.ok) {
 			return r.json().catch(e => {
-				console.log(e)
 				throw {error: "json", status: r.status, message: "Invalid JSON", original: e}
 			})
 		} else {

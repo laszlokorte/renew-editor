@@ -29,6 +29,10 @@
 </section>
 
 <style>
+	h2 {
+		text-align: center;
+	}
+
 	.content {
 		display: grid;
 		place-content: center;

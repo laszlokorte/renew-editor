@@ -42,16 +42,19 @@
 </script>
 <form onsubmit={onSubmit}>
 	{#if currentError}
-	<div style="color: red"><strong>{currentError.error}:</strong> {currentError.message}</div>
+		<dl class="error-message">
+			<dt><strong>Error: </strong></dt>
+			<dd>{currentError.message}</dd>
+		</dl>
 	{/if}
 
 	<dl>
-		<dt>API</dt>
-		<dd><input type="url" name="api_url" value="http://localhost:9999/" required></dd>
-		<dt>User</dt>
-		<dd><input type="text" name="email"></dd>
-		<dt>Password</dt>
-		<dd><input type="password" bind:this={passwordField} name="password"></dd>
+		<dt><label for="login_form_server">Server:</label></dt>
+		<dd><input id="login_form_server" class="text-input" type="url" name="api_url" value="http://localhost:9999/" required></dd>
+		<dt><label for="login_form_user">E-mail:</label></dt>
+		<dd><input id="login_form_user" class="text-input" type="email" name="email" required></dd>
+		<dt><label for="login_form_password">Password:</label></dt>
+		<dd><input id="login_form_password" class="text-input" type="password" bind:this={passwordField} name="password" required></dd>
 		<dt><span hidden>Actions</span></dt>
 		<dd>
 			<button>Login</button>
@@ -67,14 +70,38 @@
 		padding: 0;
 		gap: 1ex;
 		align-items: baseline;
+		box-sizing: border-box;
 	}
 
 	dt, dd {
 		margin: 0;
 	}
 
-	input, select, textarea {
+	dt {
+		text-align: right;
+	}
+
+	.text-input {
 		font: inherit;
+		padding: 1ex;
+		min-width: 20em;
+		flex-grow: 1;
+		width: 100%;
+		box-sizing: border-box;
+		border: 1px solid #aaa
+	}
+
+	.text-input:user-invalid {
+		border-color: #aa0000;
+		outline: 1px solid #aa0000;
+	}
+
+	.text-input:focus-visible {
+		outline: 2px solid #00aaff;
+	}
+
+	button:focus-visible {
+		outline: 2px solid #00aaff;
 	}
 
 	button {
@@ -83,5 +110,14 @@
 		color: #fff;
 		font: inherit;
 		padding: 1ex;
+	}
+
+	.error-message {
+		color: #aa0000;
+		border-bottom: 1px solid #aa0000;
+		margin: 1ex 0 1ex auto;
+		padding: 1ex;
+		width: 100%;
+		box-sizing: border-box;
 	}
 </style>

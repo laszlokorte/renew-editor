@@ -1,9 +1,10 @@
 <script>
-
+	const {scrollPosition} = $props()
 </script>
 
 <svg class="canvas" viewBox="-500 -500 1000 1000">
-<circle cx="0" cy="0" r="100" fill="royalblue" />
+
+<circle cx="{-scrollPosition.value.x}" cy="{-scrollPosition.value.y}" r="100" fill="royalblue" />
 </svg>
 
 <style>

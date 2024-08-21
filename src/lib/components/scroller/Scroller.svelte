@@ -51,6 +51,7 @@
 		grid-template-columns: 1fr;
 		grid-template-rows: 1fr;
 		touch-action: manipulation;
+		scroll-behavior: smooth;
 		-webkit-touch-callout: none;
         -webkit-user-callout: none;
         -webkit-user-select: none;
@@ -58,7 +59,6 @@
         -webkit-user-modify: none;
         -webkit-highlight: none;
 		user-select: none;
-		scroll-behavior: smooth;
 	}
 
 	.overscroll-enabled {
@@ -106,8 +106,8 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
+		touch-action: manipulation;
 		-webkit-user-select: none;
 		user-select: none;
-		touch-action: manipulation;
 	}
 </style>

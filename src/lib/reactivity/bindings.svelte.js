@@ -78,7 +78,7 @@ export function bindScroll(node, someAtom) {
 			const oldX = R.clamp(0, scrollMaxX, node.scrollLeft)
 			const oldY = R.clamp(0, scrollMaxY, node.scrollTop)
 
-			if(oldX != newX | oldY != newY) {
+			if(oldX != newX || oldY != newY) {
 				node.scrollTo({
 					left: newX,
 					top: newY,
