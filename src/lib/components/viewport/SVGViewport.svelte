@@ -4,7 +4,10 @@
 
 <svg class="canvas" viewBox="-500 -500 1000 1000">
 
-<circle cx="{-scrollPosition.value.x}" cy="{-scrollPosition.value.y}" r="100" fill="royalblue" />
+<circle cx="{-scrollPosition.value.x}" cy="{-scrollPosition.value.y}" r="100" fill="#24d188" stroke="black" stroke-width="3" />
+
+
+<rect x="{-scrollPosition.value.x-100}" y="{300-scrollPosition.value.y}" r="100" fill="#24d188" stroke="black" stroke-width="3" width="200" height="120" />
 </svg>
 
 <style>
@@ -16,6 +19,13 @@
 		inset: 0;
 		width: 100%;
 		height: 100%;
+	}
+
+	circle {
+
+		transition: transform 0.2s ease;
+		transform-box: fill-box;
+		transform-origin: 50% 50%;
 	}
 
 	circle:hover {

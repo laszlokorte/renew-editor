@@ -6,13 +6,13 @@ import {
 	readCombined,
 } from "$lib/reactivity/atom.svelte.js"
 
-function combineScrollPadding({alignment, extraScrollPadding, scrollWindowSize, contentSize}){
+function combineScrollPadding({center, extraScrollPadding, scrollWindowSize, contentSize}){
  	if(extraScrollPadding) {
  		return ({
 			left: scrollWindowSize.x,
 			top: scrollWindowSize.y,
-			right: scrollWindowSize.x + (alignment == 'center' ? 0 : Math.max(0, scrollWindowSize.x - contentSize.x)),
-			bottom: scrollWindowSize.y + (alignment == 'center' ? 0 : Math.max(0, scrollWindowSize.y - contentSize.y)),
+			right: scrollWindowSize.x + (center ?  Math.max(0, scrollWindowSize.x - contentSize.x) : 0),
+			bottom: scrollWindowSize.y + (center ?  Math.max(0, scrollWindowSize.y - contentSize.y) : 0),
 		})
 	} else {
  		return ({top:0,left:0,bottom:0,right:0})
@@ -60,9 +60,9 @@ const combineScrollPaddingLens = L.reread(combineScrollPadding)
 const combinePaddedContentSizeLens = L.reread(combinePaddedContentSize)
 const adjustedScrollPositionLens = L.lens(getAdjustedScrollPosition, setAdjustedScrollPosition)
 
-export default function scrollerViewModel(alignment, scrollPosition, contentSize, scrollWindowSize, extraScrollPadding, allowOverscroll) {
+export default function scrollerViewModel(center, scrollPosition, contentSize, scrollWindowSize, extraScrollPadding, allowOverscroll) {
 	const overscroll = atom({x:0,y:0})
-	const scrollPadding = readCombined(combineScrollPaddingLens, {alignment, extraScrollPadding, scrollWindowSize, contentSize}, {})
+	const scrollPadding = readCombined(combineScrollPaddingLens, {center, extraScrollPadding, scrollWindowSize, contentSize}, {})
 	const paddedContentSize = readCombined(combinePaddedContentSizeLens, {scrollPadding, contentSize}, {})
 	const adjustedScrollPosition = viewCombined(adjustedScrollPositionLens, {
 		scrollPosition,

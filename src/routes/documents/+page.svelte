@@ -42,7 +42,7 @@
 	}
 
 	header {
-		background: #395c45;
+		background: #23875d;
 		color: #fff;
 		display: flex;
 		align-items: center;
@@ -56,7 +56,7 @@
 		padding: 0;
 		display: grid;
 		border-top: 1px solid #eee;
-		color: #395c45;
+		color: #23875d;
 	}
 
 	li {
@@ -77,11 +77,19 @@
 	}
 
 	button {
-		background: #333d;
+		background: #0005;
 		color: #fff;
-		padding: 1ex;
+		padding: 1ex 1em;
 		border: none;
 		cursor: pointer;
 		font: inherit;
+	}
+
+	button:hover {
+		background: #0004;
+	}
+
+	button:active {
+		background: #0007;
 	}
 </style>

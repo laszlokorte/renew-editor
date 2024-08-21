@@ -110,6 +110,7 @@
 		color: #fff;
 		font: inherit;
 		padding: 1ex;
+		cursor: pointer;
 	}
 
 	.error-message {

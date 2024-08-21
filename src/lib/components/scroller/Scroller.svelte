@@ -9,17 +9,17 @@
 
 	const {
 		children,
-		alignment='left',
+		center=atom(false),
 		scrollPosition = atom({ x: 0, y: 0 }),
 		contentSize = atom({ x: 0, y: 0 }),
 		scrollWindowSize = atom({ x: 0, y: 0 }),
 		extraScrollPadding = atom(false),
-		allowOverscroll = true
+		allowOverscroll = atom(true),
 	} = $props();
 
 	import viewModel from './viewmodel.js'
 
-	const model = viewModel(alignment, scrollPosition, contentSize, scrollWindowSize, extraScrollPadding, allowOverscroll)
+	const model = viewModel(center, scrollPosition, contentSize, scrollWindowSize, extraScrollPadding, allowOverscroll)
 
 	const modelValues = $derived(model.values)
 	const bindings = model.bindings
@@ -45,6 +45,7 @@
 		contain: strict;
 		min-height: 10em;
 		overflow: scroll;
+		scroll-behavior: smooth;
 		flex-grow: 1;
 		position: relative;
 		display: grid;
