@@ -3,6 +3,7 @@
 
 	import LoginForm from '$lib/components/auth/LoginForm.svelte'
 	import LogoutForm from '$lib/components/auth/LogoutForm.svelte'
+	import AppBar from '../AppBar.svelte';
 
 	const { data } = $props();
 
@@ -12,6 +13,8 @@
 	function onLogout() {
 	}
 </script>
+
+<AppBar authState={data.authState} />
 
 <section class="content">
 	<h2>Login</h2>

@@ -20,31 +20,32 @@
 	import viewModel from './viewmodel.js'
 
 	const model = viewModel(alignment, scrollPosition, contentSize, scrollWindowSize, extraScrollPadding, allowOverscroll)
+
+	const modelValues = $derived(model.values)
+	const bindings = model.bindings
 </script>
 
 <div
 	class="scroller"
-	class:overscroll-enabled={model.allowOverscroll}
-	class:overscroll-disabled={!model.allowOverscroll}
-	use:bindScroll={model.adjustedScrollPosition}
-	style:--scroll-total-x={model.paddedContentSize.x}
-	style:--scroll-total-y={model.paddedContentSize.y}
-	style:--scroll-x={model.scrollPosition.x}
-	style:--scroll-y={model.scrollPosition.y}
+	class:overscroll-enabled={modelValues.allowOverscroll}
+	class:overscroll-disabled={!modelValues.allowOverscroll}
+	use:bindScroll={bindings.adjustedScrollPosition}
+	style:--scroll-total-x={modelValues.paddedContentSize.x}
+	style:--scroll-total-y={modelValues.paddedContentSize.y}
+	style:--scroll-x={modelValues.scrollPosition.x}
+	style:--scroll-y={modelValues.scrollPosition.y}
 >
 	<div class="scroller-body">
 		{@render children()}
 	</div>
-	<div class="scroller-measure" use:bindSize={model.scrollWindowSize}></div>
+	<div class="scroller-measure" use:bindSize={bindings.scrollWindowSize}></div>
 </div>
 <style>
 	.scroller {
 		contain: strict;
-		border: 3px solid #333;
 		min-height: 10em;
-		resize: both;
 		overflow: scroll;
-		height: 30em;
+		flex-grow: 1;
 		position: relative;
 		display: grid;
 		grid-template-columns: 1fr;

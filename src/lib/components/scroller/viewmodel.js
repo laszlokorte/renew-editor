@@ -5,9 +5,7 @@ import {
 	view,
 	read,
 	combine,
-	bindScroll,
-	bindSize,
-} from "./svatom.svelte.js";
+} from "$lib/reactivity/atom.svelte.js"
 
 export default function scrollerViewModel(alignment, scrollPosition, contentSize, scrollWindowSize, extraScrollPadding, allowOverscroll) {
 	const numberFormat = new Intl.NumberFormat("en-US", {
@@ -62,20 +60,19 @@ export default function scrollerViewModel(alignment, scrollPosition, contentSize
 	);
 
 	return {
-		get allowOverscroll() {
-			return allowOverscroll
+		get values() {
+			return {
+				allowOverscroll: allowOverscroll.value,
+				paddedContentSize: paddedContentSize.value,
+				scrollPosition: scrollPosition.value,
+			}
 		},
-		get adjustedScrollPosition() {
-			return adjustedScrollPosition
-		},
-		get paddedContentSize() {
-			return paddedContentSize
-		},
-		get scrollPosition() {
-			return scrollPosition
-		},
-		get scrollWindowSize() {
-			return scrollWindowSize
+
+		get bindings() {
+			return {
+				adjustedScrollPosition,
+				scrollWindowSize,
+			}
 		},
 	}
 

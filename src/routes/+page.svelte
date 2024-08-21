@@ -1,12 +1,10 @@
 <script>
-	const favicon = '/favicon.svg';
-	import * as env from '../env';
+	import AppBar from "./AppBar.svelte";
 
-	const appTitle = env.APP_NAME;
-
-	const { data } = $props();
+	const {data} = $props();
 </script>
 
+<AppBar authState={data.authState} />
 
 
 <section class="hero">

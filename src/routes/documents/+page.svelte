@@ -1,4 +1,5 @@
 <script>
+	import AppBar from '../AppBar.svelte';
 	const { data } = $props();
 
 	const { documents } = $derived(data);
@@ -8,6 +9,10 @@
 		evt.preventDefault()
 	}
 </script>
+
+
+<AppBar authState={data.authState} />
+
 
 <header>
 	<div>

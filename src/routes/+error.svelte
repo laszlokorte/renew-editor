@@ -1,6 +1,11 @@
 <script>
 	import { page } from '$app/stores';
+	import AppBar from './AppBar.svelte';
+
+	const {data} = $props();
 </script>
+
+<AppBar authState={data.authState} />
 
 <section>
 	<h1>{$page.status}: {$page.error.message}</h1>

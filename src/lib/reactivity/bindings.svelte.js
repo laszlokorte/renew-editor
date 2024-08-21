@@ -1,3 +1,20 @@
+import * as R from "ramda";
+import {tick, untrack} from "svelte";
+
+export function throttled(fn) {
+	let ticking = false;
+
+	return (...args) => {
+		if (!ticking) {
+		    window.requestAnimationFrame(() => {
+		      fn(...args);
+		      ticking = false;
+		    });
+
+		    ticking = true;
+		}
+	}
+}
 
 export function bindSize(node, someAtom) {
 	const resizeObserver = new ResizeObserver((entries) => {

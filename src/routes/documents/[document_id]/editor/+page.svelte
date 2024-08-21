@@ -1,19 +1,28 @@
 <script>
+	import AppBar from '../../../AppBar.svelte';
+
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte'
+	import Scroller from '$lib/components/scroller/Scroller.svelte';
 
 	const {data} = $props()
 </script>
 
-<header>
-	<a href="/documents" title="Back">Back</a>
-
-	<h2>Edit: {data.document.name}</h2>
-</header>
-
-<div class="toolbar">Tools</div>
 
 <div class="full–page">
-	<SVGViewport />
+	<AppBar authState={data.authState} />
+
+	<header>
+		<a href="/documents" title="Back">Back</a>
+
+		<h2>Edit: {data.document.name}</h2>
+	</header>
+
+	<Scroller>
+		<SVGViewport />
+
+		<div class="toolbar">Tools</div>
+
+	</Scroller>
 </div>
 
 <style>
@@ -24,6 +33,8 @@
 		place-content: stretch;
 		place-items: stretch;
 		z-index: -1;
+		grid-template-rows: auto auto;
+		grid-auto-rows: 1fr;
 	}
 
 	header {
@@ -43,6 +54,8 @@
 		margin: 0.5em;
 		box-shadow: 0 0 5px #0003;
 		border-radius: 0.5ex;
+		z-index: 100;
+		align-self: start;
 	}
 
 	a {

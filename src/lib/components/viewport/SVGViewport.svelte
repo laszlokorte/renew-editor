@@ -8,10 +8,13 @@
 
 <style>
 	.canvas {
-		border: 1px solid #ffdddd;
 		background: #ddeeee;
 		flex-grow: 1;
 		flex-shrink: 1;
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
 	}
 
 	circle:hover {
