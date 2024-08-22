@@ -11,7 +11,7 @@
 </script>
 
 
-<div class="full–page">
+<div class="full-page">
 	<AppBar authState={data.authState} />
 
 	<header>
@@ -27,8 +27,13 @@
 				File
 				<ul class="menu-bar-menu">
 					<li class="menu-bar-menu-item">Save</li>
+					<li class="menu-bar-menu-item">Rename</li>
 					<li class="menu-bar-menu-item">Duplicate</li>
 					<li class="menu-bar-menu-item">Download</li>
+					<li class="menu-bar-menu-item">Download as...</li>
+					<li class="menu-bar-menu-item"><hr></li>
+					<li class="menu-bar-menu-item" onclick={data.deleteAction} style="color: #aa0000">Delete</li>
+
 				</ul>
 				</li>
 				<li class="menu-bar-item" tabindex="-1">
@@ -37,7 +42,7 @@
 					<li class="menu-bar-menu-item">Undo</li>
 					<li class="menu-bar-menu-item">Redo</li>
 					<li class="menu-bar-menu-item">Select</li>
-					<li class="menu-bar-menu-item">Delete</li>
+					<li class="menu-bar-menu-item" style="color: #aa0000">Delete</li>
 				</ul>
 				</li>
 				<li class="menu-bar-item" tabindex="-1">
@@ -114,10 +119,10 @@
 				<button class="tool-button">Connect</button>
 				<button class="tool-button">Draw</button>
 				<hr />
-				<select class="attribute-field">
+				<select class="attribute-select">
 					<option>Font</option>
 				</select>
-				<select class="attribute-field">
+				<select class="attribute-select">
 					<option>Stroke</option>
 				</select>
 				<hr />
@@ -160,7 +165,7 @@
 </div>
 
 <style>
-	.full–page {
+	.full-page {
 		position: fixed;
 		inset: 0;
 		display: grid;
@@ -214,6 +219,7 @@
 	.menu-bar:focus-within .menu-bar-item:hover {
 		background: #fff;
 		color: #000;
+		box-shadow: 0 -1px 4px -1px #0006;
 	}
 
 	.menu-bar-menu {
@@ -232,7 +238,7 @@
 		padding: 0.5ex;
 		min-width: 100%;
 		width: max-content;
-		box-shadow: 0 6px 12px -6px #0006;
+		box-shadow: 0 6px 10px -6px #0006;
 	}
 
 	.menu-bar:focus-within .menu-bar-item:hover > .menu-bar-menu {
@@ -346,7 +352,16 @@
 		width: 100%;
 		box-sizing: border-box;
 		font: inherit;
+		height: 100%;
+		box-sizing: border-box;
+
+	}
+
+	.attribute-select {
 		flex-grow: 1;
+		width: 100%;
+		box-sizing: border-box;
+		font: inherit;
 		height: 100%;
 		box-sizing: border-box;
 		padding: 1ex 1em;

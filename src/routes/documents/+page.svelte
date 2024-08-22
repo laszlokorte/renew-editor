@@ -2,15 +2,17 @@
 	import AppBar from '../AppBar.svelte';
 	const { data } = $props();
 
-	const { documents } = $derived(data);
+	const { documents, createDocument } = $derived(data);
 
 	/** @type {(evt: SubmitEvent) => void} */
 	function onNewDocument(evt) {
 		evt.preventDefault()
+
+		createDocument()
 	}
 </script>
 
-
+<div class="full-page">
 <AppBar authState={data.authState} />
 
 
@@ -27,15 +29,45 @@
 	</form>
 </header>
 
+<div class="scrollable">
+	<div class="title">
+		<strong>Name</strong>
+	</div>
+	<ul>
+		{#each documents as d}
+			<li><a href="/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
+		{/each}
+	</ul>
+</div>
 
-<ul>
-	{#each documents as d}
-		<li><a href="/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
-	{/each}
-</ul>
+</div>
 
 
 <style>
+	.full-page {
+		position: fixed;
+		inset: 0;
+		display: grid;
+		place-content: stretch;
+		place-items: stretch;
+		z-index: -1;
+		grid-template-rows: auto auto;
+		grid-auto-rows: 1fr;
+	}
+
+	.scrollable {
+		overflow: auto;
+	}
+
+	.title {
+		position: sticky;
+		background: #fff;
+		top: 0;
+		left: 0;
+		display: block;
+		padding: 1ex 2em;
+		border-bottom: 1px solid #eee;
+	}
 
 	h2 {
 		margin: 0;

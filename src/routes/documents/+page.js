@@ -1,7 +1,23 @@
+import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
 
 export const ssr = false;
+
+function createDocument() {
+	return fetch(authState.value.routes.documents.href, {
+		headers: {
+			"Content-Type": "application/json",
+			"Authorization" : authState.authHeader,
+		},
+		contentType: "application/json",
+		method: "post",
+	}).then(r => {
+		r.json().then((d) => {
+			goto(`/documents/${d.document.id}/editor`)
+		})
+	})
+}
 
 export async function load({fetch}) {
 	if(authState.isAuthenticated) {
@@ -11,7 +27,10 @@ export async function load({fetch}) {
 				"Authorization" : authState.authHeader,
 			},
 			contentType: "application/json",
-		}).then(r => r.json()).catch((e) => {
+		}).then(r => r.json()).then(r => ({
+			documents: r.documents,
+			createDocument: createDocument
+		})).catch((e) => {
 			return error(503, {
 				message: 'Service Unavailable'
 			});
