@@ -15,8 +15,15 @@
 	const onSubmit = (evt) => {
 		evt.preventDefault()
 
+		/** @type HTMLFormElement */
+		const form = evt.currentTarget
+
+		if(!form.checkValidity()) {
+			return
+		}
+
 		const formData = Object.fromEntries(
-			new FormData(evt.currentTarget).entries(),
+			new FormData(form).entries(),
 		)
 
 		if(!formData.api_url) {

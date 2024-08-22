@@ -12,23 +12,22 @@ export async function load({params, fetch}) {
 			},
 			contentType: "application/json",
 		}).catch((e) => {
-			throw error(404, {
-				message: 'Not found'
+			throw error(503, {
+				message: e.message
 			});
 		}).then(r => {
 			if (r.ok) {
 				return r.json()
 			} else {
 				return r.json().catch(e => {
-					throw {status: r.status, message: "Unknown Errror", details: e};
+					throw error(r.status, {message: "Unknown Errror", details: e});
 				}).then((e)  => {
-					throw {status: r.status, message: e.message, details: e};
+					throw error(r.status, {message: e.message, details: e});
 				})
 			}
 		}).catch((e) => {
-			console.log(e)
 			return error(e.status, {
-				message: e.message
+				message: e.body.message
 			});
 		})
 	} else {

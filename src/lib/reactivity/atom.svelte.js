@@ -73,7 +73,7 @@ export function combine(mapOfAtoms, writables = null) {
 			}, mapOfAtoms)
 
 			R.forEachObjIndexed((v, k) => {
-				if(writables[k] && !$state.is(oldValues[k], newVal[k])) {
+				if(writables[k] && oldValues[k] !== newVal[k]) {
 					v.value = newVal[k]
 				}
 			}, mapOfAtoms)
@@ -102,7 +102,7 @@ export function combineWithRest(mapOfAtoms, rest = atom({}), writables = null) {
 			}, mapOfAtoms)
 
 			R.forEachObjIndexed((v, k) => {
-				if(writables[k] && !$state.is(oldValues[k], newVal[k])) {
+				if(writables[k] && oldValues[k] !== newVal[k]) {
 					v.value = newVal[k]
 				}
 			}, mapOfAtoms)
@@ -126,7 +126,7 @@ export function combineArray(listOfAtoms) {
 			}, listOfAtoms)
 
 			R.addIndex(R.forEach)((v, i) => {
-				if(!$state.is(oldValues[i], newVal[i])) {
+				if(oldValues[i] !== newVal[i]) {
 					v.value = newVal[i]
 				}
 			}, listOfAtoms)
@@ -279,7 +279,7 @@ export function failableView(opticLense, someAtom, autoReset = true, errorAtom =
 
 	return {
 		get value() {
-			return !$state.is(errorAtom.value, null) ? transientAtom.value : L.get(opticLense, someAtom.value)
+			return errorAtom.value !== null ? transientAtom.value : L.get(opticLense, someAtom.value)
 		},
 		set value(newVal) {
 			const transformed = L.set(opticLense, newVal, someAtom.value)

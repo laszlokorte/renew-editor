@@ -48,7 +48,7 @@ export function bindScroll(node, someAtom) {
 		const nodeScrollLeft = node.scrollLeft
 		const nodeScrollTop = node.scrollTop
 
-	 	if((!$state.is(newValue.x, nodeScrollLeft) || !$state.is(newValue.y, nodeScrollTop))) {
+	 	if((newValue.x !== nodeScrollLeft || newValue.y !== nodeScrollTop)) {
 
 	 		const leftMax = node.scrollLeftMax ?? (node.scrollWidth - node.offsetWidth)
 	 		const topMax =  node.scrollTopMax ?? (node.scrollHeight - node.offsetHeight)

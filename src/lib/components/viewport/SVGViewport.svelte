@@ -4,10 +4,10 @@
 
 <svg class="canvas" viewBox="-500 -500 1000 1000">
 
-<circle cx="{-scrollPosition.value.x}" cy="{-scrollPosition.value.y}" r="100" fill="#24d188" stroke="black" stroke-width="3" />
+<circle class="entity" cx="{-scrollPosition.value.x}" cy="{-scrollPosition.value.y}" r="100" fill="#24d188" stroke="black" stroke-width="3" />
 
 
-<rect x="{-scrollPosition.value.x-100}" y="{300-scrollPosition.value.y}" r="100" fill="#24d188" stroke="black" stroke-width="3" width="200" height="120" />
+<rect class="entity" x="{-scrollPosition.value.x-100}" y="{300-scrollPosition.value.y}" r="100" fill="#24d188" stroke="black" stroke-width="3" width="200" height="120" />
 </svg>
 
 <style>
@@ -21,14 +21,14 @@
 		height: 100%;
 	}
 
-	circle {
-
+	.entity {
 		transition: transform 0.2s ease;
 		transform-box: fill-box;
 		transform-origin: 50% 50%;
+		cursor: pointer;
 	}
 
-	circle:hover {
+	.entity:hover {
 		transform: scale(1.1);
 	}
 </style>
