@@ -8,11 +8,19 @@
 <AppBar authState={data.authState} />
 
 <section>
-	<h1>Error {$page.status}: {$page.error.message}</h1>
+	<h1 class="center">Error {$page.status}: {$page.error.message}</h1>
+
+	<p class="center">
+		<a href="/">Back to Homepage</a>
+	</p>
 </section>
 
 <style>
 	section {
 		margin: 2em;
+	}
+
+	.center {
+		text-align: center;
 	}
 </style>

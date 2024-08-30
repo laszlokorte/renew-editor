@@ -40,6 +40,9 @@ export default (() => {
 		},
 		get isAuthenticated() {
 			return !!currentValue
-		}
+		},
+		get routes() {
+			return this.value.routes
+		},
 	}
 })()

@@ -1,0 +1,4 @@
+a:not([class]),
+a:not([class]):visited {
+	color: #0077dd;
+}

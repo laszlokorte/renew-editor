@@ -37,9 +37,6 @@
 				onSuccess(auth)
 			})
 			.catch(e => {
-				if(passwordField) {
-					passwordField.value = ""
-				}
 				auth.logout()
 				currentError = e
 			})

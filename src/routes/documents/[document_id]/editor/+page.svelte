@@ -8,11 +8,19 @@
 	const {data} = $props()
 
 	const scrollPosition = atom({x:0,y:0});
+
+	let errors = $state([]);
+
+	function deleteThisDocument() {
+		data.deleteAction().catch((e) => {
+			errors.push(e.message)
+		})
+	}
 </script>
 
 
 <div class="full-page">
-	<AppBar authState={data.authState} />
+	<AppBar authState={data.authState} errors={errors} />
 
 	<header>
 		<div class="header-titel">
@@ -26,57 +34,57 @@
 				<li class="menu-bar-item" tabindex="-1">
 				File
 				<ul class="menu-bar-menu">
-					<li class="menu-bar-menu-item">Save</li>
-					<li class="menu-bar-menu-item">Rename</li>
-					<li class="menu-bar-menu-item">Duplicate</li>
-					<li class="menu-bar-menu-item">Download</li>
-					<li class="menu-bar-menu-item">Download as...</li>
-					<li class="menu-bar-menu-item"><hr></li>
-					<li class="menu-bar-menu-item" onclick={data.deleteAction} style="color: #aa0000">Delete</li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Save</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Rename</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Duplicate</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Download</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Download as...</button></li>
+					<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler"></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button" onclick={deleteThisDocument} style="color: #aa0000">Delete</button></li>
 
 				</ul>
 				</li>
 				<li class="menu-bar-item" tabindex="-1">
 				Edit
 				<ul class="menu-bar-menu">
-					<li class="menu-bar-menu-item">Undo</li>
-					<li class="menu-bar-menu-item">Redo</li>
-					<li class="menu-bar-menu-item">Select</li>
-					<li class="menu-bar-menu-item" style="color: #aa0000">Delete</li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Undo</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Redo</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Select</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button" style="color: #aa0000">Delete</button></li>
 				</ul>
 				</li>
 				<li class="menu-bar-item" tabindex="-1">
 				View
 
 				<ul class="menu-bar-menu">
-					<li class="menu-bar-menu-item">Reset Camera</li>
-					<li class="menu-bar-menu-item">Zoom in</li>
-					<li class="menu-bar-menu-item">Zoom out</li>
-					<li class="menu-bar-menu-item">Reset Zoom</li>
-					<li class="menu-bar-menu-item">Rotate Clockwise</li>
-					<li class="menu-bar-menu-item">Reset Rotation</li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Reset Camera</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Zoom in</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Zoom out</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Reset Zoom</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Rotate Clockwise</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Reset Rotation</button></li>
 				</ul>
 				</li>
 				<li class="menu-bar-item" tabindex="-1">
 				Simulate
 				<ul class="menu-bar-menu">
-					<li class="menu-bar-menu-item">Start</li>
-					<li class="menu-bar-menu-item">Pause</li>
-					<li class="menu-bar-menu-item">Step</li>
-					<li class="menu-bar-menu-item">Stop</li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Start</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Pause</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Step</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Stop</button></li>
 				</ul>
 				</li>
 				<li class="menu-bar-item" tabindex="-1">
 				Share
 				<ul class="menu-bar-menu">
-					<li class="menu-bar-menu-item">Share Link</li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Share Link</button></li>
 				</ul>
 				</li>
 				<li class="menu-bar-item" tabindex="-1">
 				Help
 				<ul class="menu-bar-menu">
-					<li class="menu-bar-menu-item">Reference</li>
-					<li class="menu-bar-menu-item">Website</li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Reference</button></li>
+					<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Website</button></li>
 				</ul>
 				</li>
 			</ol>
@@ -216,6 +224,7 @@
 	}
 
 
+
 	.menu-bar:focus-within .menu-bar-item:hover {
 		background: #fff;
 		color: #000;
@@ -246,11 +255,29 @@
 	}
 
 	.menu-bar-menu-item {
+		display: flex;
+		justify-items: stretch;
+		cursor: default;
+	}
+
+	.menu-bar-menu-ruler {
+		margin: 0.5ex 0;
+		border: none;
+		border-top: 1px solid #aaa;
+	}
+
+	.menu-bar-item-button {
+		text-align: left;
+		border: none;
+		background: none;
+		font: inherit;
+		cursor: pointer;
+		flex-grow: 1;
 		padding: 1ex 4em 1ex 1ex;
 	}
 
 
-	.menu-bar-menu-item:hover {
+	.menu-bar-item-button:hover {
 		background: #eee;
 	}
 

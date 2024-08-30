@@ -1,23 +1,19 @@
 import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
+import documentApi from '$lib/api/documents.js'
 
 export const ssr = false;
 
-function deleteAction(fetch, id) {
+function deleteAction(fetchFn, id) {
 	return function() {
-		fetch(authState.value.routes.document.href.replace(':id', id), {
-			headers: {
-				"Content-Type": "application/json",
-				"Authorization" : authState.authHeader,
-			},
-			contentType: "application/json",
-			method: "delete",
-		}).then((r) => {
-			if(r.ok) {
-				goto('/documents')
-			}
-		})
+		return documentApi(fetchFn, authState.routes, authState.authHeader)
+			.deleteDocument(id)
+			.then((r) => {
+				if(r.ok) {
+					goto('/documents')
+				}
+			})
 	}
 }
 
@@ -50,7 +46,7 @@ export async function load({params, fetch}) {
 			}
 		}).catch((e) => {
 			return error(e.status, {
-				message: e.body.message
+				message: e?.body.message ?? e.message
 			});
 		})
 	} else {

@@ -1,8 +1,13 @@
 <script>
 	import AppBar from '../AppBar.svelte';
+	import Modal from '$lib/components/modal/Modal.svelte';
+
 	const { data } = $props();
 
 	const { documents, createDocument } = $derived(data);
+
+	let uploadFormVisible = $state(false)
+	let online = $state(true)
 
 	/** @type {(evt: SubmitEvent) => void} */
 	function onNewDocument(evt) {
@@ -10,13 +15,57 @@
 
 		createDocument()
 	}
+
+	/** @type {(evt: SubmitEvent) => void} */
+	function showUploadForm(evt) {
+		evt.preventDefault()
+
+		uploadFormVisible = true
+	}
+
+	let dragging = $state(false)
+	function onDragEnter(evt) {
+		evt.preventDefault()
+		dragging = true
+	}
+
+	function onDragLeave(evt) {
+		evt.preventDefault()
+		dragging = false
+	}
+
+	function onDrop(evt) {
+		evt.preventDefault()
+		dragging = false
+	}
 </script>
 
-<div class="full-page">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="full-page" class:dragging={dragging} ondragover={onDragEnter} ondragleave={onDragLeave} ondrop={onDrop}>
 <AppBar authState={data.authState} />
 
+<Modal bind:visible={uploadFormVisible} closeLabel="Cancel">
+	<h2>Upload Renew File</h2>
 
-<header>
+	<div class="drop-zone">
+		Drop .rnw File Here
+	</div>
+
+	<div class="labeled-ruler">or</div>
+
+	<form class="upload-form">
+			<div class="center">
+				<label for="upload_file">Select file from your device:</label>
+			</div>
+
+			<div class="file-selector">
+				<input accept=".rnw" id="upload_file" class="text-input" type="file" name="upload_file" required> <button>Upload</button>
+			</div>
+		</form>
+</Modal>
+
+
+<header class:offline={!online}>
 	<div>
 		<a href="/" title="Back">Back</a>
 
@@ -24,9 +73,22 @@
 	</div>
 
 
-	<form onsubmit={onNewDocument}>
-		<button type="submit">New Document</button>
-	</form>
+	<div class="button-group">
+		{#if !online}
+		<div class="button-group-text">
+			<span class="help" title="Connection to sever has been lost">Disconnected</span>
+		</div>
+		{/if}
+
+		<form onsubmit={onNewDocument}>
+			<button disabled={!online} type="submit">New Document</button>
+		</form>
+
+		<form onsubmit={showUploadForm}>
+			<button disabled={!online} type="submit">Import&hellip;</button>
+		</form>
+	</div>
+
 </header>
 
 <div class="scrollable">
@@ -42,7 +104,6 @@
 
 </div>
 
-
 <style>
 	.full-page {
 		position: fixed;
@@ -53,6 +114,20 @@
 		z-index: -1;
 		grid-template-rows: auto auto;
 		grid-auto-rows: 1fr;
+	}
+
+	.full-page.dragging::after {
+		content: 'Drop Here';
+		font-size: 3vw;
+		color: #44aa77;
+		display: grid;
+		place-content: center;
+		place-items: center;
+		position: fixed;
+		inset: 0;
+		border: 1vw solid #88ffaa;
+		background: #88ffaa33;
+		pointer-events: none;
 	}
 
 	.scrollable {
@@ -80,6 +155,10 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 1ex 1em 1ex 1.5em;
+	}
+
+	header.offline {
+		background: #70030d;
 	}
 
 	ul {
@@ -113,15 +192,121 @@
 		color: #fff;
 		padding: 1ex 1em;
 		border: none;
-		cursor: pointer;
 		font: inherit;
 	}
+	button:disabled {
+		color: #fff8;
+	}
 
-	button:hover {
+	button:not(:disabled) {
+		cursor: pointer;
+
+	}
+
+	button:not(:disabled):hover {
 		background: #0004;
 	}
 
-	button:active {
+	button:not(:disabled):active {
 		background: #0007;
+	}
+
+	.button-group {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+		gap: 1ex;
+	}
+
+	.button-group-text {
+		padding: 0 1em;
+	}
+
+
+	dl {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		margin: 0;
+		padding: 0;
+		gap: 1ex;
+		align-items: baseline;
+		box-sizing: border-box;
+	}
+
+	dt, dd {
+		margin: 0;
+	}
+
+	dt {
+		text-align: right;
+	}
+	button:focus-visible {
+		outline: 2px solid #00aaff;
+	}
+
+	dl button {
+		border: 0;
+		background: #333;
+		color: #fff;
+		font: inherit;
+		padding: 1ex;
+		cursor: pointer;
+	}
+
+	.upload-form {
+		margin: 0;
+	}
+
+	.help {
+		text-decoration: underline;
+		text-decoration-style: dotted;
+		cursor: help;
+	}
+
+	.drop-zone {
+		border: 0.25ex dashed #aaa;
+		display: grid;
+		place-items: center;
+		place-content: center;
+		align-self: stretch;
+		justify-self: stretch;
+		padding: 1em;
+		font-size: 1.5em;
+		color: #aaa;
+	}
+
+	.labeled-ruler {
+		display: flex;
+		flex-direction: row;
+		justify-items: stretch;
+		align-items: center;
+		gap: 1em;
+		font-style: italic;
+	}
+
+
+	.labeled-ruler::before {
+		content: ' ';
+		border-bottom: 1px solid #ccc;
+		height: 0;
+		flex-grow: 1;
+	}
+	.labeled-ruler::after {
+		content: ' ';
+		border-bottom: 1px solid #ccc;
+		height: 0;
+		flex-grow: 1;
+	}
+
+	.file-selector {
+		display: flex;
+		align-items: center;
+		flex-direction: column;
+		gap: 1em;
+		padding: 1em;
+	}
+
+	.center {
+		text-align: center;
 	}
 </style>
