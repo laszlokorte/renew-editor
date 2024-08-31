@@ -1,49 +1,57 @@
 <script>
 	import { goto } from '$app/navigation';
-	import { authenticate } from '$lib/api/auth.js'
+	import { authenticate } from '$lib/api/auth.js';
 
-	const { auth, onSuccess } = $props()
+	const { auth, onSuccess } = $props();
 
 	/** @type undefined | {error: string, message:string} */
-	let currentError = $state(undefined)
+	let currentError = $state(undefined);
 
 	/** @type undefined | HTMLInputElement */
-	let passwordField = $state(undefined)
+	let passwordField = $state(undefined);
 
+	let inProgress = $state(false);
 
 	/** @type {(evt: SubmitEvent) => void} */
 	const onSubmit = (evt) => {
-		evt.preventDefault()
+		evt.preventDefault();
+
+		if (inProgress) {
+			return;
+		}
 
 		/** @type HTMLFormElement */
-		const form = evt.currentTarget
+		const form = evt.currentTarget;
 
-		if(!form.checkValidity()) {
-			return
+		if (!form.checkValidity()) {
+			return;
 		}
 
-		const formData = Object.fromEntries(
-			new FormData(form).entries(),
-		)
+		const formData = Object.fromEntries(new FormData(form).entries());
 
-		if(!formData.api_url) {
-			currentError = {error: "url", message: "Invalid API URL"};
+		if (!formData.api_url) {
+			currentError = { error: 'url', message: 'Invalid API URL' };
 		} else {
+			inProgress = true;
+
 			authenticate(formData.api_url, formData.email, formData.password)
-			.then(token => {
-				currentError = undefined
-				auth.value = token
+				.then((token) => {
+					currentError = undefined;
+					auth.login(token);
 
-				onSuccess(auth)
-			})
-			.catch(e => {
-				auth.logout()
-				currentError = e
-			})
+					onSuccess(auth);
+				})
+				.catch((e) => {
+					auth.logout();
+					currentError = e;
+				})
+				.then(() => {
+					inProgress = false;
+				});
 		}
-
-	}
+	};
 </script>
+
 <form onsubmit={onSubmit}>
 	{#if currentError}
 		<dl class="error-message">
@@ -54,14 +62,45 @@
 
 	<dl>
 		<dt><label for="login_form_server">Server:</label></dt>
-		<dd><input id="login_form_server" class="text-input" type="url" name="api_url" value="http://localhost:9999/" required></dd>
+		<dd>
+			<input
+				disabled={inProgress}
+				id="login_form_server"
+				class="text-input"
+				type="url"
+				name="api_url"
+				value="http://localhost:9999/"
+				required
+			/>
+		</dd>
 		<dt><label for="login_form_user">E-mail:</label></dt>
-		<dd><input id="login_form_user" class="text-input" type="email" name="email" required></dd>
+		<dd>
+			<input
+				disabled={inProgress}
+				id="login_form_user"
+				class="text-input"
+				type="email"
+				name="email"
+				required
+			/>
+		</dd>
 		<dt><label for="login_form_password">Password:</label></dt>
-		<dd><input id="login_form_password" class="text-input" type="password" bind:this={passwordField} name="password" required></dd>
+		<dd>
+			<input
+				disabled={inProgress}
+				id="login_form_password"
+				class="text-input"
+				type="password"
+				bind:this={passwordField}
+				name="password"
+				required
+			/>
+		</dd>
 		<dt><span hidden>Actions</span></dt>
 		<dd>
-			<button>Login</button>
+			<button disabled={inProgress}
+				>{#if inProgress}Authenticating&hellip;{:else}Login{/if}</button
+			>
 		</dd>
 	</dl>
 </form>
@@ -77,7 +116,8 @@
 		box-sizing: border-box;
 	}
 
-	dt, dd {
+	dt,
+	dd {
 		margin: 0;
 	}
 
@@ -92,7 +132,7 @@
 		flex-grow: 1;
 		width: 100%;
 		box-sizing: border-box;
-		border: 1px solid #aaa
+		border: 1px solid #aaa;
 	}
 
 	.text-input:user-invalid {
@@ -115,6 +155,14 @@
 		font: inherit;
 		padding: 1ex;
 		cursor: pointer;
+	}
+
+	button:disabled {
+		color: #fff8;
+	}
+
+	input:disabled {
+		color: #0008 !important;
 	}
 
 	.error-message {

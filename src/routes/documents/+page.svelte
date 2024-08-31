@@ -6,102 +6,138 @@
 
 	const { documents, createDocument } = $derived(data);
 
-	let uploadFormVisible = $state(false)
-	let online = $state(true)
+	let uploadFormVisible = $state(false);
+	let online = $state(true);
 
 	/** @type {(evt: SubmitEvent) => void} */
 	function onNewDocument(evt) {
-		evt.preventDefault()
+		evt.preventDefault();
 
-		createDocument()
+		createDocument();
 	}
 
 	/** @type {(evt: SubmitEvent) => void} */
 	function showUploadForm(evt) {
-		evt.preventDefault()
+		evt.preventDefault();
 
-		uploadFormVisible = true
+		uploadFormVisible = true;
 	}
 
-	let dragging = $state(false)
+	let dragging = $state(false);
 	function onDragEnter(evt) {
-		evt.preventDefault()
-		dragging = true
+		if (uploadFormVisible) {
+			return;
+		}
+		evt.preventDefault();
+		dragging = true;
 	}
 
 	function onDragLeave(evt) {
-		evt.preventDefault()
-		dragging = false
+		evt.preventDefault();
+		dragging = false;
 	}
 
 	function onDrop(evt) {
-		evt.preventDefault()
-		dragging = false
+		evt.preventDefault();
+		dragging = false;
+	}
+
+	let draggingZone = $state(false);
+	function onDragEnterZone(evt) {
+		evt.preventDefault();
+		draggingZone = true;
+	}
+
+	function onDragLeaveZone(evt) {
+		evt.preventDefault();
+		draggingZone = false;
+	}
+
+	function onDropZone(evt) {
+		evt.preventDefault();
+		draggingZone = false;
 	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="full-page" class:dragging={dragging} ondragover={onDragEnter} ondragleave={onDragLeave} ondrop={onDrop}>
-<AppBar authState={data.authState} />
+<div
+	class="full-page"
+	class:dragging={dragging && !uploadFormVisible}
+	ondragover={onDragEnter}
+	ondragleave={onDragLeave}
+	ondrop={onDrop}
+>
+	<AppBar authState={data.authState} />
 
-<Modal bind:visible={uploadFormVisible} closeLabel="Cancel">
-	<h2>Upload Renew File</h2>
+	<Modal bind:visible={uploadFormVisible} closeLabel="Cancel">
+		<h2>Upload Renew File</h2>
 
-	<div class="drop-zone">
-		Drop .rnw File Here
-	</div>
+		<label
+			class="drop-zone"
+			class:invitation={dragging}
+			class:ready={draggingZone}
+			ondragover={onDragEnterZone}
+			ondragleave={onDragLeaveZone}
+			ondrop={onDropZone}
+		>
+			Drop .rnw File Here
+			<input type="file" />
+		</label>
 
-	<div class="labeled-ruler">or</div>
+		<div class="labeled-ruler">or</div>
 
-	<form class="upload-form">
+		<form class="upload-form">
 			<div class="center">
-				<label for="upload_file">Select file from your device:</label>
+				<label for="upload_file">Select a file from your device:</label>
 			</div>
 
 			<div class="file-selector">
-				<input accept=".rnw" id="upload_file" class="text-input" type="file" name="upload_file" required> <button>Upload</button>
+				<input
+					accept=".rnw"
+					id="upload_file"
+					class="text-input"
+					type="file"
+					name="upload_file"
+					required
+				/> <button class="upload-button">Upload</button>
 			</div>
 		</form>
-</Modal>
+	</Modal>
 
+	<header class:offline={!online}>
+		<div>
+			<a href="/" title="Back">Back</a>
 
-<header class:offline={!online}>
-	<div>
-		<a href="/" title="Back">Back</a>
-
-		<h2>Documents</h2>
-	</div>
-
-
-	<div class="button-group">
-		{#if !online}
-		<div class="button-group-text">
-			<span class="help" title="Connection to sever has been lost">Disconnected</span>
+			<h2>Documents</h2>
 		</div>
-		{/if}
 
-		<form onsubmit={onNewDocument}>
-			<button disabled={!online} type="submit">New Document</button>
-		</form>
+		<div class="button-group">
+			{#if !online}
+				<div class="button-group-text">
+					<span class="help" title="Connection to sever has been lost">Disconnected</span>
+				</div>
+			{/if}
 
-		<form onsubmit={showUploadForm}>
-			<button disabled={!online} type="submit">Import&hellip;</button>
-		</form>
+			<form onsubmit={onNewDocument}>
+				<button disabled={!online} type="submit">New Document</button>
+			</form>
+
+			<form onsubmit={showUploadForm}>
+				<button disabled={!online} type="submit">Import&hellip;</button>
+			</form>
+		</div>
+	</header>
+
+	<div class="scrollable">
+		<div class="title">
+			<strong>Name</strong>
+		</div>
+		<ul>
+			{#each documents as d}
+				<li><a href="/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
+			{/each}
+		</ul>
 	</div>
-
-</header>
-
-<div class="scrollable">
-	<div class="title">
-		<strong>Name</strong>
-	</div>
-	<ul>
-		{#each documents as d}
-			<li><a href="/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
-		{/each}
-	</ul>
-</div>
-
 </div>
 
 <style>
@@ -200,7 +236,6 @@
 
 	button:not(:disabled) {
 		cursor: pointer;
-
 	}
 
 	button:not(:disabled):hover {
@@ -222,7 +257,6 @@
 		padding: 0 1em;
 	}
 
-
 	dl {
 		display: grid;
 		grid-template-columns: auto 1fr;
@@ -233,7 +267,8 @@
 		box-sizing: border-box;
 	}
 
-	dt, dd {
+	dt,
+	dd {
 		margin: 0;
 	}
 
@@ -264,7 +299,7 @@
 	}
 
 	.drop-zone {
-		border: 0.25ex dashed #aaa;
+		border: 0.25ex dashed currentColor;
 		display: grid;
 		place-items: center;
 		place-content: center;
@@ -275,6 +310,20 @@
 		color: #aaa;
 	}
 
+	.drop-zone input {
+		display: none;
+	}
+
+	.drop-zone.invitation {
+		color: #ffcc00;
+		background: #fffeed;
+	}
+
+	.drop-zone.ready {
+		color: #00bb55;
+		background: #efe;
+	}
+
 	.labeled-ruler {
 		display: flex;
 		flex-direction: row;
@@ -283,7 +332,6 @@
 		gap: 1em;
 		font-style: italic;
 	}
-
 
 	.labeled-ruler::before {
 		content: ' ';
@@ -301,12 +349,18 @@
 	.file-selector {
 		display: flex;
 		align-items: center;
-		flex-direction: column;
+		justify-content: center;
+		flex-direction: row;
 		gap: 1em;
 		padding: 1em;
+		margin: auto;
 	}
 
 	.center {
 		text-align: center;
+	}
+
+	.upload-button {
+		background: #333;
 	}
 </style>

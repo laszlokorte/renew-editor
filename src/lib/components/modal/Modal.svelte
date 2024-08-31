@@ -1,14 +1,36 @@
 <script>
-	let {visible = $bindable(false), closeLabel = "Close", children} = $props()
+	let { visible = $bindable(false), closeLabel = 'Close', children } = $props();
 
 	function onClose(evt) {
-		evt.preventDefault()
-		visible = false
+		evt.preventDefault();
+		visible = false;
 	}
+
+	function onEscape(evt) {
+		if (evt.key === 'Escape' && visible) {
+			evt.preventDefault();
+			evt.stopPropagation();
+			visible = false;
+		}
+	}
+
+	$effect(() => {
+		window.addEventListener('keydown', onEscape);
+
+		return () => {
+			window.removeEventListener('keydown', onEscape);
+		};
+	});
 </script>
 
 <div class="modal-backdrop" class:visible>
-	<div tabindex="-1" role="button" class="modal-outside" onclick={onClose} onkeydown={onClose}></div>
+	<div
+		tabindex="-1"
+		role="button"
+		class="modal-outside"
+		onclick={onClose}
+		onkeydown={onClose}
+	></div>
 	<div class="modal-content">
 		<div class="modal-head">
 			<button type="reset" class="modal-close" onclick={onClose}>{closeLabel}</button>
@@ -31,7 +53,6 @@
 		left: 0;
 		right: 0;
 		z-index: 100;
-
 	}
 
 	.modal-outside {
@@ -58,7 +79,6 @@
 
 		align-content: stretch;
 		justify-content: stretch;
-
 
 		box-shadow: 0 0.5em 2em -1em #0004;
 	}

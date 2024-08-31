@@ -32,6 +32,9 @@ export default (() => {
 		get value() {
 			return currentValue
 		},
+		login(token) {
+			this.value = token
+		},
 		logout() {
 			this.value = null
 		},

@@ -1,19 +1,20 @@
 <script>
 	import { goto } from '$app/navigation';
 
-	import LogoutForm from '$lib/components/auth/LogoutForm.svelte'
+	import LogoutForm from '$lib/components/auth/LogoutForm.svelte';
 
-	const {auth} = $props()
+	const { auth } = $props();
 
 	function onLogout() {
-		goto("/", {invalidateAll: true});
+		goto('/', { invalidateAll: true });
 	}
 </script>
 
 {#if auth.isAuthenticated}
-<LogoutForm auth={auth} onSuccess={onLogout} />
+	<a href="/auth">Logout</a>
+	<!--<LogoutForm auth={auth} onSuccess={onLogout} />-->
 {:else}
-<a href="/auth">Login</a>
+	<a href="/auth">Login</a>
 {/if}
 
 <style>
