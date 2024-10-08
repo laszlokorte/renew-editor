@@ -26,7 +26,7 @@ export async function load({fetch}) {
 			},
 			contentType: "application/json",
 		}).then(r => r.json()).then(r => ({
-			documents: r.documents,
+			documents: r.items,
 			createDocument: createDocumentAction(fetch)
 		})).catch((e) => {
 			return error(503, {

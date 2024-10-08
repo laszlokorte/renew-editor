@@ -1,13 +1,14 @@
 <script>
-	const {scrollPosition} = $props()
+	const { scrollPosition, children } = $props();
 </script>
 
-<svg class="canvas" viewBox="-500 -500 1000 1000">
-
-<circle class="entity" cx="{-scrollPosition.value.x}" cy="{-scrollPosition.value.y}" r="100" fill="#24d188" stroke="black" stroke-width="3" />
-
-
-<rect class="entity" x="{-scrollPosition.value.x-100}" y="{300-scrollPosition.value.y}" r="100" fill="#24d188" stroke="black" stroke-width="3" width="200" height="120" />
+<svg
+	class="canvas"
+	viewBox="{-500 + scrollPosition.value.x} {-500 + scrollPosition.value.y} 1000 1000"
+>
+	{#if children}
+		{@render children()}
+	{/if}
 </svg>
 
 <style>

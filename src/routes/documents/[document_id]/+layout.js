@@ -45,8 +45,9 @@ export async function load({params, fetch}) {
 				})
 			}
 		}).catch((e) => {
+			console.error(e)
 			return error(e.status, {
-				message: e?.body.message ?? e.message
+				message: e?.body?.message ?? e.message
 			});
 		})
 	} else {

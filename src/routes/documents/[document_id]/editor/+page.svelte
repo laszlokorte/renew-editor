@@ -21,6 +21,8 @@
 	function causeError(e) {
 		errors.push('Some Error');
 	}
+
+	$inspect(data.document);
 </script>
 
 <div class="full-page">
@@ -156,7 +158,41 @@
 				contentSize={atom({ x: 0, y: 0 })}
 				scrollWindowSize={atom({ x: 0, y: 0 })}
 			>
-				<SVGViewport {scrollPosition} />
+				<SVGViewport {scrollPosition}>
+					{#each data.document.elements.items as el}
+						{#if el.box && !el.hidden}
+							<rect
+								fill={el?.style?.background_color ?? 'black'}
+								x={el.box.position_x}
+								y={el.box.position_y}
+								width={el.box.width}
+								height={el.box.height}
+							></rect>
+						{/if}
+						{#if el.text && !el.hidden}
+							<text
+								fill={el.text?.style?.text_color ?? 'black'}
+								x={el.text.position_x}
+								y={el.text.position_y}
+								font-size={el?.text?.style?.font_size || 12}
+							>
+								{#each el.text.body.split('\n') as line, li}
+									<tspan x={el.text.position_x} dy={el?.text?.style?.font_size || 12}>{line}</tspan>
+								{/each}
+							</text>
+						{/if}
+						{#if el.edge && !el.hidden}
+							<polyline
+								points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
+									.map((w) => `${w.x} ${w.y}`)
+									.join(' ')} {el.edge.target_x} {el.edge.target_y}"
+								stroke="black"
+								fill="none"
+								stroke-width="2"
+							/>
+						{/if}
+					{/each}
+				</SVGViewport>
 			</Scroller>
 		</div>
 		<div class="topbar">

@@ -4,6 +4,8 @@
 
 	const { auth, onSuccess } = $props();
 
+	let apiUrl = $state('http://localhost:4000/api');
+
 	/** @type undefined | {error: string, message:string} */
 	let currentError = $state(undefined);
 
@@ -69,7 +71,7 @@
 				class="text-input"
 				type="url"
 				name="api_url"
-				value="http://localhost:9999/"
+				bind:value={apiUrl}
 				required
 			/>
 		</dd>
