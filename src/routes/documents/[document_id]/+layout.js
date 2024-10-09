@@ -33,8 +33,8 @@ export async function load({params, fetch}) {
 			if (r.ok) {
 				return r.json().then(j => {
 					return {
-						document: j.document,
-						deleteAction: deleteAction(fetch, j.document.id)
+						document: j,
+						deleteAction: deleteAction(fetch, j.id),
 					}
 				})
 			} else {
@@ -45,7 +45,6 @@ export async function load({params, fetch}) {
 				})
 			}
 		}).catch((e) => {
-			console.error(e)
 			return error(e.status, {
 				message: e?.body?.message ?? e.message
 			});

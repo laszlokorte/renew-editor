@@ -2,6 +2,7 @@ import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
 import documentApi from '$lib/api/documents.js'
+import LiveState from '$lib/api/livestate';
 
 export const ssr = false;
 
@@ -25,9 +26,9 @@ export async function load({fetch}) {
 				"Authorization" : authState.authHeader,
 			},
 			contentType: "application/json",
-		}).then(r => r.json()).then(r => ({
-			documents: r.items,
-			createDocument: createDocumentAction(fetch)
+		}).then(r => r.json()).then(j => ({
+			documents: j,
+			createDocument: createDocumentAction(fetch),
 		})).catch((e) => {
 			return error(503, {
 				message: 'Service Unavailable'

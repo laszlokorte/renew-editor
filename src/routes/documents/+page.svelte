@@ -1,10 +1,12 @@
 <script>
+	import { onMount } from 'svelte';
 	import AppBar from '../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
+	import LiveResource from '$lib/components/live/LiveResource.svelte';
 
 	const { data } = $props();
 
-	const { documents, createDocument } = $derived(data);
+	const createDocument = $derived(data.createDocument);
 
 	let uploadFormVisible = $state(false);
 	let online = $state(true);
@@ -132,11 +134,16 @@
 		<div class="title">
 			<strong>Name</strong>
 		</div>
-		<ul>
-			{#each documents as d}
-				<li><a href="/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
-			{/each}
-		</ul>
+
+		<LiveResource socket={data.live_socket} resource={data.documents}>
+			{#snippet children(documents)}
+				<ul>
+					{#each documents as d}
+						<li><a href="/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
+					{/each}
+				</ul>
+			{/snippet}
+		</LiveResource>
 	</div>
 </div>
 

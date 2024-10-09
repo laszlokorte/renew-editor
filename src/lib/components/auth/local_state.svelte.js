@@ -1,3 +1,6 @@
+
+import { Socket } from "phoenix";
+
 function tryParse(str) {
 	try {
 		return JSON.parse(str)
@@ -47,5 +50,14 @@ export default (() => {
 		get routes() {
 			return this.value.routes
 		},
+		createSocket() {
+			console.log(currentValue)
+			if(currentValue && currentValue.token) {
+				return new Socket(this.value.routes.live_socket.href, {params: {token: currentValue.token}})
+
+			} else {
+				return null
+			}
+		}
 	}
 })()

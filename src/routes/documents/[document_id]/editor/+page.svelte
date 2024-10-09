@@ -1,9 +1,12 @@
 <script>
+	import { onMount } from 'svelte';
+
 	import { atom } from '$lib/reactivity/atom.svelte';
 	import AppBar from '../../../AppBar.svelte';
 
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
 	import Scroller from '$lib/components/scroller/Scroller.svelte';
+	import LiveResource from '$lib/components/live/LiveResource.svelte';
 
 	const { data } = $props();
 
@@ -21,238 +24,262 @@
 	function causeError(e) {
 		errors.push('Some Error');
 	}
-
-	$inspect(data.document);
 </script>
 
 <div class="full-page">
 	<AppBar authState={data.authState} {errors} />
 
-	<header>
-		<div class="header-titel">
-			<a href="/documents" title="Back">Back</a>
+	<LiveResource socket={data.live_socket} resource={data.document}>
+		{#snippet children(doc, presence)}
+			<header>
+				<div class="header-titel">
+					<a href="/documents" title="Back">Back</a>
 
-			<h2>Document: {data.document.name}</h2>
-		</div>
+					<h2>Document: {doc.name}</h2>
+				</div>
 
-		<menu>
-			<ol class="menu-bar">
-				<li class="menu-bar-item" tabindex="-1">
-					File
-					<ul class="menu-bar-menu">
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Save</button></li>
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Rename</button></li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Duplicate</button>
+				<menu>
+					<ol class="menu-bar">
+						<li class="menu-bar-item" tabindex="-1">
+							File
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Save</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Rename</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Duplicate</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Download</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Download as...</button>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={deleteThisDocument}
+										style="color: #aa0000">Delete</button
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button" onclick={causeError} style="color: #aa0000"
+										>Cause Error</button
+									>
+								</li>
+							</ul>
 						</li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Download</button>
+						<li class="menu-bar-item" tabindex="-1">
+							Edit
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Undo</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Redo</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Select</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button" style="color: #aa0000">Delete</button>
+								</li>
+							</ul>
 						</li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Download as...</button>
-						</li>
-						<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-						<li class="menu-bar-menu-item">
-							<button
-								class="menu-bar-item-button"
-								onclick={deleteThisDocument}
-								style="color: #aa0000">Delete</button
-							>
-						</li>
-						<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button" onclick={causeError} style="color: #aa0000"
-								>Cause Error</button
-							>
-						</li>
-					</ul>
-				</li>
-				<li class="menu-bar-item" tabindex="-1">
-					Edit
-					<ul class="menu-bar-menu">
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Undo</button></li>
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Redo</button></li>
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Select</button></li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button" style="color: #aa0000">Delete</button>
-						</li>
-					</ul>
-				</li>
-				<li class="menu-bar-item" tabindex="-1">
-					View
+						<li class="menu-bar-item" tabindex="-1">
+							View
 
-					<ul class="menu-bar-menu">
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Reset Camera</button>
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Reset Camera</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Zoom in</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Zoom out</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Reset Zoom</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Rotate Clockwise</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Reset Rotation</button>
+								</li>
+							</ul>
 						</li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Zoom in</button>
+						<li class="menu-bar-item" tabindex="-1">
+							Simulate
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Start</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Pause</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Step</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Stop</button>
+								</li>
+							</ul>
 						</li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Zoom out</button>
+						<li class="menu-bar-item" tabindex="-1">
+							Share
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Share Link</button>
+								</li>
+							</ul>
 						</li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Reset Zoom</button>
+						<li class="menu-bar-item" tabindex="-1">
+							Help
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Reference</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button">Website</button>
+								</li>
+							</ul>
 						</li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Rotate Clockwise</button>
-						</li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Reset Rotation</button>
-						</li>
-					</ul>
-				</li>
-				<li class="menu-bar-item" tabindex="-1">
-					Simulate
-					<ul class="menu-bar-menu">
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Start</button></li>
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Pause</button></li>
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Step</button></li>
-						<li class="menu-bar-menu-item"><button class="menu-bar-item-button">Stop</button></li>
-					</ul>
-				</li>
-				<li class="menu-bar-item" tabindex="-1">
-					Share
-					<ul class="menu-bar-menu">
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Share Link</button>
-						</li>
-					</ul>
-				</li>
-				<li class="menu-bar-item" tabindex="-1">
-					Help
-					<ul class="menu-bar-menu">
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Reference</button>
-						</li>
-						<li class="menu-bar-menu-item">
-							<button class="menu-bar-item-button">Website</button>
-						</li>
-					</ul>
-				</li>
-			</ol>
-		</menu>
+					</ol>
+				</menu>
 
-		<ul class="presence-list">
-			<li class="presence-list-total">2</li>
-			<li>
-				<svg viewBox="-4 -4 40 40" width="32">
-					<circle fill="#2488d1" cx="16" cy="16" r="16" stroke="#fff" stroke-width="2" />
-				</svg>
-			</li>
-			<li>
-				<svg viewBox="-4 -4 40 40" width="32">
-					<circle fill="#d12488" cx="16" cy="16" r="16" stroke="#fff" stroke-width="2" />
-				</svg>
-			</li>
-		</ul>
-	</header>
+				<ul class="presence-list">
+					<!--<li class="presence-list-total">{presence.length}</li>-->
+					{#each presence as p}
+						<li>
+							<svg viewBox="-4 -4 40 40" width="32">
+								<title>{p.data.username} ({p.count})</title>
+								<circle fill={p.data.color} cx="16" cy="16" r="16" stroke="#fff" stroke-width="2" />
+								<text x="16" y="22" text-anchor="middle" font-size="20" fill="#fff"
+									>{p.data.username.substr(0, 1)}</text
+								>
+							</svg>
+						</li>
+					{/each}
+				</ul>
+			</header>
 
-	<div class="overlay">
-		<div class="body">
-			<Scroller
-				allowOverscroll={atom(false)}
-				center={atom(true)}
-				extraScrollPadding={atom(true)}
-				{scrollPosition}
-				contentSize={atom({ x: 0, y: 0 })}
-				scrollWindowSize={atom({ x: 0, y: 0 })}
-			>
-				<SVGViewport {scrollPosition}>
-					{#each data.document.elements.items as el}
-						{#if el.box && !el.hidden}
+			<div class="overlay">
+				<div class="body">
+					<Scroller
+						allowOverscroll={atom(false)}
+						center={atom(true)}
+						extraScrollPadding={atom(true)}
+						{scrollPosition}
+						contentSize={atom({ x: 0, y: 0 })}
+						scrollWindowSize={atom({ x: 0, y: 0 })}
+					>
+						<SVGViewport {scrollPosition}>
+							{#each doc.elements.items as el}
+								{#if el.box && !el.hidden}
+									<rect
+										fill={el?.style?.background_color ?? 'black'}
+										x={el.box.position_x}
+										y={el.box.position_y}
+										width={el.box.width}
+										height={el.box.height}
+									></rect>
+								{/if}
+								{#if el.text && !el.hidden}
+									<text
+										fill={el.text?.style?.text_color ?? 'black'}
+										x={el.text.position_x}
+										y={el.text.position_y}
+										font-size={el?.text?.style?.font_size || 12}
+									>
+										{#each el.text.body.split('\n') as line, li}
+											<tspan x={el.text.position_x} dy={el?.text?.style?.font_size || 12}
+												>{line}</tspan
+											>
+										{/each}
+									</text>
+								{/if}
+								{#if el.edge && !el.hidden}
+									<polyline
+										points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
+											.map((w) => `${w.x} ${w.y}`)
+											.join(' ')} {el.edge.target_x} {el.edge.target_y}"
+										stroke="black"
+										fill="none"
+										stroke-width="2"
+									/>
+								{/if}
+							{/each}
+						</SVGViewport>
+					</Scroller>
+				</div>
+				<div class="topbar">
+					<div class="toolbar">
+						<button class="tool-button">Select</button>
+						<button class="tool-button">Connect</button>
+						<button class="tool-button">Draw</button>
+						<hr />
+						<select class="attribute-select">
+							<option>Font</option>
+						</select>
+						<select class="attribute-select">
+							<option>Stroke</option>
+						</select>
+						<hr />
+						<label class="color-wrapper"><input type="color" name="" value="#ff0066" /></label>
+						<label class="color-wrapper"><input type="color" name="" value="#6600ff" /></label>
+						<input type="range" name="" style="width: 10em" />
+					</div>
+				</div>
+
+				<div class="sidebar right">
+					<svg class="minimap" width="100" height="70" viewBox="-50 -50 100 100">
+						<text fill="currentColor" dominant-baseline="middle" text-anchor="middle">Minimap</text>
+					</svg>
+					<div class="toolbar vertical">
+						Hierarchy
+						<hr />
+						<input type="search" name="" placeholder="search" />
+						<select multiple size="5">
+							{#each doc.elements.items as el}
+								<option>{el.id}</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+				<div class="sidebar left">
+					<div class="toolbar vertical">
+						<small>Create</small>
+						<hr />
+						<svg class="droppable" viewBox="-4 -4 40 40" width="32">
+							<circle fill="#24d188" cx="16" cy="16" r="16" stroke="#047138" stroke-width="2" />
+						</svg>
+						<svg class="droppable" viewBox="-4 -4 40 40" width="32">
 							<rect
-								fill={el?.style?.background_color ?? 'black'}
-								x={el.box.position_x}
-								y={el.box.position_y}
-								width={el.box.width}
-								height={el.box.height}
-							></rect>
-						{/if}
-						{#if el.text && !el.hidden}
-							<text
-								fill={el.text?.style?.text_color ?? 'black'}
-								x={el.text.position_x}
-								y={el.text.position_y}
-								font-size={el?.text?.style?.font_size || 12}
-							>
-								{#each el.text.body.split('\n') as line, li}
-									<tspan x={el.text.position_x} dy={el?.text?.style?.font_size || 12}>{line}</tspan>
-								{/each}
-							</text>
-						{/if}
-						{#if el.edge && !el.hidden}
-							<polyline
-								points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
-									.map((w) => `${w.x} ${w.y}`)
-									.join(' ')} {el.edge.target_x} {el.edge.target_y}"
-								stroke="black"
-								fill="none"
+								fill="#24d188"
+								x="1"
+								y="1"
+								width="30"
+								height="30"
+								stroke="#047138"
 								stroke-width="2"
 							/>
-						{/if}
-					{/each}
-				</SVGViewport>
-			</Scroller>
-		</div>
-		<div class="topbar">
-			<div class="toolbar">
-				<button class="tool-button">Select</button>
-				<button class="tool-button">Connect</button>
-				<button class="tool-button">Draw</button>
-				<hr />
-				<select class="attribute-select">
-					<option>Font</option>
-				</select>
-				<select class="attribute-select">
-					<option>Stroke</option>
-				</select>
-				<hr />
-				<label class="color-wrapper"><input type="color" name="" value="#ff0066" /></label>
-				<label class="color-wrapper"><input type="color" name="" value="#6600ff" /></label>
-				<input type="range" name="" style="width: 10em" />
+						</svg>
+						<hr />
+						<svg class="droppable" viewBox="-4 -4 40 40" width="32">
+							<text text-anchor="middle" font-size="40" x="16" y="30" font-family="serif">T</text>
+						</svg>
+					</div>
+				</div>
 			</div>
-		</div>
-
-		<div class="sidebar right">
-			<svg class="minimap" width="100" height="70" viewBox="-50 -50 100 100">
-				<text fill="currentColor" dominant-baseline="middle" text-anchor="middle">Minimap</text>
-			</svg>
-			<div class="toolbar vertical">
-				Hierarchy
-				<hr />
-				<input type="search" name="" placeholder="search" />
-				<select multiple size="5">
-					<option>Transition #1</option>
-					<option>Place #1</option>
-				</select>
-			</div>
-		</div>
-		<div class="sidebar left">
-			<div class="toolbar vertical">
-				<small>Create</small>
-				<hr />
-				<svg class="droppable" viewBox="-4 -4 40 40" width="32">
-					<circle fill="#24d188" cx="16" cy="16" r="16" stroke="#047138" stroke-width="2" />
-				</svg>
-				<svg class="droppable" viewBox="-4 -4 40 40" width="32">
-					<rect
-						fill="#24d188"
-						x="1"
-						y="1"
-						width="30"
-						height="30"
-						stroke="#047138"
-						stroke-width="2"
-					/>
-				</svg>
-				<hr />
-				<svg class="droppable" viewBox="-4 -4 40 40" width="32">
-					<text text-anchor="middle" font-size="40" x="16" y="30" font-family="serif">T</text>
-				</svg>
-			</div>
-		</div>
-	</div>
+		{/snippet}
+	</LiveResource>
 </div>
 
 <style>
