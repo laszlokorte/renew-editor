@@ -1,4 +1,5 @@
 <script>
+	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 
 	import LoginForm from '$lib/components/auth/LoginForm.svelte';
@@ -9,7 +10,7 @@
 
 	function onLogin(auth) {
 		return new Promise((resolve) => {
-			goto('/', { invalidateAll: true }).then((_) => {
+			goto(`${base}`, { invalidateAll: true }).then((_) => {
 				resolve(auth);
 			});
 		});

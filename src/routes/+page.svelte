@@ -1,20 +1,18 @@
 <script>
-	import AppBar from "./AppBar.svelte";
+	import { base } from '$app/paths';
+	import AppBar from './AppBar.svelte';
 
-	const {data} = $props();
+	const { data } = $props();
 </script>
 
 <AppBar authState={data.authState} />
 
-
 <section class="hero">
+	<h2>Renew Web</h2>
 
-<h2>Renew Web</h2>
+	<p>Welcome to the Renew Web Editor</p>
 
-<p>Welcome to the Renew Web Editor</p>
-
-<a href="/documents" class="action">View Documents</a>
-
+	<a href="{base}/documents" class="action">View Documents</a>
 </section>
 
 <style>

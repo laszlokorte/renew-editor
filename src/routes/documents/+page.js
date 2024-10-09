@@ -1,3 +1,4 @@
+import { base } from '$app/paths';
 import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
@@ -12,7 +13,7 @@ function createDocumentAction(fetchFn) {
 			.createDocument()
 			.then(r => {
 				r.json().then((d) => {
-					goto(`/documents/${d.document.id}/editor`)
+					goto(`${base}/documents/${d.document.id}/editor`)
 				})
 			})
 	}
@@ -35,6 +36,6 @@ export async function load({fetch}) {
 			});
 		})
 	} else {
-		return redirect(307, '/auth')
+		return redirect(307, `${base}/auth`)
 	}
 }

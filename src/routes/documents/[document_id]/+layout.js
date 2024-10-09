@@ -1,3 +1,4 @@
+import { base } from '$app/paths';
 import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
@@ -11,7 +12,7 @@ function deleteAction(fetchFn, id) {
 			.deleteDocument(id)
 			.then((r) => {
 				if(r.ok) {
-					goto('/documents')
+					goto(`${base}/documents`)
 				}
 			})
 	}
@@ -50,6 +51,6 @@ export async function load({params, fetch}) {
 			});
 		})
 	} else {
-		return redirect(307, '/auth')
+		return redirect(307, `${base}/auth`)
 	}
 }

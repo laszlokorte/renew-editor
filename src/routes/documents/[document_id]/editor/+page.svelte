@@ -1,6 +1,5 @@
 <script>
-	import { onMount } from 'svelte';
-
+	import { base } from '$app/paths';
 	import { atom } from '$lib/reactivity/atom.svelte';
 	import AppBar from '../../../AppBar.svelte';
 
@@ -33,7 +32,7 @@
 		{#snippet children(doc, presence)}
 			<header>
 				<div class="header-titel">
-					<a href="/documents" title="Back">Back</a>
+					<a href="{base}/documents" title="Back">Back</a>
 
 					<h2>Document: {doc.name}</h2>
 				</div>

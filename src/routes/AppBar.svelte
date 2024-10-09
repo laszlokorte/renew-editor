@@ -1,35 +1,44 @@
 <script>
+	import { base } from '$app/paths';
 	import * as env from '../env';
-	import CurrentAuthState from './auth/CurrentAuthState.svelte'
-	const favicon = '/favicon.svg';
+	import CurrentAuthState from './auth/CurrentAuthState.svelte';
+	const favicon = '';
 
 	const appTitle = env.APP_NAME;
 
 	const { authState, errors = $bindable([]) } = $props();
 
 	function discardError() {
-		errors.pop()
+		errors.pop();
 	}
 </script>
 
-<div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 1ex 1em; background: #222; color: #fff">
-	<a href="/"><h2 class="app-name"><img src={favicon} alt="Renew" class="icon" /> {appTitle}</h2></a>
+<div
+	style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 1ex 1em; background: #222; color: #fff"
+>
+	<a href="{base}/"
+		><h2 class="app-name">
+			<img src="{base}/favicon.svg" alt="Renew" class="icon" />
+			{appTitle}
+		</h2></a
+	>
 
 	<div>
 		{#if errors.length}
-		<div class="error">
-		Error: <span>{errors[0]}</span>
-		<button class="error-discard" onclick={discardError}>Discard
-			{#if errors.length > 1}
-			({errors.length - 1} more)
-			{/if}
-		</button>
-		</div>
+			<div class="error">
+				Error: <span>{errors[0]}</span>
+				<button class="error-discard" onclick={discardError}
+					>Discard
+					{#if errors.length > 1}
+						({errors.length - 1} more)
+					{/if}
+				</button>
+			</div>
 		{/if}
 	</div>
 
 	{#if authState}
-	<CurrentAuthState auth={authState} />
+		<CurrentAuthState auth={authState} />
 	{/if}
 </div>
 
@@ -77,5 +86,4 @@
 		margin: 0;
 		font-size: smaller;
 	}
-
 </style>

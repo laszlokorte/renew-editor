@@ -1,4 +1,5 @@
 <script>
+	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
 	import AppBar from '../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
@@ -108,7 +109,7 @@
 
 	<header class:offline={!online}>
 		<div>
-			<a href="/" title="Back">Back</a>
+			<a href="{base}/" title="Back">Back</a>
 
 			<h2>Documents</h2>
 		</div>
@@ -139,7 +140,7 @@
 			{#snippet children(documents)}
 				<ul>
 					{#each documents as d}
-						<li><a href="/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
+						<li><a href="{base}/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
 					{/each}
 				</ul>
 			{/snippet}

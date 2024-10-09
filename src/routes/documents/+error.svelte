@@ -1,8 +1,9 @@
 <script>
+	import { base } from '$app/paths';
 	import { page } from '$app/stores';
 	import AppBar from '../AppBar.svelte';
 
-	const {data} = $props();
+	const { data } = $props();
 </script>
 
 <AppBar authState={data.authState} />
@@ -11,7 +12,7 @@
 	<h1 class="center">Error {$page.status}: {$page.error.message}</h1>
 
 	<p class="center">
-		<a href="/">Back to Homepage</a>
+		<a href="{base}/">Back to Homepage</a>
 	</p>
 </section>
 
