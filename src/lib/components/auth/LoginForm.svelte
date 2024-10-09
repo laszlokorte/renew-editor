@@ -148,6 +148,7 @@
 
 	button:focus-visible {
 		outline: 2px solid #00aaff;
+		background: #003366;
 	}
 
 	button {
@@ -155,12 +156,20 @@
 		background: #333;
 		color: #fff;
 		font: inherit;
-		padding: 1ex;
+		padding: 1.5ex 2ex;
 		cursor: pointer;
 	}
 
 	button:disabled {
 		color: #fff8;
+	}
+
+	button:hover {
+		background: #005588;
+	}
+
+	button:active {
+		background: #003366;
 	}
 
 	input:disabled {

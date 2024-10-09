@@ -12,7 +12,7 @@
 </script>
 
 {#if auth.isAuthenticated}
-	<a href="{base}/auth">Logout</a>
+	<a href="{base}/auth">{auth.value.email.substr(0, 10)}...</a>
 	<!--<LogoutForm auth={auth} onSuccess={onLogout} />-->
 {:else}
 	<a href="{base}/auth">Login</a>
