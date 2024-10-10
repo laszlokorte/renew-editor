@@ -3,13 +3,17 @@
 	import makeLive from '$lib/api/make_live.svelte.js';
 	const { socket, resource, children } = $props();
 
-	let liveValue = makeLive(socket, resource);
+	let liveState = makeLive(socket, resource);
+
+	function dispatch(action, payload) {
+		liveState.send(action, payload);
+	}
 
 	onMount(() => {
 		return () => {
-			liveValue.unsubscribe();
+			liveState.unsubscribe();
 		};
 	});
 </script>
 
-{@render children(liveValue.value, liveValue.presence)}
+{@render children(liveState.value, liveState.presence, dispatch)}

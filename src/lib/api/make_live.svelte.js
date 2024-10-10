@@ -7,7 +7,7 @@ export default function makeLive(socket, resource) {
 	const livestate = new LiveState(socket, { topic: resource.topic });
 
 	const updater = (serverState) => {
-		currentValue = serverState.detail.state.content;
+		currentValue = serverState.detail.state;
 	};
 
 	livestate.subscribe(updater);
@@ -27,7 +27,11 @@ export default function makeLive(socket, resource) {
 			return currentPresence;
 		},
 
-		async unsubscribe() {
+		send(action, payload) {
+			livestate.sendAction(action, payload)
+		},
+
+		unsubscribe() {
 			livestate.unsubscribe(updater);
 			livestate.leave();
 		}

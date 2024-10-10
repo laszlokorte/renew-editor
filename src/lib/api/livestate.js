@@ -239,6 +239,10 @@ export class LiveState {
     return true;
   }
 
+  sendAction(name, payload) {
+    this.channel.push(`lvs_evt:${name}`, payload);
+  }
+
   pushCustomEvent(event) { this.dispatchEvent(event); }
 }
 

@@ -13,7 +13,7 @@ function createDocumentAction(fetchFn) {
 			.createDocument()
 			.then(r => {
 				r.json().then((d) => {
-					goto(`${base}/documents/${d.document.id}/editor`)
+					goto(`${base}/documents/${d.id}/editor`)
 				})
 			})
 	}

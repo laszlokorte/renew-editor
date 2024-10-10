@@ -13,6 +13,8 @@
 
 	let errors = $state([]);
 
+	let selectedLayers = $state([]);
+
 	function deleteThisDocument(evt) {
 		evt.preventDefault();
 		data.deleteAction().catch((e) => {
@@ -180,41 +182,103 @@
 						scrollWindowSize={atom({ x: 0, y: 0 })}
 					>
 						<SVGViewport {scrollPosition}>
-							{#each doc.elements.items as el}
-								{#if el.box && !el.hidden}
-									<rect
-										fill={el?.style?.background_color ?? 'black'}
-										x={el.box.position_x}
-										y={el.box.position_y}
-										width={el.box.width}
-										height={el.box.height}
-									></rect>
-								{/if}
-								{#if el.text && !el.hidden}
-									<text
-										fill={el.text?.style?.text_color ?? 'black'}
-										x={el.text.position_x}
-										y={el.text.position_y}
-										font-size={el?.text?.style?.font_size || 12}
-									>
-										{#each el.text.body.split('\n') as line, li}
-											<tspan x={el.text.position_x} dy={el?.text?.style?.font_size || 12}
-												>{line}</tspan
+							{#snippet render_child_layers(parent, depth = 0)}
+								{#each doc.layers.items as el (el.id)}
+									{#if el.parent_id == parent}
+										{#if el.box && !el.hidden}
+											<rect
+												onclick={() => {
+													selectedLayers = [el.id];
+												}}
+												fill={el?.style?.background_color ?? 'black'}
+												x={el.box.position_x}
+												y={el.box.position_y}
+												width={el.box.width}
+												height={el.box.height}
+											></rect>
+										{/if}
+										{#if el.text && !el.hidden}
+											<text
+												onclick={() => {
+													selectedLayers = [el.id];
+												}}
+												fill={el.text?.style?.text_color ?? 'black'}
+												x={el.text.position_x}
+												y={el.text.position_y}
+												font-size={el?.text?.style?.font_size || 12}
 											>
-										{/each}
-									</text>
-								{/if}
-								{#if el.edge && !el.hidden}
-									<polyline
-										points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
-											.map((w) => `${w.x} ${w.y}`)
-											.join(' ')} {el.edge.target_x} {el.edge.target_y}"
-										stroke="black"
-										fill="none"
-										stroke-width="2"
-									/>
-								{/if}
-							{/each}
+												{#each el.text.body.split('\n') as line, li (li)}
+													<tspan x={el.text.position_x} dy={el?.text?.style?.font_size || 12}
+														>{line}</tspan
+													>
+												{/each}
+											</text>
+										{/if}
+										{#if el.edge && !el.hidden}
+											<polyline
+												onclick={() => {
+													selectedLayers = [el.id];
+												}}
+												points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
+													.map((w) => `${w.x} ${w.y}`)
+													.join(' ')} {el.edge.target_x} {el.edge.target_y}"
+												stroke="black"
+												fill="none"
+												stroke-width="2"
+											/>
+										{/if}
+										{@render render_child_layers(el.id, depth + 1)}
+									{/if}
+								{/each}
+							{/snippet}
+							{@render render_child_layers(null, 0)}
+
+							{#snippet render_child_layers_selection(parent, depth = 0)}
+								{#each doc.layers.items as el (el.id)}
+									{#if el.parent_id == parent}
+										{#if selectedLayers.includes(el.id)}
+											{#if el.box && !el.hidden}
+												<rect
+													class="selected"
+													fill={el?.style?.background_color ?? 'black'}
+													x={el.box.position_x}
+													y={el.box.position_y}
+													width={el.box.width}
+													height={el.box.height}
+												></rect>
+											{/if}
+											{#if el.text && !el.hidden}
+												<text
+													class="selected"
+													fill={el.text?.style?.text_color ?? 'black'}
+													x={el.text.position_x}
+													y={el.text.position_y}
+													font-size={el?.text?.style?.font_size || 12}
+												>
+													{#each el.text.body.split('\n') as line, li (li)}
+														<tspan x={el.text.position_x} dy={el?.text?.style?.font_size || 12}
+															>{line}</tspan
+														>
+													{/each}
+												</text>
+											{/if}
+											{#if el.edge && !el.hidden}
+												<polyline
+													class="selected"
+													points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
+														.map((w) => `${w.x} ${w.y}`)
+														.join(' ')} {el.edge.target_x} {el.edge.target_y}"
+													stroke="black"
+													fill="none"
+													stroke-width="2"
+												/>
+											{/if}
+										{/if}
+										{@render render_child_layers_selection(el.id, depth + 1)}
+									{/if}
+								{/each}
+							{/snippet}
+							{@render render_child_layers_selection(null, 0)}
 						</SVGViewport>
 					</Scroller>
 				</div>
@@ -244,12 +308,23 @@
 					<div class="toolbar vertical">
 						Hierarchy
 						<hr />
-						<input type="search" name="" placeholder="search" />
-						<select multiple size="5">
-							{#each doc.elements.items as el}
-								<option>{el.id}</option>
+						<input style="" type="search" name="" placeholder="search" />
+						{#snippet child_layers(parent, depth = 0)}
+							{#each doc.layers.items as el (el.id)}
+								{#if el.parent_id == parent}
+									<option value={el.id}>{Array(depth).fill('-').join('')}{el.id}</option>
+									{@render child_layers(el.id, depth + 1)}
+								{/if}
 							{/each}
+						{/snippet}
+						<select multiple size="5" bind:value={selectedLayers}>
+							{@render child_layers(null, 0)}
 						</select>
+					</div>
+					<div class="toolbar vertical">
+						Debug
+						<hr />
+						<textarea readonly>{JSON.stringify(doc, null, '  ')}</textarea>
 					</div>
 				</div>
 				<div class="sidebar left">
@@ -396,6 +471,7 @@
 		grid-template-columns: [body-start] 0.5ex [top-start left-start] auto [left-end] 1fr[right-start] auto [right-end top-end] 1em [body-end];
 		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start] 1fr auto [left-end right-end] 1em [ body-end];
 		gap: 0.5em;
+		overflow: hidden;
 	}
 
 	.body {
@@ -426,7 +502,8 @@
 		gap: 1ex;
 		align-items: center;
 		justify-content: start;
-		justify-items: center;
+		justify-items: stretch;
+		grid-auto-rows: 1fr;
 	}
 
 	hr {
@@ -444,6 +521,8 @@
 
 	.toolbar.vertical {
 		grid-auto-flow: row;
+		grid-auto-columns: 1fr;
+		grid-auto-rows: auto;
 	}
 
 	.sidebar {
@@ -615,5 +694,23 @@
 		align-content: center;
 		color: #fff;
 		font-weight: bold;
+	}
+
+	rect.selected {
+		stroke: #7af;
+		fill: #7af3;
+		stroke-width: 5;
+		pointer-events: none;
+	}
+	text.selected {
+		stroke: #7af;
+		fill: #7af;
+		stroke-width: 5;
+		pointer-events: none;
+	}
+	polyline.selected {
+		stroke: #7af;
+		stroke-width: 5;
+		pointer-events: none;
 	}
 </style>

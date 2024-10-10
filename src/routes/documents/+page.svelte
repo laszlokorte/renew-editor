@@ -137,10 +137,31 @@
 		</div>
 
 		<LiveResource socket={data.live_socket} resource={data.documents}>
-			{#snippet children(documents)}
+			{#snippet children(documents, _presence, dispatch)}
 				<ul>
-					{#each documents as d}
-						<li><a href="{base}/documents/{d.id}/editor" title="Document #{d.id}">{d.name}</a></li>
+					{#each documents.items as d}
+						<li class="document-list-item">
+							<a
+								class="document-list-link"
+								href="{base}/documents/{d.id}/editor"
+								title="Document #{d.id}">{d.name}</a
+							>
+							<div class="document-list-actions">
+								<button class="action-export">Export</button>
+								<button
+									class="action-duplicate"
+									onclick={() => {
+										dispatch('duplicate_document', { id: d.id });
+									}}>Duplicate</button
+								>
+								<button
+									class="action-delete"
+									onclick={() => {
+										dispatch('delete_document', { id: d.id });
+									}}>Delete</button
+								>
+							</div>
+						</li>
 					{/each}
 				</ul>
 			{/snippet}
@@ -370,5 +391,68 @@
 
 	.upload-button {
 		background: #333;
+	}
+
+	.document-list-item {
+		display: grid;
+		justify-content: stretch;
+		gap: 0.5ex;
+		grid-template-columns: 1fr auto;
+		align-items: center;
+		align-content: stretch;
+	}
+
+	.document-list-link {
+		grid-column: 1 / span 2;
+		grid-row: 1;
+	}
+
+	.document-list-actions {
+		grid-column: 2 / span 1;
+		grid-row: 1;
+		padding: 1ex;
+		user-select: none;
+	}
+
+	.action-delete {
+		background: transparent;
+		color: #900;
+	}
+	.action-delete:not(:disabled):hover {
+		background: #a55;
+		color: #fff;
+	}
+
+	.action-delete:not(:disabled):active {
+		background: #a22;
+		color: #fff;
+	}
+
+	.action-export {
+		background: transparent;
+		color: #009;
+	}
+	.action-export:not(:disabled):hover {
+		background: #55e;
+		color: #fff;
+	}
+
+	.action-export:not(:disabled):active {
+		background: #55a;
+		color: #fff;
+	}
+
+	.action-duplicate {
+		background: transparent;
+		color: #090;
+	}
+	.action-duplicate:not(:disabled):hover {
+		background: #5a5;
+		color: #fff;
+	}
+
+	.action-duplicate:not(:disabled):active {
+		background: #2a2;
+		color: #fff;
 	}
 </style>
