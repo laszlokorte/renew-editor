@@ -94,3 +94,36 @@ export function bindScroll(node, someAtom) {
 		node.removeEventListener("scroll", onScrollThrottled, { passive: true });
 	};
 }
+
+
+export function autofocusIf(node, {focus: yes, select: select = false}) {
+	if(yes) {
+		if(yes && document.activeElement !== node) {
+			node.focus({
+			  preventScroll: true
+			})
+			if(select) {
+				node.select();
+			}
+		} else if(!yes && document.activeElement === node) {
+			node.blur()
+		}
+	}
+
+
+	return {
+		update(yes) {
+			if(yes && document.activeElement !== node) {
+				node.focus({
+				  preventScroll: true
+				})
+			} else if(!yes && document.activeElement === node) {
+				node.blur()
+			}
+		},
+
+		destroy() {
+			// the node has been removed from the DOM
+		},
+	};
+}

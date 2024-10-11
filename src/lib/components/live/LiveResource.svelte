@@ -6,7 +6,7 @@
 	let liveState = makeLive(socket, resource);
 
 	function dispatch(action, payload) {
-		liveState.send(action, payload);
+		return liveState.send(action, payload);
 	}
 
 	onMount(() => {

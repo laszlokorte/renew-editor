@@ -178,7 +178,7 @@
 						center={atom(true)}
 						extraScrollPadding={atom(true)}
 						{scrollPosition}
-						contentSize={atom({ x: 0, y: 0 })}
+						contentSize={atom({ x: doc.viewbox.width, y: doc.viewbox.height })}
 						scrollWindowSize={atom({ x: 0, y: 0 })}
 					>
 						<SVGViewport {scrollPosition}>
@@ -312,7 +312,13 @@
 						{#snippet child_layers(parent, depth = 0)}
 							{#each doc.layers.items as el (el.id)}
 								{#if el.parent_id == parent}
-									<option value={el.id}>{Array(depth).fill('-').join('')}{el.id}</option>
+									<option value={el.id}
+										>{Array(depth).fill('-').join('')}
+										{el.text ? 'text' : ''}
+										{el.edge ? 'edge' : ''}
+										{el.box ? 'box' : ''}
+										({el.id})
+									</option>
 									{@render child_layers(el.id, depth + 1)}
 								{/if}
 							{/each}

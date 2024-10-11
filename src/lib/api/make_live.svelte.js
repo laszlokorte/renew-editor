@@ -28,7 +28,7 @@ export default function makeLive(socket, resource) {
 		},
 
 		send(action, payload) {
-			livestate.sendAction(action, payload)
+			return livestate.sendAction(action, payload)
 		},
 
 		unsubscribe() {

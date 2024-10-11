@@ -7,16 +7,49 @@ import LiveState from '$lib/api/livestate';
 
 export const ssr = false;
 
-function createDocumentAction(fetchFn) {
-	return function() {
-		return documentApi(fetchFn, authState.routes, authState.authHeader)
-			.createDocument()
+function createCommands(fetchFn) {
+	const api = documentApi(fetchFn, authState.routes, authState.authHeader)
+
+	return {
+		createDocument: (redirect = false) => {
+			return api.createDocument()
 			.then(r => {
-				r.json().then((d) => {
-					goto(`${base}/documents/${d.id}/editor`)
+				return r.json().then((d) => {
+					if(redirect) {
+						goto(`${base}/documents/${d.id}/editor`)
+					} else {
+						return d
+					}
 				})
 			})
+		},
+
+		downloadFile: (url, filename) => {
+			return api.loadUrl(url)
+			.then(r => {
+				return r.blob().then((d) => {
+					downloadFile(d, filename)
+				})
+			})
+		},
+
+		importDocuments: (files) => {
+			return api.importDocuments(files)
+		}
 	}
+}
+
+function downloadFile(blob, name = "file.pdf") {
+  const href = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), {
+    href,
+    style: "display:none",
+    download: name,
+  });
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(href);
+  a.remove();
 }
 
 export async function load({fetch}) {
@@ -29,7 +62,7 @@ export async function load({fetch}) {
 			contentType: "application/json",
 		}).then(r => r.json()).then(j => ({
 			documents: j,
-			createDocument: createDocumentAction(fetch),
+			commands: createCommands(fetch),
 		})).catch((e) => {
 			return error(503, {
 				message: 'Service Unavailable'

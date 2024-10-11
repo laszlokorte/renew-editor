@@ -240,7 +240,13 @@ export class LiveState {
   }
 
   sendAction(name, payload) {
-    this.channel.push(`lvs_evt:${name}`, payload);
+    return new Promise((resolve, reject) => {
+      this.channel.push(`lvs_evt:${name}`, payload).receive('ok', (payload) => {
+        resolve(payload)
+      }).receive('error', (payload) => {
+        reject(payload)
+      })
+    })
   }
 
   pushCustomEvent(event) { this.dispatchEvent(event); }

@@ -4,19 +4,28 @@
 	import AppBar from '../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
+	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
 
 	const { data } = $props();
 
-	const createDocument = $derived(data.createDocument);
+	const { createDocument, importDocuments, downloadFile } = $derived(data.commands);
 
 	let uploadFormVisible = $state(false);
 	let online = $state(true);
+	let renamingId = $state(null);
+	let renamingNewName = $state();
+	let renamingOrigName = $state();
+	let filesToUpload = $state();
 
 	/** @type {(evt: SubmitEvent) => void} */
 	function onNewDocument(evt) {
 		evt.preventDefault();
 
-		createDocument();
+		createDocument().then(({ id, content: { name } }) => {
+			renamingId = id;
+			renamingOrigName = name;
+			renamingNewName = name;
+		});
 	}
 
 	/** @type {(evt: SubmitEvent) => void} */
@@ -43,6 +52,10 @@
 	function onDrop(evt) {
 		evt.preventDefault();
 		dragging = false;
+
+		importDocuments(evt.dataTransfer.files).then(() => {
+			uploadFormVisible = false;
+		});
 	}
 
 	let draggingZone = $state(false);
@@ -59,6 +72,10 @@
 	function onDropZone(evt) {
 		evt.preventDefault();
 		draggingZone = false;
+
+		importDocuments(evt.dataTransfer.files).then(() => {
+			uploadFormVisible = false;
+		});
 	}
 </script>
 
@@ -84,12 +101,21 @@
 			ondrop={onDropZone}
 		>
 			Drop .rnw File Here
-			<input type="file" />
+			<input type="file" multiple />
 		</label>
 
 		<div class="labeled-ruler">or</div>
 
-		<form class="upload-form">
+		<form
+			class="upload-form"
+			onsubmit={(evt) => {
+				evt.preventDefault();
+
+				importDocuments(filesToUpload).then(() => {
+					uploadFormVisible = false;
+				});
+			}}
+		>
 			<div class="center">
 				<label for="upload_file">Select a file from your device:</label>
 			</div>
@@ -102,6 +128,8 @@
 					type="file"
 					name="upload_file"
 					required
+					bind:files={filesToUpload}
+					multiple
 				/> <button class="upload-button">Upload</button>
 			</div>
 		</form>
@@ -141,26 +169,94 @@
 				<ul>
 					{#each documents.items as d}
 						<li class="document-list-item">
-							<a
-								class="document-list-link"
-								href="{base}/documents/{d.id}/editor"
-								title="Document #{d.id}">{d.name}</a
-							>
-							<div class="document-list-actions">
-								<button class="action-export">Export</button>
-								<button
-									class="action-duplicate"
-									onclick={() => {
-										dispatch('duplicate_document', { id: d.id });
-									}}>Duplicate</button
+							{#if renamingId == d.id}
+								<form
+									style="display: contents;"
+									onsubmit={(evt) => {
+										evt.preventDefault();
+										dispatch('rename_document', { id: d.id, name: renamingNewName }).then(() => {
+											renamingId = null;
+											renamingNewName = null;
+										});
+									}}
 								>
-								<button
-									class="action-delete"
-									onclick={() => {
-										dispatch('delete_document', { id: d.id });
-									}}>Delete</button
+									<input
+										bind:value={renamingNewName}
+										use:autofocusIf={{ focus: true, select: true }}
+										class="document-list-input"
+										type="text"
+										onkeydown={(evt) => {
+											if (evt.key === 'Escape') {
+												renamingId = null;
+												renamingNewName = null;
+											}
+										}}
+										class:warn={renamingOrigName !== d.name}
+									/>
+									<div class="document-list-actions">
+										<button class="action-confirm" type="submit">Confirm</button>
+										<button
+											class="action-cancel"
+											onclick={() => {
+												renamingId = null;
+												renamingNewName = null;
+											}}>Cancel</button
+										>
+										<button
+											class="action-export"
+											onclick={() => {
+												downloadFile(d.links.export.href, d.name);
+											}}>Export</button
+										>
+										<button
+											class="action-duplicate"
+											onclick={() => {
+												dispatch('duplicate_document', { id: d.id });
+											}}>Duplicate</button
+										>
+										<button
+											class="action-delete"
+											onclick={() => {
+												dispatch('delete_document', { id: d.id });
+											}}>Delete</button
+										>
+									</div>
+								</form>
+							{:else}
+								<a
+									class="document-list-link"
+									href="{base}/documents/{d.id}/editor"
+									title="Document #{d.id}">{d.name}</a
 								>
-							</div>
+								<div class="document-list-actions">
+									<button
+										class="action-rename"
+										onclick={() => {
+											renamingNewName = d.name;
+											renamingOrigName = d.name;
+											renamingId = d.id;
+										}}>Rename</button
+									>
+									<button
+										class="action-export"
+										onclick={() => {
+											downloadFile(d.links.export.href, d.name);
+										}}>Export</button
+									>
+									<button
+										class="action-duplicate"
+										onclick={() => {
+											dispatch('duplicate_document', { id: d.id });
+										}}>Duplicate</button
+									>
+									<button
+										class="action-delete"
+										onclick={() => {
+											dispatch('delete_document', { id: d.id });
+										}}>Delete</button
+									>
+								</div>
+							{/if}
 						</li>
 					{/each}
 				</ul>
@@ -407,6 +503,17 @@
 		grid-row: 1;
 	}
 
+	.document-list-input {
+		grid-column: 1 / span 1;
+		grid-row: 1;
+		box-sizing: border-box;
+		width: 100%;
+		height: 100%;
+		padding: 1em 2em;
+		border: none;
+		font: inherit;
+	}
+
 	.document-list-actions {
 		grid-column: 2 / span 1;
 		grid-row: 1;
@@ -425,6 +532,44 @@
 
 	.action-delete:not(:disabled):active {
 		background: #a22;
+		color: #fff;
+	}
+
+	.action-cancel {
+		background: transparent;
+		color: #900;
+	}
+	.action-cancel:not(:disabled):hover {
+		background: #fdd;
+	}
+
+	.action-cancel:not(:disabled):active {
+		background: #faa;
+	}
+
+	.action-confirm {
+		background: transparent;
+		color: #090;
+	}
+	.action-confirm:not(:disabled):hover {
+		background: #dfd;
+	}
+
+	.action-confirm:not(:disabled):active {
+		background: #afa;
+	}
+
+	.action-rename {
+		background: transparent;
+		color: #333;
+	}
+	.action-export:not(:disabled):hover {
+		background: #333;
+		color: #fff;
+	}
+
+	.action-export:not(:disabled):active {
+		background: #333;
 		color: #fff;
 	}
 
@@ -454,5 +599,9 @@
 	.action-duplicate:not(:disabled):active {
 		background: #2a2;
 		color: #fff;
+	}
+
+	.warn {
+		outline: 3px solid orange;
 	}
 </style>
