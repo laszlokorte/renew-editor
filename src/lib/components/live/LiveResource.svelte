@@ -3,7 +3,7 @@
 	import makeLive from '$lib/api/make_live.svelte.js';
 	const { socket, resource, children } = $props();
 
-	let liveState = makeLive(socket, resource);
+	const liveState = makeLive(socket, resource);
 
 	function dispatch(action, payload) {
 		return liveState.send(action, payload);
@@ -16,4 +16,4 @@
 	});
 </script>
 
-{@render children(liveState.value, liveState.presence, dispatch)}
+{@render children(liveState.content, liveState.presence, dispatch)}

@@ -127,3 +127,45 @@ export function autofocusIf(node, {focus: yes, select: select = false}) {
 		},
 	};
 }
+
+
+export function bindBoundingBox(node, someAtom) {
+	let oldV
+	$effect.pre(() => {
+		tick().then(() => {
+			const bbox = node.getBBox();
+			if(bbox.width || bbox.height) {
+				oldV = {x:bbox.x, y:bbox.y, width: bbox.width, height: bbox.height}
+				someAtom.value = oldV
+			} else {
+				oldV = undefined
+				someAtom.value = undefined
+			}
+		})
+	})
+
+	const observer = new MutationObserver(function(mutations) {
+	  	const bbox = node.getBBox();
+		if(bbox.width || bbox.height) {
+			oldV = {x:Math.round(bbox.x), y:Math.round(bbox.y), width: Math.round(bbox.width), height: Math.round(bbox.height)}
+			someAtom.value = oldV
+		} else {
+			oldV = undefined
+			someAtom.value = undefined
+		}
+	});
+
+	observer.observe(node, {
+	  attributes: true 
+	});
+
+	return {
+		update(newAtom) {
+			someAtom = newAtom
+		},
+		destroy() {
+			observer.disconnect(node);
+			someAtom.value = undefined
+		}
+	}
+}

@@ -13,14 +13,12 @@ function createCommands(fetchFn) {
 	return {
 		createDocument: (redirect = false) => {
 			return api.createDocument()
-			.then(r => {
-				return r.json().then((d) => {
+			.then(d => {
 					if(redirect) {
 						goto(`${base}/documents/${d.id}/editor`)
 					} else {
 						return d
 					}
-				})
 			})
 		},
 

@@ -167,7 +167,7 @@
 		<LiveResource socket={data.live_socket} resource={data.documents}>
 			{#snippet children(documents, _presence, dispatch)}
 				<ul>
-					{#each documents.items as d}
+					{#each documents.value.items as d}
 						<li class="document-list-item">
 							{#if renamingId == d.id}
 								<form

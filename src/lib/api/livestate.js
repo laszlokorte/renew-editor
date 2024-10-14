@@ -209,7 +209,7 @@ export class LiveState {
       detail: {patch, version}
     }));
     if (this.versionMatches(version)) {
-      const newDocument = applyPatch(this.state, patch, true, true).newDocument
+      const newDocument = applyPatch(this.state, patch, false, false).newDocument
       this.state = newDocument;
       this.stateVersion = version;
       this.eventTarget.dispatchEvent(new CustomEvent('livestate-change', {
