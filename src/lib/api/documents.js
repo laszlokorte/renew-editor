@@ -1,25 +1,13 @@
+import {fetchJson} from './json'
+
 export default function(fetchFn, routes, token) {
 	return {
 		deleteDocument(id) {
-			return fetchFn(routes.document.href.replace(':id', id), {
-				headers: {
-					"Content-Type": "application/json",
-					"Authorization" : token,
-				},
-				contentType: "application/json",
-				method: "delete",
-			})
+			return fetchJson(fetchFn, routes.document.href.replace(':id', id), 'delete', {"Authorization" : token})
 		},
 
 		createDocument() {
-			return fetchFn(routes.documents.href, {
-				headers: {
-					"Content-Type": "application/json",
-					"Authorization" : token,
-				},
-				contentType: "application/json",
-				method: "post",
-			})
+			return fetchJson(fetchFn, routes.documents.href, 'post', {"Authorization" : token})
 		},
 
 		loadUrl(url) {
@@ -32,14 +20,16 @@ export default function(fetchFn, routes, token) {
 			})
 		},
 
+		loadJson(url) {
+			return fetchJson(fetchFn, url, 'get', {"Authorization" : token})
+		},
+
 		importDocuments(files) {
 			let formData = new FormData()
 
 			for(let f of files) {
   				formData.append('files[]', f)
 			}
-
-  			console.log(formData)
 
 			return fetchFn(routes.import_documents.href, {
 				headers: {

@@ -36,7 +36,7 @@
 		} else {
 			inProgress = true;
 
-			authenticate(formData.api_url, formData.email, formData.password)
+			authenticate(window.fetch, formData.api_url, formData.email, formData.password)
 				.then((token) => {
 					currentError = undefined;
 					auth.login(token);

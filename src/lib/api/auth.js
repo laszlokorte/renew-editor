@@ -1,8 +1,8 @@
 import { fetchJson } from './json'
 
-export const authenticate = (url, email, password) => {
-	return fetchJson(url, "GET").then((protocolJson)=> {
-		return fetchJson(protocolJson.routes.auth.href, protocolJson.routes.auth.method, {
+export const authenticate = (fetchFn, url, email, password) => {
+	return fetchJson(fetchFn, url, "GET").then((protocolJson)=> {
+		return fetchJson(fetchFn, protocolJson.routes.auth.href, protocolJson.routes.auth.method, {}, {
 			email,
 			password,
 		}).then((authJson)=> {

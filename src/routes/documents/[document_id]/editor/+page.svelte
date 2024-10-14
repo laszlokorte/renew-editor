@@ -6,6 +6,7 @@
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
 	import Scroller from '$lib/components/scroller/Scroller.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
+	import { buildPath } from './symbols';
 
 	const { data } = $props();
 
@@ -24,6 +25,22 @@
 
 	function causeError(e) {
 		errors.push('Some Error');
+	}
+
+	function edgeAngle(side, edge) {
+		if (side === 'source') {
+			const waypointX = edge.waypoints.length ? edge.waypoints[0].x : edge.target_x;
+			const waypointY = edge.waypoints.length ? edge.waypoints[0].y : edge.target_y;
+
+			return (Math.atan2(edge.source_y - waypointY, edge.source_x - waypointX) * 180) / Math.PI;
+		} else if (side === 'target') {
+			const waypointX = edge.waypoints.length ? edge.waypoints[0].x : edge.source_x;
+			const waypointY = edge.waypoints.length ? edge.waypoints[0].y : edge.source_y;
+
+			return (Math.atan2(edge.target_y - waypointY, edge.target_x - waypointX) * 180) / Math.PI;
+		} else {
+			return 0;
+		}
 	}
 </script>
 
@@ -181,51 +198,191 @@
 						contentSize={atom({ x: doc.viewbox.width, y: doc.viewbox.height })}
 						scrollWindowSize={atom({ x: 0, y: 0 })}
 					>
-						<SVGViewport {scrollPosition}>
+						<SVGViewport
+							{scrollPosition}
+							onclick={(evt) => {
+								selectedLayers = [];
+							}}
+							onkeydown={(evt) => {
+								if (evt.key == 'Escape') {
+									selectedLayers = [];
+								}
+							}}
+						>
 							{#snippet render_child_layers(parent, depth = 0)}
 								{#each doc.layers.items as el (el.id)}
 									{#if el.parent_id == parent}
 										{#if el.box && !el.hidden}
-											<rect
-												onclick={() => {
+											<g
+												role="button"
+												onclick={(evt) => {
+													evt.stopPropagation();
+													selectedLayers = [el.id];
+												}}
+												tabindex="-1"
+												onkeydown={() => {
 													selectedLayers = [el.id];
 												}}
 												fill={el?.style?.background_color ?? 'black'}
-												x={el.box.position_x}
-												y={el.box.position_y}
-												width={el.box.width}
-												height={el.box.height}
-											></rect>
+												stroke={el?.style?.border_color ?? 'black'}
+												stroke-dasharray={el?.style?.border_dash_array ?? ''}
+												stroke-width={el?.style?.border_width ?? '0'}
+												opacity={el?.style?.opacity ?? '1'}
+											>
+												{#await data.symbols}
+													<rect
+														x={el.box.position_x}
+														y={el.box.position_y}
+														width={el.box.width}
+														height={el.box.height}
+													></rect>
+												{:then symbols}
+													{@const symbol = symbols.get(el.box.shape)}
+													{#if symbol}
+														{#each symbol.paths as path}
+															<path
+																fill={path.fill_color ?? 'transparent'}
+																stroke={path.stroke_color ?? 'transparent'}
+																d={buildPath(
+																	{
+																		x: el.box.position_x,
+																		y: el.box.position_y,
+																		width: el.box.width,
+																		height: el.box.height
+																	},
+																	path
+																)}
+															/>
+														{/each}
+													{:else}
+														<rect
+															x={el.box.position_x}
+															y={el.box.position_y}
+															width={el.box.width}
+															height={el.box.height}
+														></rect>
+													{/if}
+												{/await}
+											</g>
 										{/if}
 										{#if el.text && !el.hidden}
-											<text
-												onclick={() => {
+											<g
+												role="button"
+												onclick={(evt) => {
+													evt.stopPropagation();
 													selectedLayers = [el.id];
 												}}
-												fill={el.text?.style?.text_color ?? 'black'}
-												x={el.text.position_x}
-												y={el.text.position_y}
-												font-size={el?.text?.style?.font_size || 12}
+												tabindex="-1"
+												onkeydown={() => {
+													selectedLayers = [el.id];
+												}}
 											>
-												{#each el.text.body.split('\n') as line, li (li)}
-													<tspan x={el.text.position_x} dy={el?.text?.style?.font_size || 12}
-														>{line}</tspan
-													>
-												{/each}
-											</text>
+												<text
+													fill={el.text?.style?.text_color ?? 'black'}
+													x={el.text.position_x}
+													y={el.text.position_y}
+													font-size={el?.text?.style?.font_size ?? 12}
+													font-family={el?.text?.style?.font_family ?? 'sans-serif'}
+													font-weight={el?.text?.style?.bold ? 'bold' : 'normal'}
+													font-style={el?.text?.style?.italic ? 'italic' : 'normal'}
+												>
+													{#each el.text.body.split('\n') as line, li (li)}
+														<tspan
+															x={el.text.position_x}
+															dy={(li == 0 ? 1 : 1.2) * (el?.text?.style?.font_size ?? 12)}
+															>{line}</tspan
+														>
+													{/each}
+												</text>
+											</g>
 										{/if}
 										{#if el.edge && !el.hidden}
-											<polyline
-												onclick={() => {
+											<g
+												role="button"
+												onclick={(evt) => {
+													evt.stopPropagation();
 													selectedLayers = [el.id];
 												}}
-												points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
-													.map((w) => `${w.x} ${w.y}`)
-													.join(' ')} {el.edge.target_x} {el.edge.target_y}"
-												stroke="black"
-												fill="none"
-												stroke-width="2"
-											/>
+												tabindex="-1"
+												onkeydown={() => {
+													selectedLayers = [el.id];
+												}}
+												opacity={el?.style?.opacity ?? '1'}
+												stroke={el?.edge?.style?.stroke_color ?? 'black'}
+												stroke-width={el?.edge?.style?.stroke_width ?? '1'}
+												stroke-linejoin={el?.edge?.style?.stroke_join ?? 'rect'}
+												stroke-linecap={el?.edge?.style?.stroke_cap ?? 'butt'}
+											>
+												<polyline
+													points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
+														.map((w) => `${w.x} ${w.y}`)
+														.join(' ')} {el.edge.target_x} {el.edge.target_y}"
+													stroke-dasharray={el?.edge?.style?.stroke_dash_array ?? ''}
+													fill="none"
+												/>
+
+												{#if el.edge.style.source_tip}
+													{@const source_angle = edgeAngle('source', el.edge)}
+													<g
+														fill={el?.style?.background_color ?? 'black'}
+														transform="rotate({source_angle} {el.edge.source_x} {el.edge.source_y})"
+													>
+														{#await data.symbols then symbols}
+															{@const symbol = symbols.get(el.edge.style.source_tip)}
+															{@const size = el?.edge?.style?.stroke_width ?? 1}
+
+															{#if symbol}
+																{#each symbol.paths as path}
+																	<path
+																		fill={path.fill_color ?? 'transparent'}
+																		stroke={path.stroke_color ?? 'transparent'}
+																		d={buildPath(
+																			{
+																				x: el.edge.source_x - size,
+																				y: el.edge.source_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			},
+																			path
+																		)}
+																	/>
+																{/each}
+															{/if}
+														{/await}
+													</g>
+												{/if}
+
+												{#if el.edge.style.target_tip}
+													{@const target_angle = edgeAngle('target', el.edge)}
+													<g
+														fill={el?.style?.background_color ?? 'black'}
+														transform="rotate({target_angle} {el.edge.target_x} {el.edge.target_y})"
+													>
+														{#await data.symbols then symbols}
+															{@const symbol = symbols.get(el.edge.style.target_tip)}
+															{@const size = el?.edge?.style?.stroke_width ?? 1}
+
+															{#if symbol}
+																{#each symbol.paths as path}
+																	<path
+																		fill={path.fill_color ?? 'transparent'}
+																		stroke={path.stroke_color ?? 'transparent'}
+																		d={buildPath(
+																			{
+																				x: el.edge.target_x - size,
+																				y: el.edge.target_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			},
+																			path
+																		)}
+																	/>
+																{/each}
+															{/if}
+														{/await}
+													</g>
+												{/if}
+											</g>
 										{/if}
 										{@render render_child_layers(el.id, depth + 1)}
 									{/if}
@@ -240,7 +397,6 @@
 											{#if el.box && !el.hidden}
 												<rect
 													class="selected"
-													fill={el?.style?.background_color ?? 'black'}
 													x={el.box.position_x}
 													y={el.box.position_y}
 													width={el.box.width}
@@ -250,13 +406,17 @@
 											{#if el.text && !el.hidden}
 												<text
 													class="selected"
-													fill={el.text?.style?.text_color ?? 'black'}
 													x={el.text.position_x}
 													y={el.text.position_y}
-													font-size={el?.text?.style?.font_size || 12}
+													font-size={el?.text?.style?.font_size ?? 12}
+													font-family={el?.text?.style?.font_family ?? 'sans-serif'}
+													font-weight={el?.text?.style?.bold ? 'bold' : 'normal'}
+													font-style={el?.text?.style?.italic ? 'italic' : 'normal'}
 												>
 													{#each el.text.body.split('\n') as line, li (li)}
-														<tspan x={el.text.position_x} dy={el?.text?.style?.font_size || 12}
+														<tspan
+															x={el.text.position_x}
+															dy={(li == 0 ? 1 : 1.2) * (el?.text?.style?.font_size ?? 12)}
 															>{line}</tspan
 														>
 													{/each}
@@ -272,6 +432,68 @@
 													fill="none"
 													stroke-width="2"
 												/>
+
+												{#if el.edge.style.source_tip}
+													{@const source_angle = edgeAngle('source', el.edge)}
+													<g
+														class="selected"
+														transform="rotate({source_angle} {el.edge.source_x} {el.edge.source_y})"
+													>
+														{#await data.symbols then symbols}
+															{@const symbol = symbols.get(el.edge.style.source_tip)}
+															{@const size = el?.edge?.style?.stroke_width ?? 1}
+
+															{#if symbol}
+																{#each symbol.paths as path}
+																	<path
+																		fill={path.fill_color ?? 'transparent'}
+																		stroke={path.stroke_color ?? 'transparent'}
+																		d={buildPath(
+																			{
+																				x: el.edge.source_x - size,
+																				y: el.edge.source_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			},
+																			path
+																		)}
+																	/>
+																{/each}
+															{/if}
+														{/await}
+													</g>
+												{/if}
+
+												{#if el.edge.style.target_tip}
+													{@const target_angle = edgeAngle('target', el.edge)}
+													<g
+														class="selected"
+														transform="rotate({target_angle} {el.edge.target_x} {el.edge.target_y})"
+													>
+														{#await data.symbols then symbols}
+															{@const symbol = symbols.get(el.edge.style.target_tip)}
+															{@const size = el?.edge?.style?.stroke_width ?? 1}
+
+															{#if symbol}
+																{#each symbol.paths as path}
+																	<path
+																		fill={path.fill_color ?? 'transparent'}
+																		stroke={path.stroke_color ?? 'transparent'}
+																		d={buildPath(
+																			{
+																				x: el.edge.target_x - size,
+																				y: el.edge.target_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			},
+																			path
+																		)}
+																	/>
+																{/each}
+															{/if}
+														{/await}
+													</g>
+												{/if}
 											{/if}
 										{/if}
 										{@render render_child_layers_selection(el.id, depth + 1)}
@@ -707,16 +929,30 @@
 		fill: #7af3;
 		stroke-width: 5;
 		pointer-events: none;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	text.selected {
 		stroke: #7af;
 		fill: #7af;
 		stroke-width: 5;
 		pointer-events: none;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	polyline.selected {
 		stroke: #7af;
 		stroke-width: 5;
 		pointer-events: none;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	g.selected {
+		stroke: #7af;
+		fill: #7af3;
+		stroke-width: 5;
+		pointer-events: none;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 </style>

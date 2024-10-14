@@ -19,6 +19,9 @@ function deleteAction(fetchFn, id) {
 }
 
 export async function load({params, fetch}) {
+	const api = documentApi(fetch, authState.routes, authState.authHeader)
+
+
 	if(authState.isAuthenticated) {
 		return fetch(authState.value.routes.document.href.replace(':id', params.document_id), {
 			headers: {
@@ -36,6 +39,9 @@ export async function load({params, fetch}) {
 					return {
 						document: j,
 						deleteAction: deleteAction(fetch, j.id),
+						symbols: api.loadJson(j.links.symbols.href).then(symbols => {
+							return new Map(symbols.shapes.map(s => [s.name, {paths: s.paths}]))
+						}),
 					}
 				})
 			} else {

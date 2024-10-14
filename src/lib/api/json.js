@@ -1,8 +1,9 @@
-export function fetchJson(url, method = "GET", body = undefined) {
-	return fetch(url, {
+export function fetchJson(fetchFn, url, method = "GET", headers = {}, body = undefined) {
+	return fetchFn(url, {
 		method: method,
 		mode: "cors",
 		headers: {
+			...headers,
 			"Content-Type": "application/json",
 		},
 		body: body ? JSON.stringify(body) : undefined,
