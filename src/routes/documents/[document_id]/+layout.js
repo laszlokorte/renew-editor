@@ -40,7 +40,7 @@ export async function load({params, fetch}) {
 						document: j,
 						deleteAction: deleteAction(fetch, j.id),
 						symbols: api.loadJson(j.links.symbols.href).then(symbols => {
-							return new Map(symbols.shapes.map(s => [s.name, {paths: s.paths}]))
+							return new Map(symbols.shapes.map(s => [s.id, {paths: s.paths}]))
 						}),
 					}
 				})

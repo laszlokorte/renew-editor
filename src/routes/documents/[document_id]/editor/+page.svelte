@@ -27,21 +27,77 @@
 		errors.push('Some Error');
 	}
 
-	function edgeAngle(side, edge) {
-		if (side === 'source') {
+	const edgeAngle = {
+		source: function (edge) {
 			const waypointX = edge.waypoints.length ? edge.waypoints[0].x : edge.target_x;
 			const waypointY = edge.waypoints.length ? edge.waypoints[0].y : edge.target_y;
 
 			return (Math.atan2(edge.source_y - waypointY, edge.source_x - waypointX) * 180) / Math.PI;
-		} else if (side === 'target') {
-			const waypointX = edge.waypoints.length ? edge.waypoints[0].x : edge.source_x;
-			const waypointY = edge.waypoints.length ? edge.waypoints[0].y : edge.source_y;
+		},
+		target: function (edge) {
+			const waypointX = edge.waypoints.length
+				? edge.waypoints[edge.waypoints.length - 1].x
+				: edge.source_x;
+			const waypointY = edge.waypoints.length
+				? edge.waypoints[edge.waypoints.length - 1].y
+				: edge.source_y;
 
 			return (Math.atan2(edge.target_y - waypointY, edge.target_x - waypointX) * 180) / Math.PI;
-		} else {
-			return 0;
 		}
-	}
+	};
+
+	const edgePath = {
+		linear: function (edge) {
+			const waypoints = edge.waypoints.map(({ x, y }) => `L ${x} ${y}`).join(' ');
+
+			return `M ${edge.source_x} ${edge.source_y} ${waypoints} L ${edge.target_x} ${edge.target_y}`;
+		},
+		autobezier: function (edge) {
+			switch (edge.waypoints.length) {
+				case 0:
+					return `M ${edge.source_x} ${edge.source_y} L ${edge.target_x} ${edge.target_y}`;
+				case 1:
+					return `M ${edge.source_x} ${edge.source_y}  Q ${edge.waypoints[0].x} ${edge.waypoints[0].y} ${edge.target_x} ${edge.target_y}`;
+				default:
+					const points = [{ x: edge.source_x, y: edge.source_y }, ...edge.waypoints];
+					let path = '';
+					for (let i = 0; i < edge.waypoints.length; i++) {
+						const x1 = points[i].x;
+						const y1 = points[i].y;
+						const x2 = points[i + 1].x;
+						const y2 = points[i + 1].y;
+						path += `Q ${x1} ${y1} ${(x2 + x1) / 2} ${(y2 + y1) / 2}`;
+					}
+					const waypoints = [{ x: edge.source_x, y: edge.source_y }, ...edge.waypoints];
+
+					return `M ${edge.source_x} ${edge.source_y} ${path} T ${edge.target_x} ${edge.target_y}`;
+			}
+		}
+	};
+
+	// defp edge_path(edge, :autobezier) do
+	//   case edge.waypoints do
+	//     [] ->
+	//       "M #{edge.source_x} #{edge.source_y} L #{edge.target_x} #{edge.target_y}"
+
+	//     [w] ->
+	//       "M #{edge.source_x} #{edge.source_y}  Q #{w.position_x} #{w.position_y} #{edge.target_x} #{edge.target_y}"
+
+	//     more ->
+	//       waypoints =
+	//         more
+	//         |> Enum.map(fn %{position_x: x, position_y: y} -> {x, y} end)
+	//         |> then(&Enum.concat([{edge.source_x, edge.source_y}], &1))
+	//         |> Enum.chunk_every(2, 1, :discard)
+	//         |> Enum.drop(1)
+	//         |> Enum.map(fn [{x1, y1}, {x2, y2}] ->
+	//           "Q #{x1} #{y1} #{(x2 + x1) / 2} #{(y2 + y1) / 2}"
+	//         end)
+	//         |> Enum.join(" ")
+
+	//       "M #{edge.source_x} #{edge.source_y} #{waypoints} T #{edge.target_x} #{edge.target_y}"
+	//   end
+	// end
 </script>
 
 <div class="full-page">
@@ -313,22 +369,29 @@
 												stroke-linejoin={el?.edge?.style?.stroke_join ?? 'rect'}
 												stroke-linecap={el?.edge?.style?.stroke_cap ?? 'butt'}
 											>
-												<polyline
-													points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
-														.map((w) => `${w.x} ${w.y}`)
-														.join(' ')} {el.edge.target_x} {el.edge.target_y}"
+												<path
+													d={edgePath[el?.edge?.style?.smoothness ?? 'linear'](el?.edge)}
+													pointer-events="stroke"
+													fill="none"
+													stroke="none"
+													stroke-width={(el?.edge?.style?.stroke_width ?? 1) * 1 + 10}
+												/>
+												<path
+													d={edgePath[el?.edge?.style?.smoothness ?? 'linear'](el?.edge)}
 													stroke-dasharray={el?.edge?.style?.stroke_dash_array ?? ''}
 													fill="none"
 												/>
 
-												{#if el.edge.style.source_tip}
-													{@const source_angle = edgeAngle('source', el.edge)}
+												{#if el?.edge?.style?.source_tip_symbol_shape_id}
+													{@const source_angle = edgeAngle['source'](el.edge)}
 													<g
 														fill={el?.style?.background_color ?? 'black'}
 														transform="rotate({source_angle} {el.edge.source_x} {el.edge.source_y})"
 													>
 														{#await data.symbols then symbols}
-															{@const symbol = symbols.get(el.edge.style.source_tip)}
+															{@const symbol = symbols.get(
+																el?.edge?.style?.source_tip_symbol_shape_id
+															)}
 															{@const size = el?.edge?.style?.stroke_width ?? 1}
 
 															{#if symbol}
@@ -352,14 +415,16 @@
 													</g>
 												{/if}
 
-												{#if el.edge.style.target_tip}
-													{@const target_angle = edgeAngle('target', el.edge)}
+												{#if el?.edge?.style?.target_tip_symbol_shape_id}
+													{@const target_angle = edgeAngle['target'](el.edge)}
 													<g
 														fill={el?.style?.background_color ?? 'black'}
 														transform="rotate({target_angle} {el.edge.target_x} {el.edge.target_y})"
 													>
 														{#await data.symbols then symbols}
-															{@const symbol = symbols.get(el.edge.style.target_tip)}
+															{@const symbol = symbols.get(
+																el?.edge?.style?.target_tip_symbol_shape_id
+															)}
 															{@const size = el?.edge?.style?.stroke_width ?? 1}
 
 															{#if symbol}
@@ -423,24 +488,24 @@
 												</text>
 											{/if}
 											{#if el.edge && !el.hidden}
-												<polyline
+												<path
 													class="selected"
-													points="{el.edge.source_x} {el.edge.source_y} {el.edge.waypoints
-														.map((w) => `${w.x} ${w.y}`)
-														.join(' ')} {el.edge.target_x} {el.edge.target_y}"
+													d={edgePath[el?.edge?.style?.smoothness ?? 'linear'](el?.edge)}
 													stroke="black"
 													fill="none"
-													stroke-width="2"
+													stroke-width={(el?.edge?.style?.stroke_width ?? 1) * 1 + 4}
 												/>
 
-												{#if el.edge.style.source_tip}
-													{@const source_angle = edgeAngle('source', el.edge)}
+												{#if el?.edge?.style?.source_tip_symbol_shape_id}
+													{@const source_angle = edgeAngle['source'](el.edge)}
 													<g
 														class="selected"
 														transform="rotate({source_angle} {el.edge.source_x} {el.edge.source_y})"
 													>
 														{#await data.symbols then symbols}
-															{@const symbol = symbols.get(el.edge.style.source_tip)}
+															{@const symbol = symbols.get(
+																el?.edge?.style?.source_tip_symbol_shape_id
+															)}
 															{@const size = el?.edge?.style?.stroke_width ?? 1}
 
 															{#if symbol}
@@ -464,14 +529,16 @@
 													</g>
 												{/if}
 
-												{#if el.edge.style.target_tip}
-													{@const target_angle = edgeAngle('target', el.edge)}
+												{#if el?.edge?.style?.target_tip_symbol_shape_id}
+													{@const target_angle = edgeAngle['target'](el.edge)}
 													<g
 														class="selected"
 														transform="rotate({target_angle} {el.edge.target_x} {el.edge.target_y})"
 													>
 														{#await data.symbols then symbols}
-															{@const symbol = symbols.get(el.edge.style.target_tip)}
+															{@const symbol = symbols.get(
+																el?.edge?.style?.target_tip_symbol_shape_id
+															)}
 															{@const size = el?.edge?.style?.stroke_width ?? 1}
 
 															{#if symbol}
@@ -940,19 +1007,18 @@
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
-	polyline.selected {
+	path.selected {
 		stroke: #7af;
-		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
 	g.selected {
 		stroke: #7af;
-		fill: #7af3;
+		fill: #7af;
 		stroke-width: 5;
 		pointer-events: none;
-		stroke-linecap: round;
-		stroke-linejoin: round;
+		stroke-linecap: butt;
+		stroke-linejoin: butt;
 	}
 </style>
