@@ -16,6 +16,7 @@
 	const { data } = $props();
 
 	const textBounds = atom({});
+	const scrollWindowSize = atom({ x: 0, y: 0 });
 
 	const scrollPosition = atom({
 		x: data.document.content.viewbox.x + data.document.content.viewbox.width / 2,
@@ -258,7 +259,7 @@
 						extraScrollPadding={atom(true)}
 						{scrollPosition}
 						contentSize={view(L.pick({ x: ['viewbox', 'width'], y: ['viewbox', 'height'] }), doc)}
-						scrollWindowSize={atom({ x: 0, y: 0 })}
+						{scrollWindowSize}
 					>
 						<SVGViewport
 							{scrollPosition}
@@ -272,127 +273,129 @@
 							}}
 						>
 							<rect fill="#fff" stroke="#eee" stroke-width="5" {...doc.value.viewbox} />
-							{#each layersInOrder.value as { index, id, depth } (id)}
-								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-								{#if el.value?.box && !el.value?.hidden}
-									<g
-										role="button"
-										onclick={(evt) => {
-											evt.stopPropagation();
-											selectedLayers = [el.value?.id];
-										}}
-										tabindex="-1"
-										onkeydown={() => {
-											selectedLayers = [el.value?.id];
-										}}
-										fill={el.value?.style?.background_color ?? '#70DB93'}
-										stroke={el.value?.style?.border_color ?? 'black'}
-										stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
-										stroke-width={el.value?.style?.border_width ?? '1'}
-										opacity={el.value?.style?.opacity ?? '1'}
-									>
-										<Symbol
-											symbols={data.symbols}
-											symbolId={el.value?.box.shape}
-											box={{
-												x: el.value?.box.position_x,
-												y: el.value?.box.position_y,
-												width: el.value?.box.width,
-												height: el.value?.box.height
+							<g id="full-document-{data.document.id}">
+								{#each layersInOrder.value as { index, id, depth } (id)}
+									{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+									{#if el.value?.box && !el.value?.hidden}
+										<g
+											role="button"
+											onclick={(evt) => {
+												evt.stopPropagation();
+												selectedLayers = [el.value?.id];
 											}}
-										/>
-									</g>
-								{/if}
-								{#if el.value?.text && !el.value?.hidden}
-									<g
-										role="button"
-										onclick={(evt) => {
-											evt.stopPropagation();
-											selectedLayers = [el.value?.id];
-										}}
-										tabindex="-1"
-										onkeydown={() => {
-											selectedLayers = [el.value?.id];
-										}}
-									>
-										<TextElement bbox={view(L.prop(el.value?.id), textBounds)} el={el.value} />
-									</g>
-								{/if}
-								{#if el.value?.edge && !el.value?.hidden}
-									<g
-										role="button"
-										onclick={(evt) => {
-											evt.stopPropagation();
-											selectedLayers = [el.value?.id];
-										}}
-										tabindex="-1"
-										onkeydown={() => {
-											selectedLayers = [el.value?.id];
-										}}
-										opacity={el.value?.style?.opacity ?? '1'}
-										stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
-										stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
-										stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
-										stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
-									>
-										<path
-											d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](el.value?.edge)}
-											pointer-events="stroke"
-											fill="none"
-											stroke="none"
-											stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 10}
-										/>
-										<path
-											d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](el.value?.edge)}
-											stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
-											fill="none"
-										/>
+											tabindex="-1"
+											onkeydown={() => {
+												selectedLayers = [el.value?.id];
+											}}
+											fill={el.value?.style?.background_color ?? '#70DB93'}
+											stroke={el.value?.style?.border_color ?? 'black'}
+											stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
+											stroke-width={el.value?.style?.border_width ?? '1'}
+											opacity={el.value?.style?.opacity ?? '1'}
+										>
+											<Symbol
+												symbols={data.symbols}
+												symbolId={el.value?.box.shape}
+												box={{
+													x: el.value?.box.position_x,
+													y: el.value?.box.position_y,
+													width: el.value?.box.width,
+													height: el.value?.box.height
+												}}
+											/>
+										</g>
+									{/if}
+									{#if el.value?.text && !el.value?.hidden}
+										<g
+											role="button"
+											onclick={(evt) => {
+												evt.stopPropagation();
+												selectedLayers = [el.value?.id];
+											}}
+											tabindex="-1"
+											onkeydown={() => {
+												selectedLayers = [el.value?.id];
+											}}
+										>
+											<TextElement bbox={view(L.prop(el.value?.id), textBounds)} el={el.value} />
+										</g>
+									{/if}
+									{#if el.value?.edge && !el.value?.hidden}
+										<g
+											role="button"
+											onclick={(evt) => {
+												evt.stopPropagation();
+												selectedLayers = [el.value?.id];
+											}}
+											tabindex="-1"
+											onkeydown={() => {
+												selectedLayers = [el.value?.id];
+											}}
+											opacity={el.value?.style?.opacity ?? '1'}
+											stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
+											stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
+											stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+											stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
+										>
+											<path
+												d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](el.value?.edge)}
+												pointer-events="stroke"
+												fill="none"
+												stroke="none"
+												stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 10}
+											/>
+											<path
+												d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](el.value?.edge)}
+												stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
+												fill="none"
+											/>
 
-										{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-											{@const source_angle = edgeAngle['source'](el.value?.edge)}
-											{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+											{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+												{@const source_angle = edgeAngle['source'](el.value?.edge)}
+												{@const size = el.value?.edge?.style?.stroke_width ?? 1}
 
-											<g
-												fill={el.value?.style?.background_color ?? 'black'}
-												transform="rotate({source_angle} {el.value?.edge.source_x} {el.value?.edge
-													.source_y})"
-											>
-												<Symbol
-													symbols={data.symbols}
-													symbolId={el.value?.edge?.style?.source_tip_symbol_shape_id}
-													box={{
-														x: el.value?.edge.source_x - size,
-														y: el.value?.edge.source_y - size,
-														width: 2 * size,
-														height: 2 * size
-													}}
-												/>
-											</g>
-										{/if}
+												<g
+													fill={el.value?.style?.background_color ?? 'black'}
+													transform="rotate({source_angle} {el.value?.edge.source_x} {el.value?.edge
+														.source_y})"
+												>
+													<Symbol
+														symbols={data.symbols}
+														symbolId={el.value?.edge?.style?.source_tip_symbol_shape_id}
+														box={{
+															x: el.value?.edge.source_x - size,
+															y: el.value?.edge.source_y - size,
+															width: 2 * size,
+															height: 2 * size
+														}}
+													/>
+												</g>
+											{/if}
 
-										{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-											{@const target_angle = edgeAngle['target'](el.value?.edge)}
-											{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-											<g
-												fill={el.value?.style?.background_color ?? 'black'}
-												transform="rotate({target_angle} {el.value?.edge.target_x} {el.value?.edge
-													.target_y})"
-											>
-												<Symbol
-													symbols={data.symbols}
-													symbolId={el.value?.edge?.style?.target_tip_symbol_shape_id}
-													box={{
-														x: el.value?.edge.target_x - size,
-														y: el.value?.edge.target_y - size,
-														width: 2 * size,
-														height: 2 * size
-													}}
-												/>
-											</g>
-										{/if}
-									</g>
-								{/if}
-							{/each}
+											{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+												{@const target_angle = edgeAngle['target'](el.value?.edge)}
+												{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+												<g
+													fill={el.value?.style?.background_color ?? 'black'}
+													transform="rotate({target_angle} {el.value?.edge.target_x} {el.value?.edge
+														.target_y})"
+												>
+													<Symbol
+														symbols={data.symbols}
+														symbolId={el.value?.edge?.style?.target_tip_symbol_shape_id}
+														box={{
+															x: el.value?.edge.target_x - size,
+															y: el.value?.edge.target_y - size,
+															width: 2 * size,
+															height: 2 * size
+														}}
+													/>
+												</g>
+											{/if}
+										</g>
+									{/if}
+								{/each}
+							</g>
 
 							{#each layersInOrder.value as { index, id, depth } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
@@ -519,8 +522,35 @@
 				</div>
 
 				<div class="sidebar right">
-					<svg class="minimap" width="100" height="70" viewBox="-50 -50 100 100">
-						<text fill="currentColor" dominant-baseline="middle" text-anchor="middle">Minimap</text>
+					<svg
+						class="minimap"
+						width={scrollWindowSize.value.x}
+						height={scrollWindowSize.value.y}
+						preserveAspectRatio="xMidYMid meet"
+						viewBox="{doc.value.viewbox.x} {doc.value.viewbox.y} {doc.value.viewbox.width} {doc
+							.value.viewbox.height}"
+					>
+						<rect
+							x={doc.value.viewbox.x}
+							y={doc.value.viewbox.y}
+							width={doc.value.viewbox.width}
+							height={doc.value.viewbox.height}
+							fill="white"
+							opacity="0.8"
+						/>
+
+						<use href="#full-document-{data.document.id}" opacity="0.8" />
+
+						<rect
+							x={scrollPosition.value.x - 500}
+							y={scrollPosition.value.y - 500}
+							width={1000 * Math.max(scrollWindowSize.value.y / scrollWindowSize.value.x, 1)}
+							height={1000 * Math.min(1, scrollWindowSize.value.y / scrollWindowSize.value.x)}
+							stroke="#0af"
+							stroke-width="5"
+							fill="#0af"
+							fill-opacity="0.1"
+						/>
 					</svg>
 					<div class="toolbar vertical">
 						Hierarchy
@@ -781,6 +811,8 @@
 		background: #ffffff66;
 		flex-grow: 1;
 		width: 100%;
+		height: auto;
+		max-width: 30em;
 		height: auto;
 		display: block;
 		box-sizing: border-box;

@@ -6,6 +6,7 @@
 	class="canvas"
 	role="button"
 	tabindex="-1"
+	preserveAspectRatio="xMidYMin slice"
 	{onclick}
 	{onkeydown}
 	viewBox="{-500 + scrollPosition.value.x} {-500 + scrollPosition.value.y} 1000 1000"
