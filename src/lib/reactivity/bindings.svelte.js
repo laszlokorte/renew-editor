@@ -169,3 +169,208 @@ export function bindBoundingBox(node, someAtom) {
 		}
 	}
 }
+
+
+export function bindValue(node, someAtom) {
+	let c0 = null;
+	let c1 = null;
+	function oninput(e) {
+		const before = someAtom.value;
+		someAtom.value = node.value;
+		node.value = someAtom.value;
+		const newVal = someAtom.value;
+		if(node.value != newVal) {	
+			node.value = newVal;
+		}
+		if(c0 !== null && someAtom.value == before) {
+			node.selectionStart = c0
+			node.selectionEnd = c1
+		}
+	}
+
+	function onbeforeinput(e) {
+		c0 = node.selectionStart
+		c1 = node.selectionEnd
+	}
+
+	node.value = someAtom.value;
+
+	$effect.pre(() => {
+		const newVal = someAtom.value;
+		if(node.value != newVal) {	
+			node.value = newVal;
+		}
+	});
+
+	// $effect(() => {
+	// 	node.value = someAtom.value;
+	// });
+
+	node.addEventListener("input", oninput);
+	node.addEventListener("change", oninput);
+	try {
+		let x = node.selectionStart;
+		node.addEventListener("beforeinput", onbeforeinput);
+	} catch(e) {
+
+	}
+
+	return () => {
+		node.removeEventListener("beforeinput", onbeforeinput);
+		node.removeEventListener("input", oninput);
+		node.removeEventListener("change", oninput);
+	};
+}
+
+export function readScroll(node, someAtom) {
+	 const onScrollThrottled = throttled(function onscroll(e) {
+	 	const newValue = someAtom.value
+		const nodeScrollLeft = node.scrollLeft
+		const nodeScrollTop = node.scrollTop
+	 	if(newValue.x != nodeScrollLeft || newValue.y != nodeScrollTop) {
+			someAtom.value = {
+				x: nodeScrollLeft,
+				y: nodeScrollTop,
+			}
+	 	}
+	})
+
+	node.addEventListener("scroll", onScrollThrottled, { passive: true });
+
+	return () => {
+		node.removeEventListener("scroll", onScrollThrottled, { passive: true });
+	};
+}
+
+export function bindScrollMax(node, someAtom) {
+	// TODO specialize code for different kind of elements
+	const resizeObserver = new ResizeObserver(() => {
+		someAtom.value = {
+			x: node.scrollWidth - node.clientWidth,
+			y: node.scrollHeight - node.clientHeight,
+		}
+	});
+
+	const mutObserver = new MutationObserver(() => {
+		someAtom.value = {
+			x: node.scrollWidth - node.clientWidth,
+			y: node.scrollHeight - node.clientHeight,
+		}
+	});
+
+	const onInput = (evt) => {
+		if(evt.currentTarget !== node) {
+			return
+		}
+		someAtom.value = {
+			x: node.scrollWidth - node.clientWidth,
+			y: node.scrollHeight - node.clientHeight,
+		}
+	}
+
+	resizeObserver.observe(node)
+	mutObserver.observe(node, { attributes: true, childList: false, subtree: true, characterData: true, })
+	node.addEventListener('input', onInput)
+
+	return () => {
+		node.removeEventListener('input', onInput)
+		mutObserver.unobserve(node)
+		resizeObserver.unobserve(node)
+	};
+}
+
+
+export function readTextreaScrollSize(node, someAtom) {
+	function oninput(e) {
+		someAtom.value = {
+			x: node.scrollWidth,
+			y: node.scrollHeight,
+		}
+	}
+
+	node.addEventListener("input", oninput);
+
+	return () => {
+		node.removeEventListener("input", oninput);
+	};
+}
+
+export function activeEvent(node, {eventType, fn}) {
+    node.addEventListener(eventType, fn, { passive: false });
+
+    return {
+        destroy() {
+            node.removeEventListener(eventType, fn, { passive: false });
+        },
+    };
+};
+
+
+export function activeTouchMove(node, fn) {
+    return activeEvent(node, {eventType: 'touchmove', fn})
+};
+
+export function disableTouchEventsIf(node, atom) {
+	return activeTouchMove(node, (evt) => {
+		if (atom.value) {
+			evt.preventDefault();
+		}
+	})
+}
+
+export function disableEventIf(node, {eventType, cond}) {
+	return activeEvent(node, {eventType, fn: (evt) => {
+		if (cond === true || (cond !== false && cond.value)) {
+			evt.preventDefault();
+		}
+	}})
+}
+
+export function onPointerClick(node, fn) {
+	let wasDown = false
+	const onDown = (evt) => {
+		evt.stopPropagation()
+		evt.stopImmediatePropagation()
+		wasDown = true
+	}
+	const onEnd = (evt) => {
+		wasDown = false
+	}
+	const onClick = (evt) => {
+		if(wasDown) {
+			fn(evt)
+			wasDown = false
+		}
+	}
+
+	node.addEventListener('pointerdown', onDown)
+	node.addEventListener('click', onClick)
+	node.addEventListener('onpointercancel', onEnd)
+
+	return () => {
+		node.removeEventListener('onpointercancel', onEnd)
+		node.removeEventListener('click', onClick)
+		node.removeEventListener('pointerdown', onDown)
+	}
+}
+
+export function isFullscreen() {
+	let isFull = $state(document.fullscreenElement !== null)
+
+	function updateFullScreenState() {
+		isFull = document.fullscreenElement !== null
+	}
+
+	$effect(() => {
+		document.addEventListener("fullscreenchange", updateFullScreenState, false);  
+		return () => {
+			document.removeEventListener("fullscreenchange", updateFullScreenState, false); 
+		}
+	})
+
+	return {
+		get value() {
+			return isFull
+		}
+	}
+}
