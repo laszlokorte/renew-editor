@@ -114,9 +114,3 @@ function panWithPivotZeroDelta(cam) {
 		dy: 0,
 	}
 }
-
-export const pivotZoomLens = L.lens(zoomWithPivotZeroDelta, zoomWithPivot)
-export const pivotRotationLens =  L.lens(rotateWithPivotZeroDelta, rotateWithPivot)
-export const pivotZoomScreenLens = L.lens(zoomWithPivotZeroDelta, zoomWithPivotScreen)
-export const pivotRotationScreenLens =  L.lens(rotateWithPivotZeroDelta, rotateWithPivotScreen)
-export const panScreenLens =  L.lens(panWithPivotZeroDelta, panWithPivotScreen)
