@@ -109,12 +109,13 @@ export class LiveState {
               const newList = [];
 
               this.presence.list(
-                      (id, { metas: [{ color, username }, ...rest] }) => {
-                              newList.push({
-                                      id,
-                                      data: { color, username },
-                                      count: rest.length + 1,
-                              });
+                      (id, { metas }) => {
+                        const [{ color, username, cursor }, ...rest] = metas;
+                        newList.push({
+                                id,
+                                data: { color, username, cursors: metas.map((m) => m.cursor), selections: metas.map((m) => m.selection) },
+                                count: rest.length + 1,
+                        });
                       },
               );
               this.eventTarget.dispatchEvent(new CustomEvent('presence-changed', {

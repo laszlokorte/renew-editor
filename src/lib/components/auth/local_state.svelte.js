@@ -42,16 +42,16 @@ export default (() => {
 			this.value = null
 		},
 		get authHeader() {
-			return `Bearer ${currentValue.token}`
+			return currentValue ? `Bearer ${currentValue.token}` : null
 		},
 		get isAuthenticated() {
 			return !!currentValue
 		},
 		get routes() {
-			return this.value.routes
+			return this.value?.routes ?? []
 		},
 		createSocket() {
-			if(currentValue && currentValue.token) {
+			if(currentValue && currentValue.token && this.value.routes) {
 				return new Socket(this.value.routes.live_socket.href, {params: {token: currentValue.token}})
 			} else {
 				return null

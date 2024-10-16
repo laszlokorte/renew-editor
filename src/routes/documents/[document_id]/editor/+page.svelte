@@ -102,7 +102,7 @@
 	<AppBar authState={data.authState} {errors} />
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
-		{#snippet children(doc, presence)}
+		{#snippet children(doc, presence, dispatch)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
 			<header>
 				<div class="header-titel">
@@ -271,6 +271,9 @@
 									selectedLayers = [];
 								}
 							}}
+							onpointerpoistion={(pos) => {
+								dispatch('cursor', pos);
+							}}
 						>
 							<rect fill="#fff" stroke="#eee" stroke-width="5" {...doc.value.viewbox} />
 							<g id="full-document-{data.document.id}">
@@ -282,6 +285,10 @@
 											onclick={(evt) => {
 												evt.stopPropagation();
 												selectedLayers = [el.value?.id];
+
+												if (el.value?.id) {
+													dispatch('select', el.value?.id);
+												}
 											}}
 											tabindex="-1"
 											onkeydown={() => {
@@ -311,6 +318,9 @@
 											onclick={(evt) => {
 												evt.stopPropagation();
 												selectedLayers = [el.value?.id];
+												if (el.value?.id) {
+													dispatch('select', el.value?.id);
+												}
 											}}
 											tabindex="-1"
 											onkeydown={() => {
@@ -326,6 +336,9 @@
 											onclick={(evt) => {
 												evt.stopPropagation();
 												selectedLayers = [el.value?.id];
+												if (el.value?.id) {
+													dispatch('select', el.value?.id);
+												}
 											}}
 											tabindex="-1"
 											onkeydown={() => {
@@ -397,106 +410,216 @@
 								{/each}
 							</g>
 
-							{#each layersInOrder.value as { index, id, depth } (id)}
+							{#each selectedLayers as id (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-								{#if selectedLayers.includes(el.value?.id)}
-									{#if el.value?.box && !el.value?.hidden}
-										<rect
-											class="selected"
-											x={el.value?.box.position_x}
-											y={el.value?.box.position_y}
-											width={el.value?.box.width}
-											height={el.value?.box.height}
-										></rect>
-									{/if}
-									{#if el.value?.text && !el.value?.hidden}
-										{@const bbox = view(L.prop(el.value?.id), textBounds)}
+								{#if el.value?.box && !el.value?.hidden}
+									<rect
+										class="selected"
+										x={el.value?.box.position_x}
+										y={el.value?.box.position_y}
+										width={el.value?.box.width}
+										height={el.value?.box.height}
+									></rect>
+								{/if}
+								{#if el.value?.text && !el.value?.hidden}
+									{@const bbox = view(L.prop(el.value?.id), textBounds)}
 
-										<rect
-											class="selected"
-											x={bbox.value.x}
-											y={bbox.value.y}
-											width={bbox.value.width}
-											height={bbox.value.height}
-										></rect>
-									{/if}
-									{#if el.value?.edge && !el.value?.hidden}
-										<path
-											class="selected"
-											d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](el.value?.edge)}
-											stroke="black"
-											fill="none"
-											stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
-										/>
+									<rect
+										class="selected"
+										x={bbox.value.x}
+										y={bbox.value.y}
+										width={bbox.value.width}
+										height={bbox.value.height}
+									></rect>
+								{/if}
+								{#if el.value?.edge && !el.value?.hidden}
+									<path
+										class="selected"
+										d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](el.value?.edge)}
+										stroke="black"
+										fill="none"
+										stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+									/>
 
-										{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-											{@const source_angle = edgeAngle['source'](el.value?.edge)}
-											<g
-												class="selected"
-												transform="rotate({source_angle} {el.value?.edge.source_x} {el.value?.edge
-													.source_y})"
-											>
-												{#await data.symbols then symbols}
-													{@const symbol = symbols.get(
-														el.value?.edge?.style?.source_tip_symbol_shape_id
+									{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+										{@const source_angle = edgeAngle['source'](el.value?.edge)}
+										<g
+											class="selected"
+											transform="rotate({source_angle} {el.value?.edge.source_x} {el.value?.edge
+												.source_y})"
+										>
+											{#await data.symbols then symbols}
+												{@const symbol = symbols.get(
+													el.value?.edge?.style?.source_tip_symbol_shape_id
+												)}
+												{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+												{#if symbol}
+													{#each symbol.paths as path, i (i)}
+														<path
+															fill={path.fill_color ?? 'transparent'}
+															stroke={path.stroke_color ?? 'transparent'}
+															d={buildPath(
+																{
+																	x: el.value?.edge.source_x - size,
+																	y: el.value?.edge.source_y - size,
+																	width: 2 * size,
+																	height: 2 * size
+																},
+																path
+															)}
+														/>
+													{/each}
+												{/if}
+											{/await}
+										</g>
+									{/if}
+
+									{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+										{@const target_angle = edgeAngle['target'](el.value?.edge)}
+										<g
+											class="selected"
+											transform="rotate({target_angle} {el.value?.edge.target_x} {el.value?.edge
+												.target_y})"
+										>
+											{#await data.symbols then symbols}
+												{@const symbol = symbols.get(
+													el.value?.edge?.style?.target_tip_symbol_shape_id
+												)}
+												{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+												{#if symbol}
+													{#each symbol.paths as path, i (i)}
+														<path
+															fill={path.fill_color ?? 'transparent'}
+															stroke={path.stroke_color ?? 'transparent'}
+															d={buildPath(
+																{
+																	x: el.value?.edge.target_x - size,
+																	y: el.value?.edge.target_y - size,
+																	width: 2 * size,
+																	height: 2 * size
+																},
+																path
+															)}
+														/>
+													{/each}
+												{/if}
+											{/await}
+										</g>
+									{/if}
+								{/if}
+							{/each}
+
+							{#each presence.value as { data: { cursors, color, username, selections } }}
+								{#if username != data.authState.value.email}
+									<g style:--selection-color={color}>
+										{#each selections as id (id)}
+											{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+											{#if el.value?.box && !el.value?.hidden}
+												<rect
+													class="selected"
+													x={el.value?.box.position_x}
+													y={el.value?.box.position_y}
+													width={el.value?.box.width}
+													height={el.value?.box.height}
+												></rect>
+											{/if}
+											{#if el.value?.text && !el.value?.hidden}
+												{@const bbox = view(L.prop(el.value?.id), textBounds)}
+
+												<rect
+													class="selected"
+													x={bbox.value.x}
+													y={bbox.value.y}
+													width={bbox.value.width}
+													height={bbox.value.height}
+												></rect>
+											{/if}
+											{#if el.value?.edge && !el.value?.hidden}
+												<path
+													class="selected"
+													d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+														el.value?.edge
 													)}
-													{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+													stroke="black"
+													fill="none"
+													stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+												/>
 
-													{#if symbol}
-														{#each symbol.paths as path, i (i)}
-															<path
-																fill={path.fill_color ?? 'transparent'}
-																stroke={path.stroke_color ?? 'transparent'}
-																d={buildPath(
-																	{
-																		x: el.value?.edge.source_x - size,
-																		y: el.value?.edge.source_y - size,
-																		width: 2 * size,
-																		height: 2 * size
-																	},
-																	path
-																)}
-															/>
-														{/each}
-													{/if}
-												{/await}
-											</g>
-										{/if}
+												{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+													{@const source_angle = edgeAngle['source'](el.value?.edge)}
+													<g
+														class="selected"
+														transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
+															?.edge.source_y})"
+													>
+														{#await data.symbols then symbols}
+															{@const symbol = symbols.get(
+																el.value?.edge?.style?.source_tip_symbol_shape_id
+															)}
+															{@const size = el.value?.edge?.style?.stroke_width ?? 1}
 
-										{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-											{@const target_angle = edgeAngle['target'](el.value?.edge)}
-											<g
-												class="selected"
-												transform="rotate({target_angle} {el.value?.edge.target_x} {el.value?.edge
-													.target_y})"
-											>
-												{#await data.symbols then symbols}
-													{@const symbol = symbols.get(
-														el.value?.edge?.style?.target_tip_symbol_shape_id
-													)}
-													{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+															{#if symbol}
+																{#each symbol.paths as path, i (i)}
+																	<path
+																		fill={path.fill_color ?? 'transparent'}
+																		stroke={path.stroke_color ?? 'transparent'}
+																		d={buildPath(
+																			{
+																				x: el.value?.edge.source_x - size,
+																				y: el.value?.edge.source_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			},
+																			path
+																		)}
+																	/>
+																{/each}
+															{/if}
+														{/await}
+													</g>
+												{/if}
 
-													{#if symbol}
-														{#each symbol.paths as path, i (i)}
-															<path
-																fill={path.fill_color ?? 'transparent'}
-																stroke={path.stroke_color ?? 'transparent'}
-																d={buildPath(
-																	{
-																		x: el.value?.edge.target_x - size,
-																		y: el.value?.edge.target_y - size,
-																		width: 2 * size,
-																		height: 2 * size
-																	},
-																	path
-																)}
-															/>
-														{/each}
-													{/if}
-												{/await}
-											</g>
-										{/if}
-									{/if}
+												{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+													{@const target_angle = edgeAngle['target'](el.value?.edge)}
+													<g
+														class="selected"
+														transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
+															?.edge.target_y})"
+													>
+														{#await data.symbols then symbols}
+															{@const symbol = symbols.get(
+																el.value?.edge?.style?.target_tip_symbol_shape_id
+															)}
+															{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+															{#if symbol}
+																{#each symbol.paths as path, i (i)}
+																	<path
+																		fill={path.fill_color ?? 'transparent'}
+																		stroke={path.stroke_color ?? 'transparent'}
+																		d={buildPath(
+																			{
+																				x: el.value?.edge.target_x - size,
+																				y: el.value?.edge.target_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			},
+																			path
+																		)}
+																	/>
+																{/each}
+															{/if}
+														{/await}
+													</g>
+												{/if}
+											{/if}
+										{/each}
+									</g>
+									{#each cursors as cursor}
+										<path d="M{cursor.x} {cursor.y} v 14 l 4 -4 h 6" fill={color} />
+									{/each}
 								{/if}
 							{/each}
 						</SVGViewport>
@@ -958,30 +1081,31 @@
 	}
 
 	rect.selected {
-		stroke: #7af;
-		fill: #7af3;
+		stroke: var(--selection-color, #7af);
+		fill: var(--selection-color, #7af);
+		fill-opacity: 0.3;
 		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
 	text.selected {
-		stroke: #7af;
-		fill: #7af;
+		stroke: var(--selection-color, #7af);
+		fill: var(--selection-color, #7af);
 		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
 	path.selected {
-		stroke: #7af;
+		stroke: var(--selection-color, #7af);
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
 	g.selected {
-		stroke: #7af;
-		fill: #7af;
+		stroke: var(--selection-color, #7af);
+		fill: var(--selection-color, #7af);
 		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: butt;
