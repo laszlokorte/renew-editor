@@ -40,6 +40,11 @@
 		if (uploadFormVisible) {
 			return;
 		}
+
+		if(evt.dataTransfer.types.indexOf('Files') < 0) {
+			return
+		}
+
 		evt.preventDefault();
 		dragging = true;
 	}
@@ -53,6 +58,11 @@
 		evt.preventDefault();
 		dragging = false;
 
+
+		if(!evt.dataTransfer.files.length) {
+			return
+		}
+
 		importDocuments(evt.dataTransfer.files).then(() => {
 			uploadFormVisible = false;
 		});
@@ -61,6 +71,12 @@
 	let draggingZone = $state(false);
 	function onDragEnterZone(evt) {
 		evt.preventDefault();
+
+
+		if(evt.dataTransfer.types.indexOf('Files') < 0) {
+			return
+		}
+
 		draggingZone = true;
 	}
 
@@ -72,6 +88,10 @@
 	function onDropZone(evt) {
 		evt.preventDefault();
 		draggingZone = false;
+
+		if(!evt.dataTransfer.files.length) {
+			return
+		}
 
 		importDocuments(evt.dataTransfer.files).then(() => {
 			uploadFormVisible = false;
@@ -165,7 +185,7 @@
 		</div>
 
 		<LiveResource socket={data.live_socket} resource={data.documents}>
-			{#snippet children(documents, _presence, dispatch)}
+			{#snippet children(documents, _presence, {dispatch})}
 				<ul>
 					{#each documents.value.items as d}
 						<li class="document-list-item">

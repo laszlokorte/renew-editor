@@ -111,6 +111,7 @@ export class LiveState {
               this.presence.list(
                       (id, { metas }) => {
                         const [{ color, username, cursor }, ...rest] = metas;
+                        console.log(this.channel)
                         newList.push({
                                 id,
                                 data: { color, username, cursors: metas.map((m) => m.cursor), selections: metas.map((m) => m.selection) },
@@ -248,6 +249,10 @@ export class LiveState {
         reject(payload)
       })
     })
+  }
+
+  castAction(name, payload) {
+    this.channel.push(`lvs_evt:${name}`, payload, 100)
   }
 
   pushCustomEvent(event) { this.dispatchEvent(event); }

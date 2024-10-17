@@ -32,6 +32,10 @@ export default function makeLive(socket, resource) {
 			return livestate.sendAction(action, payload)
 		},
 
+		cast(action, payload) {
+			livestate.castAction(action, payload)
+		},
+
 		unsubscribe() {
 			livestate.unsubscribe(updater);
 			livestate.leave();

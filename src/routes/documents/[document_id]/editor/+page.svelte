@@ -102,7 +102,7 @@
 	<AppBar authState={data.authState} {errors} />
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
-		{#snippet children(doc, presence, dispatch)}
+		{#snippet children(doc, presence, {dispatch, cast})}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
 			<header>
 				<div class="header-titel">
@@ -272,7 +272,7 @@
 								}
 							}}
 							onpointerpoistion={(pos) => {
-								dispatch('cursor', pos);
+								cast('cursor', pos);
 							}}
 						>
 							<rect fill="#fff" stroke="#eee" stroke-width="5" {...doc.value.viewbox} />
@@ -287,7 +287,7 @@
 												selectedLayers = [el.value?.id];
 
 												if (el.value?.id) {
-													dispatch('select', el.value?.id);
+													cast('select', el.value?.id);
 												}
 											}}
 											tabindex="-1"
@@ -319,7 +319,7 @@
 												evt.stopPropagation();
 												selectedLayers = [el.value?.id];
 												if (el.value?.id) {
-													dispatch('select', el.value?.id);
+													cast('select', el.value?.id);
 												}
 											}}
 											tabindex="-1"
@@ -337,7 +337,7 @@
 												evt.stopPropagation();
 												selectedLayers = [el.value?.id];
 												if (el.value?.id) {
-													dispatch('select', el.value?.id);
+													cast('select', el.value?.id);
 												}
 											}}
 											tabindex="-1"

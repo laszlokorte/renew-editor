@@ -9,6 +9,10 @@
 		return liveState.send(action, payload);
 	}
 
+	function cast(action, payload) {
+		return liveState.cast(action, payload);
+	}
+
 	onMount(() => {
 		return () => {
 			liveState.unsubscribe();
@@ -16,4 +20,4 @@
 	});
 </script>
 
-{@render children(liveState.content, liveState.presence, dispatch)}
+{@render children(liveState.content, liveState.presence, {dispatch, cast})}
