@@ -1,6 +1,6 @@
 
 
-const numberSvgFormat = new Intl.NumberFormat("en-US", {
+export const numberSvgFormat = new Intl.NumberFormat("en-US", {
     minimumFractionDigits: 5,
     maximumFractionDigits: 5,
     useGrouping: false,

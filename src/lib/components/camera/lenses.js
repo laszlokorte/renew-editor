@@ -1,12 +1,15 @@
-import * as Geo from "../../geometry";
+import * as Geo from "$lib/math/geometry";
 import * as R from "ramda";
 import * as L from "partial.lenses";
-import * as U from "../../utils";
+import * as P from "$lib/math/projection";
 import {cameraAsViewbox } from "./functions";
-import {rotateWithPivot, zoomWithPivot } from "./navigation";
+import {rotateWithPivot, zoomWithPivot, 
+zoomWithPivotScreen, zoomWithPivotZeroDelta, 
+rotateWithPivotZeroDelta, panWithPivotZeroDelta, 
+rotateWithPivotScreen, panWithPivotScreen } from "./navigation";
 
 export const frameBoxLens = L.reread((camera) => {
-	const { minX, minY, width, height } = U.scaleViewBox(
+	const { minX, minY, width, height } = P.scaleViewBox(
 		cameraAsViewbox(camera),
 		camera.frame.size.x,
 		camera.frame.size.y,

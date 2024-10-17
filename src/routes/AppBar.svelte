@@ -2,14 +2,16 @@
 	import { base } from '$app/paths';
 	import * as env from '../env';
 	import CurrentAuthState from './auth/CurrentAuthState.svelte';
+	import { view, atom, update } from '$lib/reactivity/atom.svelte';
+
 	const favicon = '';
 
 	const appTitle = env.APP_NAME;
 
-	const { authState, errors = $bindable([]) } = $props();
+	const { authState, errors = atom([]) } = $props();
 
 	function discardError() {
-		errors.pop();
+		update((e) => e.slice(1), errors);
 	}
 </script>
 
@@ -24,13 +26,13 @@
 	>
 
 	<div>
-		{#if errors.length}
+		{#if errors.value.length}
 			<div class="error">
-				Error: <span>{errors[0]}</span>
+				Error: <span>{errors.value[0]}</span>
 				<button class="error-discard" onclick={discardError}
 					>Discard
-					{#if errors.length > 1}
-						({errors.length - 1} more)
+					{#if errors.value.length > 1}
+						({errors.value.length - 1} more)
 					{/if}
 				</button>
 			</div>

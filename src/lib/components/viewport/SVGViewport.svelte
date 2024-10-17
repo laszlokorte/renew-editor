@@ -1,28 +1,43 @@
 <script>
-	const { scrollPosition, children, onclick, onkeydown, onpointerpoistion } = $props();
+	import * as L from 'partial.lenses';
+	import { view, atom, update, combine, read } from '$lib/reactivity/atom.svelte';
+	import { numberSvgFormat } from '$lib/svg/formatter';
 
-	let svgElement = $state(null);
-	let svgPoint = $derived(svgElement.createSVGPoint());
-	let cusor = $state(null);
+	const { camera, children, onclick, onkeydown, onpointerpoistion } = $props();
+
+	let svgElement = atom(undefined);
+	let svgPoint = read(
+		L.reread((e) => e.createSVGPoint()),
+		svgElement
+	);
 
 	let onpointermove = onpointerpoistion
 		? (evt) => {
 				if (evt.isPrimary) {
-					svgPoint.x = evt.clientX;
-					svgPoint.y = evt.clientY;
+					svgPoint.value.x = evt.clientX;
+					svgPoint.value.y = evt.clientY;
 
 					// The cursor point, translated into svg coordinates
-					const { x, y } = svgPoint.matrixTransform(svgElement.getScreenCTM().inverse());
+					const { x, y } = svgPoint.value.matrixTransform(
+						svgElement.value.getScreenCTM().inverse()
+					);
 
 					onpointerpoistion({ x, y });
-					cusor = { x, y };
 				}
 			}
 		: null;
+
+	const viewBoxLens = L.reread((cam) => {
+		return `${numberSvgFormat.format(cam.focus.x - (cam.plane.x / 2) * Math.exp(-cam.focus.z))} 
+		${numberSvgFormat.format(cam.focus.y - (cam.plane.y / 2) * Math.exp(-cam.focus.z))} 
+		${numberSvgFormat.format(cam.plane.x * Math.exp(-cam.focus.z))} 
+		${numberSvgFormat.format(cam.plane.y * Math.exp(-cam.focus.z))}`;
+	});
+	const viewBox = view(viewBoxLens, camera);
 </script>
 
 <svg
-	bind:this={svgElement}
+	bind:this={svgElement.value}
 	class="canvas"
 	role="button"
 	tabindex="-1"
@@ -30,7 +45,7 @@
 	{onclick}
 	{onkeydown}
 	{onpointermove}
-	viewBox="{-500 + scrollPosition.value.x} {-500 + scrollPosition.value.y} 1000 1000"
+	viewBox={viewBox.value}
 >
 	{#if children}
 		{@render children()}

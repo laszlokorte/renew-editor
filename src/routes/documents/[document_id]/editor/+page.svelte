@@ -1,41 +1,95 @@
 <script>
+	// @ts-nocheck
+
 	import { base } from '$app/paths';
-	import { atom } from '$lib/reactivity/atom.svelte';
+	import { view, atom, update, combine, read, failableView } from '$lib/reactivity/atom.svelte';
+	import { bindValue } from '$lib/reactivity/bindings.svelte.js';
+	import { numberSvgFormat } from '$lib/svg/formatter';
 	import AppBar from '../../../AppBar.svelte';
 
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
-	import Scroller from '$lib/components/scroller/Scroller.svelte';
+	import CameraScroller from '$lib/components/viewport/CameraScroller.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	import { buildPath } from './symbols';
 	import Symbol from './Symbol.svelte';
 	import TextElement from './TextElement.svelte';
 
 	import * as L from 'partial.lenses';
-	import { view } from '$lib/reactivity/atom.svelte';
+	import * as R from 'ramda';
+	import Minimap from '$lib/components/editor/overlays/minimap/Minimap.svelte';
+
+	import {
+		frameBoxLens,
+		panMovementLens,
+		rotateMovementLens,
+		zoomMovementLens
+	} from '$lib/components/camera/lenses';
 
 	const { data } = $props();
 
 	const textBounds = atom({});
-	const scrollWindowSize = atom({ x: 0, y: 0 });
 
-	const scrollPosition = atom({
-		x: data.document.content.viewbox.x + data.document.content.viewbox.width / 2,
-		y: data.document.content.viewbox.y + data.document.content.viewbox.height / 2
+	const cameraSettings = atom({
+		plane: {
+			autosize: true,
+			x: 1000,
+			y: 1000
+		},
+		frame: {
+			aspect: 'meet',
+			alignX: 'Mid',
+			alignY: 'Mid',
+			autoPadding: true,
+			size: {
+				x: 100,
+				y: 100
+			}
+		}
 	});
 
-	let errors = $state([]);
+	const cameraFocus = atom({ x: 0, y: 0, z: 0, w: 0 });
 
-	let selectedLayers = $state([]);
+	const camera = view(
+		[
+			L.pick({
+				focus: 'focus',
+				frame: ['settings', 'frame'],
+				plane: ['settings', 'plane']
+			})
+		],
+		combine({ focus: cameraFocus, settings: cameraSettings })
+	);
+
+	const boxPathLens = L.reread(
+		({ minX, minY, width, height }) =>
+			`M${numberSvgFormat.format(minX)},${numberSvgFormat.format(minY)}h${numberSvgFormat.format(width)}v${numberSvgFormat.format(height)}h${numberSvgFormat.format(-width)}z`
+	);
+	const frameBoxPath = read([frameBoxLens, 'screenSpaceAligned', boxPathLens], camera);
+
+	const cameraRotationTransformLens = L.reread(
+		(c) => `rotate(${c.focus.w}, ${c.focus.x}, ${c.focus.y})`
+	);
+
+	const cameraRotationInverseTransformLens = L.reread(
+		(c) => `rotate(${-c.focus.w}, ${c.focus.x}, ${c.focus.y})`
+	);
+
+	const rotationTransform = read(cameraRotationTransformLens, camera);
+	const rotationInverseTransform = read(cameraRotationInverseTransformLens, camera);
+
+	let errors = atom([]);
+
+	let selectedLayers = atom([]);
 
 	function deleteThisDocument(evt) {
 		evt.preventDefault();
 		data.deleteAction().catch((e) => {
-			errors.push(e.message);
+			update((e) => [...e, e.message], errors);
 		});
 	}
 
 	function causeError(e) {
-		errors.push('Some Error');
+		update((e) => [...e, 'Some Error'], errors);
 	}
 
 	const edgeAngle = {
@@ -96,14 +150,28 @@
 	function walkDocument(doc) {
 		return [...walkLayer(doc, null, 0)];
 	}
+
+	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 </script>
 
 <div class="full-page">
 	<AppBar authState={data.authState} {errors} />
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
-		{#snippet children(doc, presence, {dispatch, cast})}
+		{#snippet children(doc, presence, { dispatch, cast })}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
+			{@const extension = view(
+				[
+					'viewbox',
+					L.pick({
+						minX: 'x',
+						minY: 'y',
+						maxX: L.reread(({ x, width }) => x + width),
+						maxY: L.reread(({ y, height }) => y + height)
+					})
+				],
+				doc
+			)}
 			<header>
 				<div class="header-titel">
 					<a href="{base}/documents" title="Back">Back</a>
@@ -169,15 +237,7 @@
 
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
-										onclick={() => {
-											scrollPosition.value = {
-												x: doc.value.viewbox.x + doc.value.viewbox.width / 2,
-												y: doc.value.viewbox.y + doc.value.viewbox.height / 2
-											};
-										}}>Reset Camera</button
-									>
+									<button class="menu-bar-item-button" onclick={() => {}}>Reset Camera</button>
 								</li>
 								<li class="menu-bar-menu-item">
 									<button class="menu-bar-item-button">Zoom in</button>
@@ -253,22 +313,15 @@
 
 			<div class="overlay">
 				<div class="body">
-					<Scroller
-						allowOverscroll={atom(false)}
-						center={atom(true)}
-						extraScrollPadding={atom(true)}
-						{scrollPosition}
-						contentSize={view(L.pick({ x: ['viewbox', 'width'], y: ['viewbox', 'height'] }), doc)}
-						{scrollWindowSize}
-					>
+					<CameraScroller {camera} {extension}>
 						<SVGViewport
-							{scrollPosition}
+							{camera}
 							onclick={(evt) => {
-								selectedLayers = [];
+								selectedLayers.value = [];
 							}}
 							onkeydown={(evt) => {
 								if (evt.key == 'Escape') {
-									selectedLayers = [];
+									selectedLayers.value = [];
 								}
 							}}
 							onpointerpoistion={(pos) => {
@@ -284,7 +337,7 @@
 											role="button"
 											onclick={(evt) => {
 												evt.stopPropagation();
-												selectedLayers = [el.value?.id];
+												selectedLayers.value = [el.value?.id];
 
 												if (el.value?.id) {
 													cast('select', el.value?.id);
@@ -292,7 +345,7 @@
 											}}
 											tabindex="-1"
 											onkeydown={() => {
-												selectedLayers = [el.value?.id];
+												selectedLayers.value = [el.value?.id];
 											}}
 											fill={el.value?.style?.background_color ?? '#70DB93'}
 											stroke={el.value?.style?.border_color ?? 'black'}
@@ -317,14 +370,14 @@
 											role="button"
 											onclick={(evt) => {
 												evt.stopPropagation();
-												selectedLayers = [el.value?.id];
+												selectedLayers.value = [el.value?.id];
 												if (el.value?.id) {
 													cast('select', el.value?.id);
 												}
 											}}
 											tabindex="-1"
 											onkeydown={() => {
-												selectedLayers = [el.value?.id];
+												selectedLayers.value = [el.value?.id];
 											}}
 										>
 											<TextElement bbox={view(L.prop(el.value?.id), textBounds)} el={el.value} />
@@ -335,14 +388,14 @@
 											role="button"
 											onclick={(evt) => {
 												evt.stopPropagation();
-												selectedLayers = [el.value?.id];
+												selectedLayers.value = [el.value?.id];
 												if (el.value?.id) {
 													cast('select', el.value?.id);
 												}
 											}}
 											tabindex="-1"
 											onkeydown={() => {
-												selectedLayers = [el.value?.id];
+												selectedLayers.value = [el.value?.id];
 											}}
 											opacity={el.value?.style?.opacity ?? '1'}
 											stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
@@ -410,7 +463,7 @@
 								{/each}
 							</g>
 
-							{#each selectedLayers as id (id)}
+							{#each selectedLayers.value as id (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 								{#if el.value?.box && !el.value?.hidden}
 									<rect
@@ -512,116 +565,114 @@
 							{/each}
 
 							{#each presence.value as { data: { cursors, color, username, selections } }}
-									<g style:--selection-color={color}>
-										{#each selections.filter(({self}) => !self) as {value: id} (id)}
-											{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-											{#if el.value?.box && !el.value?.hidden}
-												<rect
+								<g style:--selection-color={color}>
+									{#each selections.filter(({ self }) => !self) as { value: id } (id)}
+										{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+										{#if el.value?.box && !el.value?.hidden}
+											<rect
+												class="selected"
+												x={el.value?.box.position_x}
+												y={el.value?.box.position_y}
+												width={el.value?.box.width}
+												height={el.value?.box.height}
+											></rect>
+										{/if}
+										{#if el.value?.text && !el.value?.hidden}
+											{@const bbox = view(L.prop(el.value?.id), textBounds)}
+
+											<rect
+												class="selected"
+												x={bbox.value.x}
+												y={bbox.value.y}
+												width={bbox.value.width}
+												height={bbox.value.height}
+											></rect>
+										{/if}
+										{#if el.value?.edge && !el.value?.hidden}
+											<path
+												class="selected"
+												d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](el.value?.edge)}
+												stroke="black"
+												fill="none"
+												stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+											/>
+
+											{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+												{@const source_angle = edgeAngle['source'](el.value?.edge)}
+												<g
 													class="selected"
-													x={el.value?.box.position_x}
-													y={el.value?.box.position_y}
-													width={el.value?.box.width}
-													height={el.value?.box.height}
-												></rect>
-											{/if}
-											{#if el.value?.text && !el.value?.hidden}
-												{@const bbox = view(L.prop(el.value?.id), textBounds)}
+													transform="rotate({source_angle} {el.value?.edge.source_x} {el.value?.edge
+														.source_y})"
+												>
+													{#await data.symbols then symbols}
+														{@const symbol = symbols.get(
+															el.value?.edge?.style?.source_tip_symbol_shape_id
+														)}
+														{@const size = el.value?.edge?.style?.stroke_width ?? 1}
 
-												<rect
+														{#if symbol}
+															{#each symbol.paths as path, i (i)}
+																<path
+																	fill={path.fill_color ?? 'transparent'}
+																	stroke={path.stroke_color ?? 'transparent'}
+																	d={buildPath(
+																		{
+																			x: el.value?.edge.source_x - size,
+																			y: el.value?.edge.source_y - size,
+																			width: 2 * size,
+																			height: 2 * size
+																		},
+																		path
+																	)}
+																/>
+															{/each}
+														{/if}
+													{/await}
+												</g>
+											{/if}
+
+											{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+												{@const target_angle = edgeAngle['target'](el.value?.edge)}
+												<g
 													class="selected"
-													x={bbox.value.x}
-													y={bbox.value.y}
-													width={bbox.value.width}
-													height={bbox.value.height}
-												></rect>
+													transform="rotate({target_angle} {el.value?.edge.target_x} {el.value?.edge
+														.target_y})"
+												>
+													{#await data.symbols then symbols}
+														{@const symbol = symbols.get(
+															el.value?.edge?.style?.target_tip_symbol_shape_id
+														)}
+														{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+														{#if symbol}
+															{#each symbol.paths as path, i (i)}
+																<path
+																	fill={path.fill_color ?? 'transparent'}
+																	stroke={path.stroke_color ?? 'transparent'}
+																	d={buildPath(
+																		{
+																			x: el.value?.edge.target_x - size,
+																			y: el.value?.edge.target_y - size,
+																			width: 2 * size,
+																			height: 2 * size
+																		},
+																		path
+																	)}
+																/>
+															{/each}
+														{/if}
+													{/await}
+												</g>
 											{/if}
-											{#if el.value?.edge && !el.value?.hidden}
-												<path
-													class="selected"
-													d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-														el.value?.edge
-													)}
-													stroke="black"
-													fill="none"
-													stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
-												/>
-
-												{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-													{@const source_angle = edgeAngle['source'](el.value?.edge)}
-													<g
-														class="selected"
-														transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
-															?.edge.source_y})"
-													>
-														{#await data.symbols then symbols}
-															{@const symbol = symbols.get(
-																el.value?.edge?.style?.source_tip_symbol_shape_id
-															)}
-															{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-
-															{#if symbol}
-																{#each symbol.paths as path, i (i)}
-																	<path
-																		fill={path.fill_color ?? 'transparent'}
-																		stroke={path.stroke_color ?? 'transparent'}
-																		d={buildPath(
-																			{
-																				x: el.value?.edge.source_x - size,
-																				y: el.value?.edge.source_y - size,
-																				width: 2 * size,
-																				height: 2 * size
-																			},
-																			path
-																		)}
-																	/>
-																{/each}
-															{/if}
-														{/await}
-													</g>
-												{/if}
-
-												{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-													{@const target_angle = edgeAngle['target'](el.value?.edge)}
-													<g
-														class="selected"
-														transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
-															?.edge.target_y})"
-													>
-														{#await data.symbols then symbols}
-															{@const symbol = symbols.get(
-																el.value?.edge?.style?.target_tip_symbol_shape_id
-															)}
-															{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-
-															{#if symbol}
-																{#each symbol.paths as path, i (i)}
-																	<path
-																		fill={path.fill_color ?? 'transparent'}
-																		stroke={path.stroke_color ?? 'transparent'}
-																		d={buildPath(
-																			{
-																				x: el.value?.edge.target_x - size,
-																				y: el.value?.edge.target_y - size,
-																				width: 2 * size,
-																				height: 2 * size
-																			},
-																			path
-																		)}
-																	/>
-																{/each}
-															{/if}
-														{/await}
-													</g>
-												{/if}
-											{/if}
-										{/each}
-									</g>
-									{#each cursors.filter(({self}) => !self) as {value: cursor}}
-										<path d="M{cursor.x} {cursor.y} v 14 l 4 -4 h 6" fill={color} />
+										{/if}
 									{/each}
+								</g>
+								{#each cursors.filter(({ self }) => !self) as { value: cursor }}
+									<path d="M{cursor.x} {cursor.y} v 14 l 4 -4 h 6" fill={color} />
+								{/each}
 							{/each}
 						</SVGViewport>
-					</Scroller>
+					</CameraScroller>
 				</div>
 				<div class="topbar">
 					<div class="toolbar">
@@ -643,13 +694,12 @@
 				</div>
 
 				<div class="sidebar right">
-					<svg
-						class="minimap"
-						width={scrollWindowSize.value.x}
-						height={scrollWindowSize.value.y}
-						preserveAspectRatio="xMidYMid meet"
-						viewBox="{doc.value.viewbox.x} {doc.value.viewbox.y} {doc.value.viewbox.width} {doc
-							.value.viewbox.height}"
+					<Minimap
+						{extension}
+						{frameBoxPath}
+						{rotationInverseTransform}
+						{cameraFocus}
+						visible={atom(true)}
 					>
 						<rect
 							x={doc.value.viewbox.x}
@@ -662,22 +712,13 @@
 
 						<use href="#full-document-{data.document.id}" opacity="0.8" />
 
-						<rect
-							x={scrollPosition.value.x - 500}
-							y={scrollPosition.value.y - 500}
-							width={1000 * Math.max(scrollWindowSize.value.y / scrollWindowSize.value.x, 1)}
-							height={1000 * Math.min(1, scrollWindowSize.value.y / scrollWindowSize.value.x)}
-							stroke="#0af"
-							stroke-width="5"
-							fill="#0af"
-							fill-opacity="0.1"
-						/>
-					</svg>
+						<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
+					</Minimap>
 					<div class="toolbar vertical">
 						Hierarchy
 						<hr />
 						<input style="" type="search" name="" placeholder="search" />
-						<select multiple size="5" bind:value={selectedLayers}>
+						<select multiple size="5" bind:value={selectedLayers.value}>
 							{#each layersInOrder.value as { index, id, depth } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 								{@const elId = view('id', el)}
@@ -696,9 +737,12 @@
 						</select>
 					</div>
 					<div class="toolbar vertical">
-						Debug
+						Debug Document
 						<hr />
-						<textarea readonly>{view(L.getInverse(L.json()), doc).value}</textarea>
+						<textarea use:bindValue={view(L.inverse(L.json({ space: '  ' })), doc)}></textarea>
+						Debug Camera
+						<hr />
+						<textarea bind:value={cameraJson.value}></textarea>
 					</div>
 				</div>
 				<div class="sidebar left">

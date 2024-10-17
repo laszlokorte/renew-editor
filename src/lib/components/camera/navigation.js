@@ -1,13 +1,13 @@
 import * as R from "ramda";
 import * as L from "partial.lenses";
-import * as U from "../../utils.js";
+import * as M from "$lib/math/utils";
 import {
 	atom,
 	view,
 	read,
 	combine,
 	combineWithRest,
-} from "../../svatom.svelte.js";
+} from "$lib/reactivity/atom.svelte.js";
 
 const normRot = R.compose(R.add(-180), R.modulo(R.__, 360), R.add(180), R.add(360))
 
@@ -41,7 +41,7 @@ export function rotateWithPivotScreen(delta, orig) {
 	return rotateWithPivot({px: pivotWorldX, py: pivotWorldY, dw: delta.dw}, orig)
 }
 
-function rotateWithPivotZeroDelta(cam) {
+export function rotateWithPivotZeroDelta(cam) {
 	return {
 		dw: 0,
 		px: cam.x,
@@ -54,8 +54,8 @@ export function zoomWithPivot(delta, orig) {
 
 	const realFactor = newZoom - orig.z;
   	const panFactor = 1 - Math.exp(-realFactor);
-  	const newX = U.lerp(orig.x, delta.px, panFactor)
-    const newY = U.lerp(orig.y, delta.py, panFactor)
+  	const newX = M.lerp(orig.x, delta.px, panFactor)
+    const newY = M.lerp(orig.y, delta.py, panFactor)
 
 	return {
 		...orig,
@@ -79,7 +79,7 @@ export function zoomWithPivotScreen(delta, orig) {
 	}, orig)
 }
 
-function zoomWithPivotZeroDelta(cam) {
+export function zoomWithPivotZeroDelta(cam) {
 	return {
 		dz: 0,
 		px: cam.x,
@@ -108,7 +108,7 @@ export function panWithPivotScreen(delta, orig) {
 	}, orig)
 }
 
-function panWithPivotZeroDelta(cam) {
+export function panWithPivotZeroDelta(cam) {
 	return {
 		dx: 0,
 		dy: 0,
