@@ -553,7 +553,7 @@
 		-webkit-highlight: none;
 	}
 
-	@media (max-width: 100em) {
+	@media (max-width: 40em) {
 		.document-list-actions {
 			grid-column: 1 / span 2;
 			grid-row: 2 / span 1;

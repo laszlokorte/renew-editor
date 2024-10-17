@@ -390,6 +390,10 @@
 														selectedLayers.value = [el.value?.id];
 													}}
 												>
+													<TextElement
+														bbox={view(L.prop(el.value?.id), textBounds)}
+														el={el.value}
+													/>
 												</g>
 											{/if}
 											{#if el.value?.edge && !el.value?.hidden}

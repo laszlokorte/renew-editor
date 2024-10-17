@@ -29,7 +29,7 @@ function createCommands(fetchFn) {
 					downloadFile(d, filename)
 				})
 			}).catch(e => {
-				
+				alert(e.message)
 			})
 		},
 
