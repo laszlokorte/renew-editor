@@ -1,13 +1,13 @@
 import * as L from "partial.lenses";
-import * as U from "../../utils";
-import * as Geo from "../../geometry";
+import {screenToElementViewbox, elementViewboxToScreen} from "./functions";
+import * as Geo from "$lib/math/geometry";
 import {cameraAsViewbox} from "./functions";
 
 
 export function constructLenses(svgAtom, cameraAtom) {
 	function clientToCanvas(x, y, screen = false) {
 		const cameraValue = cameraAtom.value
-		const screenPoint = U.screenToElementViewbox(
+		const screenPoint = screenToElementViewbox(
 			x,
 			y,
 			svgAtom.value,
@@ -41,7 +41,7 @@ export function constructLenses(svgAtom, cameraAtom) {
 					{ x, y },
 				);
 
-		return U.elementViewboxToScreen(
+		return elementViewboxToScreen(
 			screenPos.x,
 			screenPos.y,
 			svgAtom.value,

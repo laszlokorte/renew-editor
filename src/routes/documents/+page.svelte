@@ -41,8 +41,8 @@
 			return;
 		}
 
-		if(evt.dataTransfer.types.indexOf('Files') < 0) {
-			return
+		if (evt.dataTransfer.types.indexOf('Files') < 0) {
+			return;
 		}
 
 		evt.preventDefault();
@@ -58,9 +58,8 @@
 		evt.preventDefault();
 		dragging = false;
 
-
-		if(!evt.dataTransfer.files.length) {
-			return
+		if (!evt.dataTransfer.files.length) {
+			return;
 		}
 
 		importDocuments(evt.dataTransfer.files).then(() => {
@@ -72,9 +71,8 @@
 	function onDragEnterZone(evt) {
 		evt.preventDefault();
 
-
-		if(evt.dataTransfer.types.indexOf('Files') < 0) {
-			return
+		if (evt.dataTransfer.types.indexOf('Files') < 0) {
+			return;
 		}
 
 		draggingZone = true;
@@ -89,8 +87,8 @@
 		evt.preventDefault();
 		draggingZone = false;
 
-		if(!evt.dataTransfer.files.length) {
-			return
+		if (!evt.dataTransfer.files.length) {
+			return;
 		}
 
 		importDocuments(evt.dataTransfer.files).then(() => {
@@ -185,9 +183,9 @@
 		</div>
 
 		<LiveResource socket={data.live_socket} resource={data.documents}>
-			{#snippet children(documents, _presence, {dispatch})}
+			{#snippet children(documents, _presence, { dispatch })}
 				<ul>
-					{#each documents.value.items as d}
+					{#each documents.value.items as d (d.id)}
 						<li class="document-list-item">
 							{#if renamingId == d.id}
 								<form
@@ -313,6 +311,8 @@
 
 	.scrollable {
 		overflow: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.title {
@@ -383,12 +383,14 @@
 		cursor: pointer;
 	}
 
-	button:not(:disabled):hover {
-		background: #0004;
-	}
+	@media (pointer: fine) {
+		button:not(:disabled):hover {
+			background: #0004;
+		}
 
-	button:not(:disabled):active {
-		background: #0007;
+		button:not(:disabled):active {
+			background: #0007;
+		}
 	}
 
 	.button-group {
@@ -521,6 +523,7 @@
 	.document-list-link {
 		grid-column: 1 / span 2;
 		grid-row: 1;
+		touch-action: pan-x pan-y;
 	}
 
 	.document-list-input {
@@ -539,15 +542,32 @@
 		grid-row: 1;
 		padding: 1ex;
 		user-select: none;
+		touch-action: pan-x pan-y;
+		-webkit-user-select: none;
+
+		-webkit-touch-callout: none;
+		-webkit-user-callout: none;
+		-webkit-user-select: none;
+		-webkit-user-drag: none;
+		-webkit-user-modify: none;
+		-webkit-highlight: none;
 	}
 
+	@media (max-width: 100em) {
+		.document-list-actions {
+			grid-column: 1 / span 2;
+			grid-row: 2 / span 1;
+		}
+	}
 	.action-delete {
 		background: transparent;
 		color: #900;
 	}
-	.action-delete:not(:disabled):hover {
-		background: #a55;
-		color: #fff;
+	@media (pointer: fine) {
+		.action-delete:not(:disabled):hover {
+			background: #a55;
+			color: #fff;
+		}
 	}
 
 	.action-delete:not(:disabled):active {
@@ -559,66 +579,74 @@
 		background: transparent;
 		color: #900;
 	}
-	.action-cancel:not(:disabled):hover {
-		background: #fdd;
-	}
-
-	.action-cancel:not(:disabled):active {
-		background: #faa;
+	@media (pointer: fine) {
+		.action-cancel:not(:disabled):hover {
+			background: #fdd;
+		}
+		.action-cancel:not(:disabled):active {
+			background: #faa;
+		}
 	}
 
 	.action-confirm {
 		background: transparent;
 		color: #090;
 	}
-	.action-confirm:not(:disabled):hover {
-		background: #dfd;
-	}
-
-	.action-confirm:not(:disabled):active {
-		background: #afa;
+	@media (pointer: fine) {
+		.action-confirm:not(:disabled):hover {
+			background: #dfd;
+		}
+		.action-confirm:not(:disabled):active {
+			background: #afa;
+		}
 	}
 
 	.action-rename {
 		background: transparent;
 		color: #333;
 	}
-	.action-export:not(:disabled):hover {
-		background: #333;
-		color: #fff;
-	}
+	@media (pointer: fine) {
+		.action-export:not(:disabled):hover {
+			background: #333;
+			color: #fff;
+		}
 
-	.action-export:not(:disabled):active {
-		background: #333;
-		color: #fff;
+		.action-export:not(:disabled):active {
+			background: #333;
+			color: #fff;
+		}
 	}
 
 	.action-export {
 		background: transparent;
 		color: #009;
 	}
-	.action-export:not(:disabled):hover {
-		background: #55e;
-		color: #fff;
-	}
+	@media (pointer: fine) {
+		.action-export:not(:disabled):hover {
+			background: #55e;
+			color: #fff;
+		}
 
-	.action-export:not(:disabled):active {
-		background: #55a;
-		color: #fff;
+		.action-export:not(:disabled):active {
+			background: #55a;
+			color: #fff;
+		}
 	}
 
 	.action-duplicate {
 		background: transparent;
 		color: #090;
 	}
-	.action-duplicate:not(:disabled):hover {
-		background: #5a5;
-		color: #fff;
-	}
+	@media (pointer: fine) {
+		.action-duplicate:not(:disabled):hover {
+			background: #5a5;
+			color: #fff;
+		}
 
-	.action-duplicate:not(:disabled):active {
-		background: #2a2;
-		color: #fff;
+		.action-duplicate:not(:disabled):active {
+			background: #2a2;
+			color: #fff;
+		}
 	}
 
 	.warn {

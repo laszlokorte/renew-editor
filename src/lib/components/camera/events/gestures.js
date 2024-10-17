@@ -1,8 +1,9 @@
-let gestureBaseRot
-	let gestureBaseScale
-	let gestureBasePivot = null
-	let gestureBasePivotWorld = null
-	let prevTouchCount
+export function bindGestureEvents(element, {eventToWorld, rotationDelta, zoomDelta, panScreenDelta}) {
+	let gestureBaseRot = 0
+	let gestureBaseScale = 1
+	let gestureBasePivot = {x:0, y:0}
+	let gestureBasePivotWorld = {x:0, y:0}
+
 	function onGestureChange(evt) {
 		const dw = Math.atan2(Math.sin((evt.rotation - gestureBaseRot)/180*Math.PI), Math.cos((evt.rotation - gestureBaseRot)/180*Math.PI))*180/Math.PI
 		const dz = Math.log(evt.scale) - Math.log(gestureBaseScale)
@@ -29,7 +30,7 @@ let gestureBaseRot
 				dy,
 			}
 		} else {
-			gestureBasePivotWorld = L.get(eventWorld, evt)
+			gestureBasePivotWorld = eventToWorld(evt)
 		}
 
 		gestureBaseScale = evt.scale
@@ -49,12 +50,23 @@ let gestureBaseRot
 			x: evt.clientX,
 			y: evt.clientY,
 		}
-		gestureBasePivotWorld = L.get(eventWorld, evt)
+		gestureBasePivotWorld = eventToWorld(evt)
 	};
 
 	function onGestureEnd(evt) {
-		gestureBaseRot = null
-		gestureBaseScale = null
-		gestureBasePivot = null
-
+		gestureBaseRot = 0
+		gestureBaseScale = 1
+		gestureBasePivot = {x:0, y:0}
+		gestureBasePivotWorld = {x:0, y:0}
 	};
+
+	element.addEventListener('gesturestart', onGestureStart, {capture: true})
+	element.addEventListener('gestureend', onGestureEnd, {capture: true})
+	element.addEventListener('gesturechange', onGestureChange, {capture: true})
+
+	return () => {
+		element.removeEventListener('gesturechange', onGestureChange, {capture: true})
+		element.removeEventListener('gestureend', onGestureEnd, {capture: true})
+		element.removeEventListener('gesturestart', onGestureStart, {capture: true})
+	}
+}

@@ -28,6 +28,8 @@ function createCommands(fetchFn) {
 				return r.blob().then((d) => {
 					downloadFile(d, filename)
 				})
+			}).catch(e => {
+				
 			})
 		},
 

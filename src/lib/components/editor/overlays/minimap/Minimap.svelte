@@ -20,7 +20,7 @@
 	const isActive = atom(false);
 </script>
 
-<div style="text-align: right;">
+<div style="text-align: right; user-select: none;">
 	<label style="pointer-events: all;"
 		><input type="checkbox" bind:checked={visible.value} class="striked-label-checkbox" />
 		<span class="striked-label">Minimap</span></label

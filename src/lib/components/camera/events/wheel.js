@@ -1,10 +1,11 @@
-function onWheel(evt) {
+export function bindWheelEvents(element, {eventToWorld, mouseGrab, rotationDelta, zoomDelta}) {
+	function onWheel(evt) {
 		if (evt.deltaMode === WheelEvent.DOM_DELTA_PIXEL) {
-			if(evt.ctrlKey || mouseGrab || evt.defaultPrevented) {
+			if(evt.ctrlKey || mouseGrab.value || evt.defaultPrevented) {
 				evt.preventDefault()
 				evt.stopPropagation()
 
-				const worldPos = L.get(eventWorld, evt)
+				const worldPos = eventToWorld(evt)
 
 				if(evt.shiftKey) {
 					rotationDelta.value = {
@@ -21,14 +22,14 @@ function onWheel(evt) {
 				}
 			}
 		} else {
-			if(!evt.altKey && !evt.ctrlKey && !mouseGrab && !evt.defaultPrevented) {
+			if(!evt.altKey && !evt.ctrlKey && !mouseGrab.value && !evt.defaultPrevented) {
 				return
 			}
 
 			evt.preventDefault()
 			evt.stopPropagation()
 
-			const worldPos = L.get(eventWorld, evt)
+			const worldPos = eventToWorld(evt)
 
 			if(evt.altKey) {
 				rotationDelta.value = {
@@ -45,3 +46,11 @@ function onWheel(evt) {
 			}
 		}
 	}
+
+	element.addEventListener('wheel', onWheel, { passive:false, capture: false })
+
+
+	return () => {
+		element.removeEventListener('wheel', onWheel, { passive:false, capture: false })
+	}
+}

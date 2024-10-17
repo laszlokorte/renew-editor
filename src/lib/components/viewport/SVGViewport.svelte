@@ -3,29 +3,13 @@
 	import { view, atom, update, combine, read } from '$lib/reactivity/atom.svelte';
 	import { numberSvgFormat } from '$lib/svg/formatter';
 
-	const { camera, children, onclick, onkeydown, onpointerpoistion } = $props();
+	const { camera, children, onclick, onkeydown, onpointermove } = $props();
 
 	let svgElement = atom(undefined);
 	let svgPoint = read(
 		L.reread((e) => e.createSVGPoint()),
 		svgElement
 	);
-
-	let onpointermove = onpointerpoistion
-		? (evt) => {
-				if (evt.isPrimary) {
-					svgPoint.value.x = evt.clientX;
-					svgPoint.value.y = evt.clientY;
-
-					// The cursor point, translated into svg coordinates
-					const { x, y } = svgPoint.value.matrixTransform(
-						svgElement.value.getScreenCTM().inverse()
-					);
-
-					onpointerpoistion({ x, y });
-				}
-			}
-		: null;
 
 	const viewBoxLens = L.reread((cam) => {
 		return `${numberSvgFormat.format(cam.focus.x - (cam.plane.x / 2) * Math.exp(-cam.focus.z))} 
@@ -61,5 +45,6 @@
 		inset: 0;
 		width: 100%;
 		height: 100%;
+		touch-action: none;
 	}
 </style>

@@ -1,4 +1,4 @@
-
+import * as P from '$lib/math/projection'
 
 export const cameraAsViewbox = (camera) => {
 	return {
@@ -19,7 +19,7 @@ export const cameraAsViewbox = (camera) => {
 
 
 function screenToElementViewboxHelper(clientX, clientY, elementX, elementY, elementWidth, elementHeight, localWidth, localHeight, viewBox) {
-    const scaledVB = scaleViewBox(viewBox, localWidth, localHeight)
+    const scaledVB = P.scaleViewBox(viewBox, localWidth, localHeight)
 
     return {
         x: scaledVB.minX + scaledVB.width * ((clientX - elementX) / elementWidth),
@@ -44,7 +44,7 @@ export function screenToElementViewbox(clientX, clientY, element, viewBox) {
 }
 
 function elementViewboxToScreenHelper(viewboxX, viewboxY, elementX, elementY, elementWidth, elementHeight, localWidth, localHeight, viewBox) {
-    const scaledVB = scaleViewBox(viewBox, localWidth, localHeight)
+    const scaledVB = P.scaleViewBox(viewBox, localWidth, localHeight)
 
     return {
         x: elementX + elementWidth * ((viewboxX - scaledVB.minX) / scaledVB.width),

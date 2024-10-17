@@ -1,50 +1,58 @@
+import * as L from "partial.lenses";
 
 
-	
-	let mouseGrab
+import {
+	view,
+} from "$lib/reactivity/atom.svelte.js";
+
+export function bindPointerEvents(element, {eventToWorld, mouseGrab, rotationDelta, zoomDelta, panScreenDelta}) {
+
+	const mouseGrabPointerId = view([L.removable('pointerId'), 'pointerId'], mouseGrab)
+	const mouseGrabXY = view([L.props('x','y')], mouseGrab)
+	const mouseGrabWorld = view([L.pick({
+		x:'worldX',
+		y:'worldY',
+	})], mouseGrab)
+
 	function onPointerStart(evt) {
 		if(evt.pointerType === 'mouse' && evt.button === 1 && evt.shiftKey) {
 			evt.preventDefault()
-			node.setPointerCapture(evt.pointerId)
-			mouseGrab = {
+			element.setPointerCapture(evt.pointerId)
+			mouseGrab.value = {
 				pointerId: evt.pointerId,
 				x: evt.clientX,
 				y: evt.clientY,
-				world: L.get(eventWorld, evt),
+				world: eventToWorld(evt),
 			}
 		}
 	}
 
-	function onPointerEnd(evt) {
-	}
-
-	function onPointerGotCapture(evt) {
-	}
-
 	function onPointerLostCapture(evt) {
-		if(mouseGrab && mouseGrab.pointerId == evt.pointerId) {
-			mouseGrab = undefined
+		if(mouseGrabPointerId.value == evt.pointerId) {
+			mouseGrabPointerId.value = undefined
 		}
 	}
 
 	function onPointerMove(evt) {
-		if(mouseGrab && mouseGrab.pointerId === evt.pointerId) {
-			const dx = mouseGrab.x - evt.clientX
-			const dy = mouseGrab.y - evt.clientY
+		if(mouseGrabPointerId.value === evt.pointerId) {
+			const xy = mouseGrabXY.value
+			const world = mouseGrabWorld.value
+			const dx = xy.x - evt.clientX
+			const dy = xy.y - evt.clientY
 
 			
 			if(evt.ctrlKey) {
 				const sign = Math.sign(dx)
 				zoomDelta.value = {
-					px: mouseGrab.world.x,
-					py: mouseGrab.world.y,
+					px: world.x,
+					py: world.y,
 					dz: -sign*Math.hypot(dx,dy)/128,
 				}
 			} else if(evt.altKey) {
 				const sign = Math.sign(dx)
 					rotationDelta.value = {
-						px: mouseGrab.world.x,
-						py: mouseGrab.world.y,
+						px: world.x,
+						py: world.y,
 						dw: -sign*Math.hypot(dx,dy),
 					}
 			} else {
@@ -54,7 +62,20 @@
 				}
 			}
 
-			mouseGrab.x = evt.clientX
-			mouseGrab.y = evt.clientY
+			mouseGrabXY.value = {
+				x: evt.clientX,
+				y: evt.clientY,
+			}
 		}
 	}
+
+	element.addEventListener('pointerdown', onPointerStart, {capture: true})
+	element.addEventListener('pointermove', onPointerMove, {capture: true})
+	element.addEventListener('lostpointercapture', onPointerLostCapture, {capture: true})
+
+	return () => {
+		element.removeEventListener('lostpointercapture', onPointerLostCapture, {capture: true})
+		element.removeEventListener('pointermove', onPointerMove, {capture: true})
+		element.removeEventListener('pointerdown', onPointerStart, {capture: true})
+	}
+}

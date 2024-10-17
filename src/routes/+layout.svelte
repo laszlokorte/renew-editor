@@ -1,6 +1,6 @@
 <script>
 	import * as env from '../env';
-	import CurrentAuthState from './auth/CurrentAuthState.svelte'
+	import CurrentAuthState from './auth/CurrentAuthState.svelte';
 	const favicon = '/favicon.svg';
 
 	const appTitle = env.APP_NAME;
@@ -12,15 +12,12 @@
 	<title>{appTitle}</title>
 </svelte:head>
 
-
 {@render children()}
 
 <style>
-
 	:global(body) {
 		margin: 0;
 		padding: 0;
 		font-family: monospace;
 	}
-
 </style>
