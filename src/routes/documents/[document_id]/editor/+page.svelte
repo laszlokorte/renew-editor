@@ -73,6 +73,9 @@
 		(c) => `rotate(${-c.focus.w}, ${c.focus.x}, ${c.focus.y})`
 	);
 
+	const cameraScaleTransformLens = L.reread((c) => `scale(${Math.exp(-c.focus.z)})`);
+
+	const scaleTransform = read(cameraScaleTransformLens, camera);
 	const rotationTransform = read(cameraRotationTransformLens, camera);
 	const rotationInverseTransform = read(cameraRotationInverseTransformLens, camera);
 
@@ -317,6 +320,7 @@
 							{camera}
 							onclick={(evt) => {
 								selectedLayers.value = [];
+								cast('select', null);
 							}}
 							onkeydown={(evt) => {
 								if (evt.key == 'Escape') {
@@ -327,6 +331,9 @@
 							<Navigator
 								onworldcursor={(pos) => {
 									cast('cursor', pos);
+								}}
+								onpointerout={(pos) => {
+									cast('cursor', null);
 								}}
 								{camera}
 								{frameBoxPath}
@@ -689,10 +696,12 @@
 												{/if}
 											{/each}
 										</g>
-										{#each cursors.filter(({ self }) => !self) as { value: cursor }}
+										{#each cursors.filter(({ self, value }) => !self && value) as { value: cursor }}
 											<path
-												transform="rotate({-camera.value.focus.w} {cursor.x} {cursor.y})"
-												d="M{cursor.x} {cursor.y} v 14 l 4 -4 h 6"
+												transform="translate({cursor.x} {cursor.y}) rotate({-camera.value.focus
+													.w} 0 0) {scaleTransform.value}
+												"
+												d="M0 0 v 24 l 6 -6 h 10"
 												fill={color}
 											/>
 										{/each}

@@ -105,13 +105,13 @@ export class LiveState {
       this.channel = this.socket.channel(this.config.topic, this.config.params);
       this.presence = new Presence(this.channel)
 
-       this.presence.onSync((a) => {
-              const newList = [];
+       this.presence.onSync(() => {
 
-              this.presence.list(
+              const newList = this.presence.list(
                       (id, { metas }) => {
                         const [{ color, username, cursor }, ...rest] = metas;
-                        newList.push({
+
+                        return {
                                 id,
                                 data: { color, username, cursors: metas.map((m) => ({
                                                                   value: m.cursor,
@@ -120,10 +120,12 @@ export class LiveState {
                                                                   value: m.selection,
                                                                   self: m.connection_id === this.connection_id
                                                                 })) },
-                                count: rest.length + 1,
-                        });
+                                count: metas.length,
+                        }
                       },
               );
+
+
               this.eventTarget.dispatchEvent(new CustomEvent('presence-changed', {
                 detail: newList
               }))

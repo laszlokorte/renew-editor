@@ -15,7 +15,9 @@
 			});
 		});
 	}
-	function onLogout() {}
+	function onLogout() {
+		goto(`${base}/auth`, { invalidateAll: true });
+	}
 </script>
 
 <AppBar authState={data.authState} />

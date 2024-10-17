@@ -9,7 +9,7 @@
 
 	import { pivotZoomLens, pivotRotationLens, panScreenLens } from './lenses';
 
-	const { camera, frameBoxPath, children, errorHandler, onworldcursor } = $props();
+	const { camera, frameBoxPath, children, errorHandler, onworldcursor, onpointerout } = $props();
 
 	const svgElement = atom(null);
 	const thisElement = view(
@@ -49,6 +49,7 @@
 <g
 	bind:this={thisElement.value}
 	{onpointermove}
+	{onpointerout}
 	use:bindEvents={{ zoomDelta, rotationDelta, panScreenDelta, eventToWorld }}
 >
 	<path d={frameBoxPath.value} stroke="none" fill="#ffffff00" pointer-events="all" />

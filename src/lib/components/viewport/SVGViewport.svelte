@@ -47,4 +47,12 @@
 		height: 100%;
 		touch-action: none;
 	}
+
+	.canvas:focus {
+		outline: none;
+	}
+
+	.canvas :global(*):focus {
+		outline: none;
+	}
 </style>
