@@ -113,7 +113,13 @@ export class LiveState {
                         const [{ color, username, cursor }, ...rest] = metas;
                         newList.push({
                                 id,
-                                data: { color, username, cursors: metas.map((m) => m.cursor), selections: metas.map((m) => m.selection) },
+                                data: { color, username, cursors: metas.map((m) => ({
+                                                                  value: m.cursor,
+                                                                  self: m.connection_id === this.connection_id
+                                                                })), selections: metas.map((m) => ({
+                                                                  value: m.selection,
+                                                                  self: m.connection_id === this.connection_id
+                                                                })) },
                                 count: rest.length + 1,
                         });
                       },
@@ -124,8 +130,8 @@ export class LiveState {
       });
 
       this.channel.onError((e) => this.emitError('channel error', e));
-      this.channel.join().receive("ok", (resp) => {
-        //console.debug('channel joined', resp);
+      this.channel.join().receive("ok", ({connection_id}) => {
+        this.connection_id = connection_id
       }).receive('error', (e) => {
         this.emitError('channel join error', e)
       });
@@ -251,7 +257,7 @@ export class LiveState {
   }
 
   castAction(name, payload) {
-    this.channel.push(`lvs_evt:${name}`, payload)
+    this.channel.push(`lvs_evt:${name}`, payload, 500)
   }
 
   pushCustomEvent(event) { this.dispatchEvent(event); }

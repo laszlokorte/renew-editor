@@ -512,9 +512,8 @@
 							{/each}
 
 							{#each presence.value as { data: { cursors, color, username, selections } }}
-								{#if username != data.authState.value.email}
 									<g style:--selection-color={color}>
-										{#each selections as id (id)}
+										{#each selections.filter(({self}) => !self) as {value: id} (id)}
 											{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 											{#if el.value?.box && !el.value?.hidden}
 												<rect
@@ -617,10 +616,9 @@
 											{/if}
 										{/each}
 									</g>
-									{#each cursors as cursor}
+									{#each cursors.filter(({self}) => !self) as {value: cursor}}
 										<path d="M{cursor.x} {cursor.y} v 14 l 4 -4 h 6" fill={color} />
 									{/each}
-								{/if}
 							{/each}
 						</SVGViewport>
 					</Scroller>
