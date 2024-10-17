@@ -29,7 +29,6 @@
 		/>
 	{/if}
 	<text
-		use:bindBoundingBox={bbox}
 		fill={el.text?.style?.text_color ?? 'black'}
 		x={el.text.position_x +
 			alignmentWeight[el?.text?.style?.alignment ?? 'left'] * (bbox.value?.width ?? 0)}
@@ -55,6 +54,38 @@
 					text-decoration="none"
 					x={el.text.position_x +
 						alignmentWeight[el?.text?.style?.alignment ?? 'left'] * (bbox.value?.width ?? 0)}
+					dy={(li == 0 ? 1 : 1.2) * (el?.text?.style?.font_size ?? 12)}>&nbsp;</tspan
+				>
+			{/if}
+		{/each}
+	</text>
+
+
+	<text
+		use:bindBoundingBox={bbox}
+		fill="transparent"
+		stroke="transparent"
+		x={el.text.position_x }
+		y={el.text.position_y}
+		text-anchor={'start'}
+		font-size={el?.text?.style?.font_size ?? 12}
+		font-family={el?.text?.style?.font_family ?? 'sans-serif'}
+		font-weight={el?.text?.style?.bold ? 'bold' : 'normal'}
+		font-style={el?.text?.style?.italic ? 'italic' : 'normal'}
+		data-blank={el.text.style?.blank_lines ?? false}
+		data-body={el.text.body}
+	>
+		{#each el.text.body.split('\n') as line, li (li)}
+			{#if line.trim()}
+				<tspan
+					text-decoration={el?.text?.style?.underline ? 'underline' : 'none'}
+					x={el.text.position_x}
+					dy={(li == 0 ? 1 : 1.2) * (el?.text?.style?.font_size ?? 12)}>{line.trim()}</tspan
+				>
+			{:else if el.text.style?.blank_lines ?? false}
+				<tspan
+					text-decoration="none"
+					x={el.text.position_x}
 					dy={(li == 0 ? 1 : 1.2) * (el?.text?.style?.font_size ?? 12)}>&nbsp;</tspan
 				>
 			{/if}
