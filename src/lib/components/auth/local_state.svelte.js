@@ -51,7 +51,7 @@ export default (() => {
 			return this.value?.routes ?? []
 		},
 		createSocket() {
-			if(currentValue && currentValue.token && this.value.routes) {
+			if(currentValue && currentValue.token && this.value.routes && this.value.routes.live_socket) {
 				return new Socket(this.value.routes.live_socket.href, {params: {token: currentValue.token}})
 			} else {
 				return null
