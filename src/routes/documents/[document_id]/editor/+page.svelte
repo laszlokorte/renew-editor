@@ -79,6 +79,9 @@
 	const rotationTransform = read(cameraRotationTransformLens, camera);
 	const rotationInverseTransform = read(cameraRotationInverseTransformLens, camera);
 
+	const cameraRotation = view("w", cameraFocus)
+	const cameraZoom = view("z", cameraFocus)
+
 	let errors = atom([]);
 
 	let selectedLayers = atom([]);
@@ -239,22 +242,47 @@
 
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button" onclick={() => {}}>Reset Camera</button>
+									<button class="menu-bar-item-button" onclick={() => {
+										const e = extension.value
+
+										cameraFocus.value = {
+											z: 0,
+											w: 0,
+											x: (e.minX + e.maxX) / 2,
+											y: (e.minY + e.maxY) / 2,
+										}
+
+									}}>Reset Camera</button>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Zoom in</button>
+									<button class="menu-bar-item-button" onclick={() => {
+										update(R.add(0.2), cameraZoom)
+									}}>Zoom in</button>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Zoom out</button>
+									<button class="menu-bar-item-button" onclick={() => {
+										update(R.add(-0.2), cameraZoom)
+									}}>Zoom out</button>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Reset Zoom</button>
+									<button class="menu-bar-item-button" onclick={() => {
+										cameraZoom.value = 0
+									}}>Reset Zoom</button>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Rotate Clockwise</button>
+									<button class="menu-bar-item-button" onclick={() => {
+										update(R.add(90), cameraRotation)
+									}}>Rotate Clockwise</button>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Reset Rotation</button>
+									<button class="menu-bar-item-button" onclick={() => {
+										update(R.add(-90), cameraRotation)
+									}}>Rotate Counter-Clockwise</button>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button class="menu-bar-item-button" onclick={() => {
+										cameraRotation.value = 0
+									}}>Reset Rotation</button>
 								</li>
 							</ul>
 						</li>
@@ -820,7 +848,7 @@
 
 <style>
 	.full-page {
-		position: fixed;
+		position: absolute;
 		inset: 0;
 		display: grid;
 		place-content: stretch;
@@ -853,6 +881,8 @@
 		list-style: none;
 		gap: 1ex;
 		user-select: none;
+		max-width: 20vw;
+		overflow: visible;
 	}
 
 	.menu-bar-item {
@@ -925,6 +955,7 @@
 
 	h2 {
 		margin: 0;
+		white-space: nowrap;
 	}
 
 	.overlay {
@@ -936,6 +967,9 @@
 		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start] 1fr auto [left-end right-end] 1em [body-end];
 		gap: 0.5em;
 		overflow: hidden;
+		width: 100vw;
+
+		contain: strict;
 	}
 
 	.body {
@@ -978,6 +1012,7 @@
 		justify-content: start;
 		justify-items: stretch;
 		grid-auto-rows: 1fr;
+		overflow: auto;
 	}
 
 	hr {
@@ -1015,6 +1050,13 @@
 
 	.sidebar.right {
 		grid-area: right;
+	}
+
+	@media (max-width: 40em) {
+
+		.sidebar.right {
+			display: none;
+		}
 	}
 
 	a {
@@ -1189,5 +1231,13 @@
 		pointer-events: none;
 		stroke-linecap: butt;
 		stroke-linejoin: butt;
+	}
+
+	input[type=search] {
+		width: 100%;
+	}
+
+	textarea {
+		width: 100%;
 	}
 </style>
