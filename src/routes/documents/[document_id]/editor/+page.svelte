@@ -349,6 +349,8 @@
 									<g id="full-document-{data.document.id}">
 										{#each layersInOrder.value as { index, id, depth } (id)}
 											{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+
+											{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
 											{#if el.value?.box && !el.value?.hidden}
 												<g
 													role="button"
@@ -383,25 +385,24 @@
 												</g>
 											{/if}
 											{#if el.value?.text && !el.value?.hidden}
-												<g
-													role="button"
-													onclick={(evt) => {
-														evt.stopPropagation();
-														selectedLayers.value = [el.value?.id];
-														if (el.value?.id) {
-															cast('select', el.value?.id);
-														}
-													}}
-													tabindex="-1"
-													onkeydown={() => {
-														selectedLayers.value = [el.value?.id];
-													}}
-												>
-													<TextElement
-														bbox={view(L.prop(el.value?.id), textBounds)}
-														el={el.value}
-													/>
-												</g>
+												{#key el.id}
+													<g
+														role="button"
+														onclick={(evt) => {
+															evt.stopPropagation();
+															selectedLayers.value = [el.value?.id];
+															if (el.value?.id) {
+																cast('select', el.value?.id);
+															}
+														}}
+														tabindex="-1"
+														onkeydown={() => {
+															selectedLayers.value = [el.value?.id];
+														}}
+													>
+														<TextElement bbox={thisbbox} el={el.value} />
+													</g>
+												{/key}
 											{/if}
 											{#if el.value?.edge && !el.value?.hidden}
 												<g

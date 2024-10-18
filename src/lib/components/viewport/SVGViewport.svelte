@@ -46,6 +46,10 @@
 		width: 100%;
 		height: 100%;
 		touch-action: none;
+		contain: layout paint size style;
+		transform: translateZ(0); /* oder */
+		transform: translate3d(0, 0, 0);
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.canvas:focus {
