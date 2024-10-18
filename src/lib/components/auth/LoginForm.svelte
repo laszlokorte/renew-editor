@@ -4,7 +4,7 @@
 
 	const { auth, onSuccess } = $props();
 
-	let apiUrl = $state('http://localhost:4000/api');
+	let apiUrl = $state('');
 
 	/** @type undefined | {error: string, message:string} */
 	let currentError = $state(undefined);
@@ -67,13 +67,19 @@
 		<dd>
 			<input
 				disabled={inProgress}
-				id="login_form_server"
+				id="login_form_server_new"
 				class="text-input"
 				type="url"
 				name="api_url"
 				bind:value={apiUrl}
+				list="known_apis"
+				autocomplete={null}
 				required
 			/>
+			<datalist id="known_apis">
+				<option value="https://renewcollab.laszlokorte.de/api">RenewCollab</option>
+				<option value="http://localhost:4000/api">Local</option>
+			</datalist>
 		</dd>
 		<dt><label for="login_form_user">E-mail:</label></dt>
 		<dd>
