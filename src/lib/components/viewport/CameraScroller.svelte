@@ -1,5 +1,5 @@
 <script>
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import * as L from 'partial.lenses';
 	import * as R from 'ramda';
 	import { view, atom, update, combine, read } from '$lib/reactivity/atom.svelte';
@@ -172,7 +172,7 @@
 		})
 	);
 
-	onMount(() => {
+	export function resetCamera() {
 		const plane = camera.value.plane;
 		const bounds = cameraBounds.value;
 		update(
@@ -187,6 +187,10 @@
 			}),
 			camera
 		);
+	}
+
+	onMount(() => {
+		resetCamera();
 	});
 
 	const cameraAutoPadding = view(['frame', 'autoPadding'], camera);

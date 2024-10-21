@@ -207,6 +207,10 @@ export function update(fn, someAtom) {
 	someAtom.value = fn(someAtom.value)
 }
 
+export function call(fn, someAtom) {
+	fn(someAtom.value)
+}
+
 
 export function toggle(someAtom, fn) {
 	let prev = null

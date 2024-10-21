@@ -6,21 +6,30 @@ import documentApi from '$lib/api/documents.js'
 
 export const ssr = false;
 
-function deleteAction(fetchFn, id) {
-	return function() {
-		return documentApi(fetchFn, authState.routes, authState.authHeader)
-			.deleteDocument(id)
-			.then((r) => {
-				if(r.ok) {
-					goto(`${base}/documents`)
-				}
-			})
+function createCommands(fetchFn, doc) {
+	const api = documentApi(fetchFn, authState.routes, authState.authHeader)
+
+	return {
+		deleteDocument() {
+			return api
+				.deleteDocument(doc.id)
+				.then((r) => {
+					return goto(`${base}/documents`)
+				})
+		},
+
+		duplicateDocument() {
+			return api
+				.callJson(doc.links.duplicate)
+				.then((r) => {
+					return goto(`${base}/documents/${r.id}/editor`)
+				})
+		}
 	}
 }
 
 export async function load({params, fetch}) {
 	const api = documentApi(fetch, authState.routes, authState.authHeader)
-
 
 	if(authState.isAuthenticated) {
 		return fetch(authState.value.routes.document.href.replace(':id', params.document_id), {
@@ -38,7 +47,7 @@ export async function load({params, fetch}) {
 				return r.json().then(j => {
 					return {
 						document: j,
-						deleteAction: deleteAction(fetch, j.id),
+						commands: createCommands(fetch, j),
 						symbols: api.loadJson(j.links.symbols.href).then(symbols => {
 							return new Map(symbols.shapes.map(s => [s.id, {paths: s.paths}]))
 						}),

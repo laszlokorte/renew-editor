@@ -6,6 +6,10 @@ export default function(fetchFn, routes, token) {
 			return fetchJson(fetchFn, routes.document.href.replace(':id', id), 'delete', {"Authorization" : token})
 		},
 
+		callJson({href, method}) {
+			return fetchJson(fetchFn, href, method, {"Authorization" : token})
+		},
+
 		createDocument() {
 			return fetchJson(fetchFn, routes.documents.href, 'post', {"Authorization" : token})
 		},

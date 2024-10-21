@@ -12,7 +12,7 @@
 	<h1 class="center">Error {$page.status}: {$page.error.message}</h1>
 
 	<p class="center">
-		<a href="{base}/">Back to Homepage</a>
+		<a href="{base}/documents">Back to Document list</a>
 	</p>
 </section>
 
