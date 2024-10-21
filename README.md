@@ -10,6 +10,19 @@ Most of the work is actually already done at [lazlokorte/svatom](https://github.
 
 ## Development
 
+### Prerequisites
+
+* [NodeJS](https://nodejs.org/en) is installed on your machine ([instructions](https://nodejs.org/en/download/prebuilt-installer))
+* [Yarn](https://yarnpkg.com/) Package manager is installed (recommended alternative to NPM) (intall via `npm install -G yarn`)
+
+### Clone this repository
+
+Download this repostitory onto your machine.
+
+```sh
+git clone url-to-this-repository
+```
+
 ### Install dependencies
 
 ```sh
@@ -18,8 +31,10 @@ yarn install
 
 ### Start Mock Auth API
 
+This step is only needed to run the frontend without an actual editor backend server running.
+
 ```sh
- php -S 127.0.0.1:9999 dev/mockapi.php
+php -S 127.0.0.1:9999 dev/mockapi.php
 ```
 
 ### Start Frontend Dev Webserver
