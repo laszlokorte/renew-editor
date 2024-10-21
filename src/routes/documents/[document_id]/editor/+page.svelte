@@ -32,6 +32,7 @@
 		zoomMovementLens
 	} from '$lib/components/camera/lenses';
 	import Navigator from '$lib/components/camera/Navigator.svelte';
+	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
 
 	const { data } = $props();
 
@@ -42,8 +43,8 @@
 	const cameraSettings = atom({
 		plane: {
 			autosize: true,
-			x: 1000,
-			y: 1000
+			x: window.innerWidth * 0.8,
+			y: window.innerHeight * 0.8
 		},
 		frame: {
 			aspect: 'meet',
@@ -797,11 +798,19 @@
 											{/each}
 										{/each}
 									</g>
+									<MountTrigger
+										onMount={() => {
+											call((c) => {
+												c && c.resetCamera();
+											}, cameraScroller);
+										}}
+									/>
 								</Navigator>
 							</SVGViewport>
 						</CameraScroller>
 					</CanvasDropper>
 				</div>
+
 				<div class="topbar">
 					<div class="toolbar">
 						<button class="tool-button">Select</button>

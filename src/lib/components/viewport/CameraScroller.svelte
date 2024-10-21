@@ -189,16 +189,12 @@
 		);
 	}
 
-	onMount(() => {
-		resetCamera();
-	});
-
 	const cameraAutoPadding = view(['frame', 'autoPadding'], camera);
 </script>
 
 <Scroller
 	allowOverscroll={atom(false)}
-	center={atom(true)}
+	center={atom(false)}
 	extraScrollPadding={cameraAutoPadding}
 	{scrollPosition}
 	contentSize={scrollContentSize}

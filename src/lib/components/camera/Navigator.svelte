@@ -1,6 +1,4 @@
 <script>
-	import { tick, untrack } from 'svelte';
-
 	import * as L from 'partial.lenses';
 	import { atom, view, during, read } from '$lib/reactivity/atom.svelte.js';
 	import { bindEvents } from './events';

@@ -1,7 +1,7 @@
 <script>
 	import * as L from 'partial.lenses';
 	import * as E from '$lib/dom/events';
-	import { atom, read } from '$lib/reactivity/atom.svelte';
+	import { atom, view } from '$lib/reactivity/atom.svelte';
 
 	const {
 		children,
@@ -12,7 +12,7 @@
 		visible = atom(true)
 	} = $props();
 
-	const viewBox = read(
+	const viewBox = view(
 		({ minX, maxX, minY, maxY }) => `${minX} ${minY} ${maxX - minX} ${maxY - minY}`,
 		extension
 	);
