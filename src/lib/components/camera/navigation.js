@@ -1,6 +1,7 @@
 import * as R from "ramda";
 import * as L from "partial.lenses";
 import * as M from "$lib/math/utils";
+import * as Geo from "$lib/math/geometry";
 import {
 	atom,
 	view,
@@ -113,4 +114,33 @@ export function panWithPivotZeroDelta(cam) {
 		dx: 0,
 		dy: 0,
 	}
+}
+
+export function zoomIntoFrame(frame, oldCamera) {
+	const rad = Geo.degree2rad(-frame.angle);
+	const cos = Math.cos(rad);
+	const sin = Math.sin(rad);
+
+	const oldFrameX = oldCamera.plane.x * Math.exp(-oldCamera.focus.z);
+	const oldFrameY = oldCamera.plane.y * Math.exp(-oldCamera.focus.z);
+	const dz = Math.log(
+		Math.min(
+			oldFrameY / Math.abs(frame.size.y),
+			oldFrameX / Math.abs(frame.size.x),
+		),
+	);
+
+	return {
+		...oldCamera,
+		focus: {
+			x:
+				frame.start.x +
+				(cos * frame.size.x + sin * frame.size.y) / 2,
+			y:
+				frame.start.y +
+				(-sin * frame.size.x + cos * frame.size.y) / 2,
+			z: R.clamp(-5, 5, oldCamera.focus.z + dz),
+			w: -frame.angle,
+		},
+	};
 }

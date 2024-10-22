@@ -1,11 +1,18 @@
 <script>
 	import * as L from 'partial.lenses';
-	import { atom, view, during, read } from '$lib/reactivity/atom.svelte.js';
+	import { atom, view, read, update } from '$lib/reactivity/atom.svelte.js';
 	import { bindEvents } from './events';
 	import { constructLenses } from './live_lenses';
 	import { frameBoxLens } from './lenses';
 
-	import { pivotZoomLens, pivotRotationLens, panScreenLens } from './lenses';
+	import {
+		pivotZoomLens,
+		pivotRotationLens,
+		panScreenLens,
+		panMovementLens,
+		rotateMovementLens
+	} from './lenses';
+	import { zoomWithPivot, zoomIntoFrame } from './navigation';
 
 	const { camera, frameBoxPath, children, errorHandler, onworldcursor, onpointerout } = $props();
 
@@ -42,6 +49,24 @@
 				}
 			: onworldcursor
 	);
+
+	const panMovement = view(panMovementLens, camera);
+	const rotateMovement = view(rotateMovementLens, camera);
+
+	const actions = {
+		zoomDelta(delta) {
+			update((f) => zoomWithPivot(delta, f), cameraFocus);
+		},
+		zoomFrame(frame) {
+			update((c) => zoomIntoFrame(frame, c), camera);
+		},
+		panMove(delta) {
+			panMovement.value = delta;
+		},
+		rotate(rot) {
+			rotateMovement.value = rot;
+		}
+	};
 </script>
 
 <g
@@ -52,5 +77,5 @@
 >
 	<path d={frameBoxPath.value} stroke="none" fill="#ffffff00" pointer-events="all" />
 
-	{@render children()}
+	{@render children(liveLenses, actions)}
 </g>

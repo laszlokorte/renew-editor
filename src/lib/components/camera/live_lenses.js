@@ -73,6 +73,35 @@ export function constructLenses(svgAtom, cameraAtom) {
 		(v) => (v ? clientToCanvas(v.x, v.y) : v),
 	);
 
+	const cameraRotationIso = L.iso(
+		({ x, y }) => {
+			const c = cameraAtom.value;
+			const cos = Math.cos((-c.focus.w / 180) * Math.PI);
+			const sin = Math.sin((-c.focus.w / 180) * Math.PI);
+
+			const dx = x - c.focus.x;
+			const dy = y - c.focus.y;
+
+			return {
+				x: c.focus.x + dx * cos + dy * sin,
+				y: c.focus.y + dx * -sin + dy * cos,
+			};
+		},
+		({ x, y }) => {
+			const c = cameraAtom.value;
+			const cos = Math.cos((c.focus.w / 180) * Math.PI);
+			const sin = Math.sin((c.focus.w / 180) * Math.PI);
+
+			const dx = x - c.focus.x;
+			const dy = y - c.focus.y;
+
+			return {
+				x: c.focus.x + dx * cos + dy * sin,
+				y: c.focus.y + dx * -sin + dy * cos,
+			};
+		},
+	); 
+
 	return {
 		clientToCanvas,
 		canvasToClient,
@@ -80,5 +109,6 @@ export function constructLenses(svgAtom, cameraAtom) {
 		pageToClient,
 		worldPageIso,
 		worldClientIso,
+		cameraRotationIso,
 	}
 }

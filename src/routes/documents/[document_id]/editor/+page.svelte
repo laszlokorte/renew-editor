@@ -17,6 +17,13 @@
 	import CameraScroller from '$lib/components/viewport/CameraScroller.svelte';
 	import CanvasDropper from '$lib/components/dragdrop/CanvasDropper.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
+	import Grid from '$lib/components/editor/overlays/grid/Grid.svelte';
+	import Pen from '$lib/components/editor/tools/pen/Pen.svelte';
+	import Magnifier from '$lib/components/editor/tools/magnifier/Magnifier.svelte';
+	import Paner from '$lib/components/editor/tools/paner/Paner.svelte';
+	import Rotator from '$lib/components/editor/tools/rotator/Rotator.svelte';
+	import Zoomer from '$lib/components/editor/tools/zoomer/Zoomer.svelte';
+
 	import { buildPath } from './symbols';
 	import Symbol from './Symbol.svelte';
 	import TextElement from './TextElement.svelte';
@@ -36,9 +43,32 @@
 
 	const { data } = $props();
 
+	const logLens = (base) =>
+		L.lens(
+			(x) => Math.log(x) / Math.log(base),
+			(y) => Math.pow(base, y)
+		);
+
 	const textBounds = atom({});
 	const showMinimap = atom(true);
+	const showCursors = atom(true);
+	const showOtherSelections = atom(true);
 	const showDebug = atom(true);
+	const showGrid = atom(false);
+	const gridDistance = atom(32);
+	const gridDistanceExp = view(logLens(2), gridDistance);
+
+	const tools = [
+		{ name: 'Select', id: 'select' },
+		{ name: 'Magnifier', id: 'magnifier' },
+		{ name: 'Pan', id: 'paner' },
+		{ name: 'Zoom', id: 'zoomer' },
+		{ name: 'Rotate', id: 'rotator' },
+		{ name: 'Pen', id: 'pen' },
+		{ name: 'Polygon', id: 'polygon' },
+		{ name: 'Spline', id: 'spline' }
+	];
+	const activeTool = atom('select');
 
 	const cameraSettings = atom({
 		plane: {
@@ -75,6 +105,7 @@
 		({ minX, minY, width, height }) =>
 			`M${numberSvgFormat.format(minX)},${numberSvgFormat.format(minY)}h${numberSvgFormat.format(width)}v${numberSvgFormat.format(height)}h${numberSvgFormat.format(-width)}z`
 	);
+	const frameBoxObject = read(frameBoxLens, camera);
 	const frameBoxPath = read([frameBoxLens, 'screenSpaceAligned', boxPathLens], camera);
 
 	const cameraRotationTransformLens = L.reread(
@@ -85,9 +116,11 @@
 		(c) => `rotate(${-c.focus.w}, ${c.focus.x}, ${c.focus.y})`
 	);
 
-	const cameraScaleTransformLens = L.reread((c) => `scale(${Math.exp(-c.focus.z)})`);
+	const cameraScaleLens = L.reread((c) => Math.exp(-c.focus.z));
+	const cameraScaleTransformLens = [cameraScaleLens, L.reread((s) => `scale(${s})`)];
 
 	const scaleTransform = read(cameraScaleTransformLens, camera);
+	const cameraScale = read(cameraScaleLens, camera);
 	const rotationTransform = read(cameraRotationTransformLens, camera);
 	const rotationInverseTransform = read(cameraRotationInverseTransformLens, camera);
 
@@ -267,9 +300,10 @@
 											call((c) => {
 												c && c.resetCamera();
 											}, cameraScroller);
-										}}>Reset Camera</button
+										}}>Fit into Camera</button
 									>
 								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<button
 										class="menu-bar-item-button"
@@ -295,6 +329,17 @@
 									>
 								</li>
 								<li class="menu-bar-menu-item">
+									<input
+										type="range"
+										bind:value={cameraZoom.value}
+										min="-3"
+										step=".01"
+										max="3"
+										style="width: 100%; box-sizing: border-box;"
+									/>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
 									<button
 										class="menu-bar-item-button"
 										onclick={() => {
@@ -318,21 +363,57 @@
 										}}>Reset Rotation</button
 									>
 								</li>
+								<li class="menu-bar-menu-item">
+									<input
+										type="range"
+										bind:value={cameraRotation.value}
+										min="-180"
+										step="5"
+										max="180"
+										style="width: 100%; box-sizing: border-box;"
+									/>
+								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
-										onclick={() => {
-											update(R.not, showMinimap);
-										}}>Toggle Minimap</button
+									<label>
+										<input type="checkbox" bind:checked={showGrid.value} />
+										Show Grid</label
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
-										onclick={() => {
-											update(R.not, showDebug);
-										}}>Toggle Debug</button
+									<input
+										disabled={!showGrid.value}
+										type="range"
+										bind:value={gridDistanceExp.value}
+										min="2"
+										step="1"
+										max="10"
+										style="width: 100%; box-sizing: border-box;"
+									/>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showMinimap.value} />
+										Show Minimap</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showCursors.value} />
+										Show Remote Cursors</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showOtherSelections.value} />
+										Show Remote Selections</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showDebug.value} />
+										Show Debug</label
 									>
 								</li>
 							</ul>
@@ -426,54 +507,78 @@
 									{camera}
 									{frameBoxPath}
 								>
-									<rect
-										transform={rotationTransform.value}
-										fill="#fff"
-										stroke="#eee"
-										stroke-width="5"
-										{...doc.value.viewbox}
-									/>
-									<g transform={rotationTransform.value}>
-										<g id="full-document-{data.document.id}">
-											{#each layersInOrder.value as { index, id, depth } (id)}
-												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+									{#snippet children(liveLenses, navigationActions)}
+										<rect
+											transform={rotationTransform.value}
+											fill="#fff"
+											stroke="#eee"
+											stroke-width="5"
+											{...doc.value.viewbox}
+										/>
+										{#if showGrid.value}
+											<Grid {rotationTransform} {frameBoxObject} {cameraScale} {gridDistance} />
+										{/if}
 
-												{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
-												{#if el.value?.box && !el.value?.hidden}
-													<g
-														role="button"
-														onclick={(evt) => {
-															evt.stopPropagation();
-															selectedLayers.value = [el.value?.id];
+										<g transform={rotationTransform.value}>
+											<g id="full-document-{data.document.id}">
+												{#each layersInOrder.value as { index, id, depth } (id)}
+													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 
-															if (el.value?.id) {
-																cast('select', el.value?.id);
-															}
-														}}
-														tabindex="-1"
-														onkeydown={() => {
-															selectedLayers.value = [el.value?.id];
-														}}
-														fill={el.value?.style?.background_color ?? '#70DB93'}
-														stroke={el.value?.style?.border_color ?? 'black'}
-														stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
-														stroke-width={el.value?.style?.border_width ?? '1'}
-														opacity={el.value?.style?.opacity ?? '1'}
-													>
-														<Symbol
-															symbols={data.symbols}
-															symbolId={el.value?.box.shape}
-															box={{
-																x: el.value?.box.position_x,
-																y: el.value?.box.position_y,
-																width: el.value?.box.width,
-																height: el.value?.box.height
+													{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
+													{#if el.value?.box && !el.value?.hidden}
+														<g
+															role="button"
+															onclick={(evt) => {
+																evt.stopPropagation();
+																selectedLayers.value = [el.value?.id];
+
+																if (el.value?.id) {
+																	cast('select', el.value?.id);
+																}
 															}}
-														/>
-													</g>
-												{/if}
-												{#if el.value?.text && !el.value?.hidden}
-													{#key el.id}
+															tabindex="-1"
+															onkeydown={() => {
+																selectedLayers.value = [el.value?.id];
+															}}
+															fill={el.value?.style?.background_color ?? '#70DB93'}
+															stroke={el.value?.style?.border_color ?? 'black'}
+															stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
+															stroke-width={el.value?.style?.border_width ?? '1'}
+															opacity={el.value?.style?.opacity ?? '1'}
+														>
+															<Symbol
+																symbols={data.symbols}
+																symbolId={el.value?.box.shape}
+																box={{
+																	x: el.value?.box.position_x,
+																	y: el.value?.box.position_y,
+																	width: el.value?.box.width,
+																	height: el.value?.box.height
+																}}
+															/>
+														</g>
+													{/if}
+													{#if el.value?.text && !el.value?.hidden}
+														{#key el.id}
+															<g
+																role="button"
+																onclick={(evt) => {
+																	evt.stopPropagation();
+																	selectedLayers.value = [el.value?.id];
+																	if (el.value?.id) {
+																		cast('select', el.value?.id);
+																	}
+																}}
+																tabindex="-1"
+																onkeydown={() => {
+																	selectedLayers.value = [el.value?.id];
+																}}
+															>
+																<TextElement bbox={thisbbox} el={el.value} />
+															</g>
+														{/key}
+													{/if}
+													{#if el.value?.edge && !el.value?.hidden}
 														<g
 															role="button"
 															onclick={(evt) => {
@@ -487,324 +592,367 @@
 															onkeydown={() => {
 																selectedLayers.value = [el.value?.id];
 															}}
+															opacity={el.value?.style?.opacity ?? '1'}
+															stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
+															stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
+															stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+															stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 														>
-															<TextElement bbox={thisbbox} el={el.value} />
+															<path
+																d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																	el.value?.edge
+																)}
+																pointer-events="stroke"
+																fill="none"
+																stroke="none"
+																stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 10}
+															/>
+															<path
+																d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																	el.value?.edge
+																)}
+																stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
+																fill="none"
+															/>
+
+															{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+																{@const source_angle = edgeAngle['source'](el.value?.edge)}
+																{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+																<g
+																	fill={el.value?.style?.background_color ?? 'black'}
+																	transform="rotate({source_angle} {el.value?.edge.source_x} {el
+																		.value?.edge.source_y})"
+																>
+																	<Symbol
+																		symbols={data.symbols}
+																		symbolId={el.value?.edge?.style?.source_tip_symbol_shape_id}
+																		box={{
+																			x: el.value?.edge.source_x - size,
+																			y: el.value?.edge.source_y - size,
+																			width: 2 * size,
+																			height: 2 * size
+																		}}
+																	/>
+																</g>
+															{/if}
+
+															{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+																{@const target_angle = edgeAngle['target'](el.value?.edge)}
+																{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																<g
+																	fill={el.value?.style?.background_color ?? 'black'}
+																	transform="rotate({target_angle} {el.value?.edge.target_x} {el
+																		.value?.edge.target_y})"
+																>
+																	<Symbol
+																		symbols={data.symbols}
+																		symbolId={el.value?.edge?.style?.target_tip_symbol_shape_id}
+																		box={{
+																			x: el.value?.edge.target_x - size,
+																			y: el.value?.edge.target_y - size,
+																			width: 2 * size,
+																			height: 2 * size
+																		}}
+																	/>
+																</g>
+															{/if}
 														</g>
-													{/key}
-												{/if}
-												{#if el.value?.edge && !el.value?.hidden}
-													<g
-														role="button"
-														onclick={(evt) => {
-															evt.stopPropagation();
-															selectedLayers.value = [el.value?.id];
-															if (el.value?.id) {
-																cast('select', el.value?.id);
-															}
-														}}
-														tabindex="-1"
-														onkeydown={() => {
-															selectedLayers.value = [el.value?.id];
-														}}
-														opacity={el.value?.style?.opacity ?? '1'}
-														stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
-														stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
-														stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
-														stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
-													>
-														<path
-															d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																el.value?.edge
-															)}
-															pointer-events="stroke"
-															fill="none"
-															stroke="none"
-															stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 10}
-														/>
-														<path
-															d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																el.value?.edge
-															)}
-															stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
-															fill="none"
-														/>
-
-														{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-															{@const source_angle = edgeAngle['source'](el.value?.edge)}
-															{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-
-															<g
-																fill={el.value?.style?.background_color ?? 'black'}
-																transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
-																	?.edge.source_y})"
-															>
-																<Symbol
-																	symbols={data.symbols}
-																	symbolId={el.value?.edge?.style?.source_tip_symbol_shape_id}
-																	box={{
-																		x: el.value?.edge.source_x - size,
-																		y: el.value?.edge.source_y - size,
-																		width: 2 * size,
-																		height: 2 * size
-																	}}
-																/>
-															</g>
-														{/if}
-
-														{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-															{@const target_angle = edgeAngle['target'](el.value?.edge)}
-															{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-															<g
-																fill={el.value?.style?.background_color ?? 'black'}
-																transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
-																	?.edge.target_y})"
-															>
-																<Symbol
-																	symbols={data.symbols}
-																	symbolId={el.value?.edge?.style?.target_tip_symbol_shape_id}
-																	box={{
-																		x: el.value?.edge.target_x - size,
-																		y: el.value?.edge.target_y - size,
-																		width: 2 * size,
-																		height: 2 * size
-																	}}
-																/>
-															</g>
-														{/if}
-													</g>
-												{/if}
-											{/each}
-										</g>
-									</g>
-									<g transform={rotationTransform.value}>
-										{#each selectedLayers.value as id (id)}
-											{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-											{#if el.value?.box && !el.value?.hidden}
-												<rect
-													class="selected"
-													x={el.value?.box.position_x}
-													y={el.value?.box.position_y}
-													width={el.value?.box.width}
-													height={el.value?.box.height}
-												></rect>
-											{/if}
-											{#if el.value?.text && !el.value?.hidden}
-												{@const bbox = view(L.prop(el.value?.id), textBounds)}
-
-												<rect
-													class="selected"
-													x={bbox.value.x}
-													y={bbox.value.y}
-													width={bbox.value.width}
-													height={bbox.value.height}
-												></rect>
-											{/if}
-											{#if el.value?.edge && !el.value?.hidden}
-												<path
-													class="selected"
-													d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-														el.value?.edge
-													)}
-													stroke="black"
-													fill="none"
-													stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
-												/>
-
-												{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-													{@const source_angle = edgeAngle['source'](el.value?.edge)}
-													<g
-														class="selected"
-														transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
-															?.edge.source_y})"
-													>
-														{#await data.symbols then symbols}
-															{@const symbol = symbols.get(
-																el.value?.edge?.style?.source_tip_symbol_shape_id
-															)}
-															{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-
-															{#if symbol}
-																{#each symbol.paths as path, i (i)}
-																	<path
-																		fill={path.fill_color ?? 'transparent'}
-																		stroke={path.stroke_color ?? 'transparent'}
-																		d={buildPath(
-																			{
-																				x: el.value?.edge.source_x - size,
-																				y: el.value?.edge.source_y - size,
-																				width: 2 * size,
-																				height: 2 * size
-																			},
-																			path
-																		)}
-																	/>
-																{/each}
-															{/if}
-														{/await}
-													</g>
-												{/if}
-
-												{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-													{@const target_angle = edgeAngle['target'](el.value?.edge)}
-													<g
-														class="selected"
-														transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
-															?.edge.target_y})"
-													>
-														{#await data.symbols then symbols}
-															{@const symbol = symbols.get(
-																el.value?.edge?.style?.target_tip_symbol_shape_id
-															)}
-															{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-
-															{#if symbol}
-																{#each symbol.paths as path, i (i)}
-																	<path
-																		fill={path.fill_color ?? 'transparent'}
-																		stroke={path.stroke_color ?? 'transparent'}
-																		d={buildPath(
-																			{
-																				x: el.value?.edge.target_x - size,
-																				y: el.value?.edge.target_y - size,
-																				width: 2 * size,
-																				height: 2 * size
-																			},
-																			path
-																		)}
-																	/>
-																{/each}
-															{/if}
-														{/await}
-													</g>
-												{/if}
-											{/if}
-										{/each}
-									</g>
-
-									<g transform={rotationTransform.value}>
-										{#each presence.value as { data: { cursors, color, username, selections } }}
-											<g style:--selection-color={color}>
-												{#each selections.filter(({ self }) => !self) as { value: id }}
-													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-													{#if el.value?.box && !el.value?.hidden}
-														<rect
-															class="selected"
-															x={el.value?.box.position_x}
-															y={el.value?.box.position_y}
-															width={el.value?.box.width}
-															height={el.value?.box.height}
-														></rect>
-													{/if}
-													{#if el.value?.text && !el.value?.hidden}
-														{@const bbox = view(L.prop(el.value?.id), textBounds)}
-
-														<rect
-															class="selected"
-															x={bbox.value.x}
-															y={bbox.value.y}
-															width={bbox.value.width}
-															height={bbox.value.height}
-														></rect>
-													{/if}
-													{#if el.value?.edge && !el.value?.hidden}
-														<path
-															class="selected"
-															d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																el.value?.edge
-															)}
-															stroke="black"
-															fill="none"
-															stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
-														/>
-
-														{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-															{@const source_angle = edgeAngle['source'](el.value?.edge)}
-															<g
-																class="selected"
-																transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
-																	?.edge.source_y})"
-															>
-																{#await data.symbols then symbols}
-																	{@const symbol = symbols.get(
-																		el.value?.edge?.style?.source_tip_symbol_shape_id
-																	)}
-																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-
-																	{#if symbol}
-																		{#each symbol.paths as path, i (i)}
-																			<path
-																				fill={path.fill_color ?? 'transparent'}
-																				stroke={path.stroke_color ?? 'transparent'}
-																				d={buildPath(
-																					{
-																						x: el.value?.edge.source_x - size,
-																						y: el.value?.edge.source_y - size,
-																						width: 2 * size,
-																						height: 2 * size
-																					},
-																					path
-																				)}
-																			/>
-																		{/each}
-																	{/if}
-																{/await}
-															</g>
-														{/if}
-
-														{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-															{@const target_angle = edgeAngle['target'](el.value?.edge)}
-															<g
-																class="selected"
-																transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
-																	?.edge.target_y})"
-															>
-																{#await data.symbols then symbols}
-																	{@const symbol = symbols.get(
-																		el.value?.edge?.style?.target_tip_symbol_shape_id
-																	)}
-																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-
-																	{#if symbol}
-																		{#each symbol.paths as path, i (i)}
-																			<path
-																				fill={path.fill_color ?? 'transparent'}
-																				stroke={path.stroke_color ?? 'transparent'}
-																				d={buildPath(
-																					{
-																						x: el.value?.edge.target_x - size,
-																						y: el.value?.edge.target_y - size,
-																						width: 2 * size,
-																						height: 2 * size
-																					},
-																					path
-																				)}
-																			/>
-																		{/each}
-																	{/if}
-																{/await}
-															</g>
-														{/if}
 													{/if}
 												{/each}
 											</g>
-											{#each cursors.filter(({ self, value }) => !self && value) as { value: cursor }}
-												<path
-													transform="translate({cursor.x} {cursor.y}) rotate({-camera.value.focus
-														.w} 0 0) {scaleTransform.value}
-												"
-													d="M0 0 v 24 l 6 -6 h 10"
-													fill={color}
-												/>
+										</g>
+										<g transform={rotationTransform.value}>
+											{#each selectedLayers.value as id (id)}
+												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+												{#if el.value?.box && !el.value?.hidden}
+													<rect
+														class="selected"
+														x={el.value?.box.position_x}
+														y={el.value?.box.position_y}
+														width={el.value?.box.width}
+														height={el.value?.box.height}
+													></rect>
+												{/if}
+												{#if el.value?.text && !el.value?.hidden}
+													{@const bbox = view(L.prop(el.value?.id), textBounds)}
+
+													<rect
+														class="selected"
+														x={bbox.value.x}
+														y={bbox.value.y}
+														width={bbox.value.width}
+														height={bbox.value.height}
+													></rect>
+												{/if}
+												{#if el.value?.edge && !el.value?.hidden}
+													<path
+														class="selected"
+														d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+															el.value?.edge
+														)}
+														stroke="black"
+														fill="none"
+														stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+													/>
+
+													{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+														{@const source_angle = edgeAngle['source'](el.value?.edge)}
+														<g
+															class="selected"
+															transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
+																?.edge.source_y})"
+														>
+															{#await data.symbols then symbols}
+																{@const symbol = symbols.get(
+																	el.value?.edge?.style?.source_tip_symbol_shape_id
+																)}
+																{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+																{#if symbol}
+																	{#each symbol.paths as path, i (i)}
+																		<path
+																			fill={path.fill_color ?? 'transparent'}
+																			stroke={path.stroke_color ?? 'transparent'}
+																			d={buildPath(
+																				{
+																					x: el.value?.edge.source_x - size,
+																					y: el.value?.edge.source_y - size,
+																					width: 2 * size,
+																					height: 2 * size
+																				},
+																				path
+																			)}
+																		/>
+																	{/each}
+																{/if}
+															{/await}
+														</g>
+													{/if}
+
+													{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+														{@const target_angle = edgeAngle['target'](el.value?.edge)}
+														<g
+															class="selected"
+															transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
+																?.edge.target_y})"
+														>
+															{#await data.symbols then symbols}
+																{@const symbol = symbols.get(
+																	el.value?.edge?.style?.target_tip_symbol_shape_id
+																)}
+																{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+																{#if symbol}
+																	{#each symbol.paths as path, i (i)}
+																		<path
+																			fill={path.fill_color ?? 'transparent'}
+																			stroke={path.stroke_color ?? 'transparent'}
+																			d={buildPath(
+																				{
+																					x: el.value?.edge.target_x - size,
+																					y: el.value?.edge.target_y - size,
+																					width: 2 * size,
+																					height: 2 * size
+																				},
+																				path
+																			)}
+																		/>
+																	{/each}
+																{/if}
+															{/await}
+														</g>
+													{/if}
+												{/if}
 											{/each}
-										{/each}
-									</g>
-									<MountTrigger
-										onMount={() => {
-											call((c) => {
-												c && c.resetCamera();
-											}, cameraScroller);
-										}}
-									/>
+										</g>
+
+										{#if activeTool.value === 'pen'}
+											<Pen
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												{cameraScale}
+												{rotationTransform}
+												onDraw={(points) => {
+													cast('create_layer', {
+														points
+													});
+												}}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'magnifier'}
+											<Magnifier
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												cameraRotationLens={liveLenses.cameraRotationIso}
+												{cameraRotation}
+												onZoomDelta={navigationActions.zoomDelta}
+												onZoomFrame={navigationActions.zoomFrame}
+												{cameraScale}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'paner'}
+											<Paner
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onPan={navigationActions.panMove}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'rotator'}
+											<Rotator
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onRotate={navigationActions.rotate}
+												{rotationTransform}
+												{cameraScale}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'zoomer'}
+											<Zoomer
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onZoom={navigationActions.zoomDelta}
+												{rotationTransform}
+												{cameraScale}
+											/>
+										{/if}
+
+										<g transform={rotationTransform.value}>
+											{#each presence.value as { data: { cursors, color, username, selections } }}
+												{#if showOtherSelections.value}
+													<g style:--selection-color={color}>
+														{#each selections.filter(({ self }) => !self) as { value: id }}
+															{@const el = view(
+																['layers', 'items', L.find((el) => el.id == id)],
+																doc
+															)}
+															{#if el.value?.box && !el.value?.hidden}
+																<rect
+																	class="selected"
+																	x={el.value?.box.position_x}
+																	y={el.value?.box.position_y}
+																	width={el.value?.box.width}
+																	height={el.value?.box.height}
+																></rect>
+															{/if}
+															{#if el.value?.text && !el.value?.hidden}
+																{@const bbox = view(L.prop(el.value?.id), textBounds)}
+
+																<rect
+																	class="selected"
+																	x={bbox.value.x}
+																	y={bbox.value.y}
+																	width={bbox.value.width}
+																	height={bbox.value.height}
+																></rect>
+															{/if}
+															{#if el.value?.edge && !el.value?.hidden}
+																<path
+																	class="selected"
+																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																		el.value?.edge
+																	)}
+																	stroke="black"
+																	fill="none"
+																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+																/>
+
+																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+																	{@const source_angle = edgeAngle['source'](el.value?.edge)}
+																	<g
+																		class="selected"
+																		transform="rotate({source_angle} {el.value?.edge.source_x} {el
+																			.value?.edge.source_y})"
+																	>
+																		{#await data.symbols then symbols}
+																			{@const symbol = symbols.get(
+																				el.value?.edge?.style?.source_tip_symbol_shape_id
+																			)}
+																			{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+																			{#if symbol}
+																				{#each symbol.paths as path, i (i)}
+																					<path
+																						fill={path.fill_color ?? 'transparent'}
+																						stroke={path.stroke_color ?? 'transparent'}
+																						d={buildPath(
+																							{
+																								x: el.value?.edge.source_x - size,
+																								y: el.value?.edge.source_y - size,
+																								width: 2 * size,
+																								height: 2 * size
+																							},
+																							path
+																						)}
+																					/>
+																				{/each}
+																			{/if}
+																		{/await}
+																	</g>
+																{/if}
+
+																{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+																	{@const target_angle = edgeAngle['target'](el.value?.edge)}
+																	<g
+																		class="selected"
+																		transform="rotate({target_angle} {el.value?.edge.target_x} {el
+																			.value?.edge.target_y})"
+																	>
+																		{#await data.symbols then symbols}
+																			{@const symbol = symbols.get(
+																				el.value?.edge?.style?.target_tip_symbol_shape_id
+																			)}
+																			{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+																			{#if symbol}
+																				{#each symbol.paths as path, i (i)}
+																					<path
+																						fill={path.fill_color ?? 'transparent'}
+																						stroke={path.stroke_color ?? 'transparent'}
+																						d={buildPath(
+																							{
+																								x: el.value?.edge.target_x - size,
+																								y: el.value?.edge.target_y - size,
+																								width: 2 * size,
+																								height: 2 * size
+																							},
+																							path
+																						)}
+																					/>
+																				{/each}
+																			{/if}
+																		{/await}
+																	</g>
+																{/if}
+															{/if}
+														{/each}
+													</g>
+												{/if}
+												{#if showCursors.value}
+													{#each cursors.filter(({ self, value }) => !self && value) as { value: cursor }}
+														<path
+															transform="translate({cursor.x} {cursor.y}) rotate({-camera.value
+																.focus.w} 0 0) {scaleTransform.value}
+												"
+															d="M0 0 v 24 l 6 -6 h 10"
+															fill={color}
+														/>
+													{/each}
+												{/if}
+											{/each}
+										</g>
+										<MountTrigger
+											onMount={() => {
+												call((c) => {
+													c && c.resetCamera();
+												}, cameraScroller);
+											}}
+										/>
+									{/snippet}
 								</Navigator>
 							</SVGViewport>
 						</CameraScroller>
@@ -813,9 +961,17 @@
 
 				<div class="topbar">
 					<div class="toolbar">
-						<button class="tool-button">Select</button>
-						<button class="tool-button">Connect</button>
-						<button class="tool-button">Draw</button>
+						{#each tools as tool (tool.id)}
+							<label class="tool-selector" class:active={activeTool.value === tool.id}
+								>{tool.name}
+								<input
+									class="tool-radio"
+									type="radio"
+									value={tool.id}
+									bind:group={activeTool.value}
+								/></label
+							>
+						{/each}
 						<hr />
 						<select class="attribute-select">
 							<option>Font</option>
@@ -1389,5 +1545,19 @@
 
 	textarea {
 		width: 100%;
+	}
+
+	.tool-selector {
+		padding: 1ex;
+		cursor: pointer;
+	}
+
+	.tool-selector.active {
+		background: #333;
+		color: #fff;
+	}
+
+	.tool-radio {
+		display: none;
 	}
 </style>

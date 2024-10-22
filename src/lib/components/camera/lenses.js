@@ -54,8 +54,8 @@ export const panMovementLens = [
 	L.props("x", "y"),
 	L.lens(R.always({ x: 0, y: 0 }), (delta, { x, y }) => {
 		return {
-			x: x + delta.x,
-			y: y + delta.y,
+			x: x + delta.dx,
+			y: y + delta.dy,
 		};
 	}),
 ];
