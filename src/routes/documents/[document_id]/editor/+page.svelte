@@ -23,6 +23,8 @@
 	import Paner from '$lib/components/editor/tools/paner/Paner.svelte';
 	import Rotator from '$lib/components/editor/tools/rotator/Rotator.svelte';
 	import Zoomer from '$lib/components/editor/tools/zoomer/Zoomer.svelte';
+	import Spline from '$lib/components/editor/tools/spline/Spline.svelte';
+	import Polygon from '$lib/components/editor/tools/polygon/Polygon.svelte';
 
 	import { buildPath } from './symbols';
 	import Symbol from './Symbol.svelte';
@@ -65,8 +67,10 @@
 		{ name: 'Zoom', id: 'zoomer' },
 		{ name: 'Rotate', id: 'rotator' },
 		{ name: 'Pen', id: 'pen' },
-		{ name: 'Polygon', id: 'polygon' },
-		{ name: 'Spline', id: 'spline' }
+		{ name: 'Polygon', id: 'polygon' }
+
+		// Splines are not supported by the editor server yet
+		//{ name: 'Spline', id: 'spline' }
 	];
 	const activeTool = atom('select');
 
@@ -223,6 +227,29 @@
 					})
 				],
 				doc
+			)}
+			{@const selectedLayersType = read(
+				L.reread(({ d, sl }) => {
+					return d.layers.items
+						.filter((l) => sl.includes(l.id))
+						.map((l) => {
+							if (l.text) {
+								return 'text';
+							} else if (l.edge) {
+								return 'edge';
+							} else if (l.box) {
+								return 'box';
+							} else {
+								return null;
+							}
+						})
+						.filter((t) => t !== null);
+				}),
+				combine({ d: doc, sl: selectedLayers })
+			)}
+			{@const singleSelectedLayerType = read(
+				(l) => (l.length === 1 ? l[0] : null),
+				selectedLayersType
 			)}
 			<header class="header">
 				<div class="header-titel">
@@ -821,6 +848,32 @@
 											/>
 										{/if}
 
+										{#if activeTool.value === 'polygon'}
+											<Polygon
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												{rotationTransform}
+												{cameraScale}
+												onDraw={(points) => {
+													cast('create_layer', {
+														points
+													});
+												}}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'spline'}
+											<Spline
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												{rotationTransform}
+												{cameraScale}
+												onDraw={(points) => {
+													alert('splines currently not implemented');
+												}}
+											/>
+										{/if}
+
 										<g transform={rotationTransform.value}>
 											{#each presence.value as { data: { cursors, color, username, selections } }}
 												{#if showOtherSelections.value}
@@ -973,16 +1026,67 @@
 							>
 						{/each}
 						<hr />
-						<select class="attribute-select">
-							<option>Font</option>
-						</select>
-						<select class="attribute-select">
-							<option>Stroke</option>
-						</select>
-						<hr />
-						<label class="color-wrapper"><input type="color" name="" value="#ff0066" /></label>
-						<label class="color-wrapper"><input type="color" name="" value="#6600ff" /></label>
-						<input type="range" name="" style="width: 10em" />
+
+						{#snippet edgeProps()}
+							<input type="number" size="4" />
+							<input type="color" />
+							<select>
+								<option value="">Source Arrow</option>
+							</select>
+							<select>
+								<option value="">Dash</option>
+							</select>
+							<select>
+								<option value="">Target Arrow</option>
+							</select>
+							<select>
+								<option value="">Linear</option>
+							</select>
+							<select>
+								<option value="">Join</option>
+							</select>
+							<select>
+								<option value="">Cap</option>
+							</select>
+						{/snippet}
+						{#snippet boxProps()}
+							<select>
+								<option value="">Shape</option>
+							</select>
+							<input type="color" />
+							<input type="color" />
+							<input type="number" size="4" />
+							<select>
+								<option value="">Dash</option>
+							</select>
+							<input type="number" size="4" />
+						{/snippet}
+						{#snippet textProps()}
+							<select>
+								<option value="">Font Family</option>
+							</select>
+							<input type="number" size="4" />
+
+							<label><input type="checkbox" /> Bold</label>
+							<label><input type="checkbox" /> Italic</label>
+							<label><input type="checkbox" /> Underline</label>
+							<label>Text Color <input type="color" /></label>
+							<select>
+								<option value="">Alignment</option>
+							</select>
+						{/snippet}
+						Selected:
+						{#if singleSelectedLayerType.value}
+							{@render {
+								text: textProps,
+								box: boxProps,
+								edge: edgeProps
+							}[singleSelectedLayerType.value]()}
+						{:else if selectedLayersType.value.length > 1}
+							{selectedLayersType.value.length} layers
+						{:else}
+							none
+						{/if}
 					</div>
 				</div>
 

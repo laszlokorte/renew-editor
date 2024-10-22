@@ -1,3 +1,6 @@
+import { createActor } from 'xstate';
+import { read } from './atom.svelte';
+
 
 export function fsm(machineDef) {
 
