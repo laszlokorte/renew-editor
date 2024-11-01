@@ -264,7 +264,12 @@
 							File
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Save</button>
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											alert('the document is saved automatically');
+										}}>Save</button
+									>
 								</li>
 								<li class="menu-bar-menu-item">
 									<button class="menu-bar-item-button">Rename</button>
@@ -303,16 +308,56 @@
 							Edit
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Undo</button>
+									<button
+										class="menu-bar-item-button"
+										disabled={doc.value.snapshot.prev_id == doc.value.snapshot.current_id}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('restore_snapshot', doc.value.snapshot.prev_id);
+										}}>Undo</button
+									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Redo</button>
+									{#if doc.value.snapshot.next_ids.length > 1}
+										<hr class="menu-bar-menu-ruler" />
+									{:else if doc.value.snapshot.next_ids.length > 0}
+										<button
+											class="menu-bar-item-button"
+											disabled={doc.value.snapshot.next_ids[0] == doc.value.snapshot.current_id}
+											onclick={(evt) => {
+												evt.preventDefault();
+												cast('restore_snapshot', doc.value.snapshot.next_ids[0]);
+											}}>Redo</button
+										>
+									{:else}
+										<button disabled class="menu-bar-item-button">Redo</button>
+									{/if}
 								</li>
+								{#if doc.value.snapshot.next_ids.length > 1}
+									{#each doc.value.snapshot.next_ids as nid, i}
+										{#if nid !== doc.value.snapshot.current_id}
+											<li class="menu-bar-menu-item">
+												<button
+													class="menu-bar-item-button"
+													onclick={(evt) => {
+														evt.preventDefault();
+														cast('restore_snapshot', nid);
+													}}>Redo ({i})</button
+												>
+											</li>
+										{/if}
+									{/each}
+									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								{/if}
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Select</button>
-								</li>
-								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button" style="color: #aa0000">Delete</button>
+									<button
+										disabled={!singleSelectedLayerType.value}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('delete_layer', selectedLayers.value[0]);
+										}}
+										class="menu-bar-item-button menu-bar-item-danger">Delete</button
+									>
 								</li>
 							</ul>
 						</li>
@@ -507,7 +552,7 @@
 						onDrop={(mime, content, pos) => {
 							cast('create_layer', {
 								pos,
-								shape_id: content.shape_id
+								...content
 							});
 						}}
 					>
@@ -1028,50 +1073,54 @@
 						<hr />
 
 						{#snippet edgeProps()}
-							<input type="number" size="4" />
-							<input type="color" />
-							<select>
+							<input type="number" class="number-spinner" size="4" />
+							<span class="color-wrapper"><input type="color" class="color-swatch" /></span>
+							<select class="attribute-select">
 								<option value="">Source Arrow</option>
 							</select>
-							<select>
+							<select class="attribute-select">
 								<option value="">Dash</option>
 							</select>
-							<select>
+							<select class="attribute-select">
 								<option value="">Target Arrow</option>
 							</select>
-							<select>
+							<select class="attribute-select">
 								<option value="">Linear</option>
 							</select>
-							<select>
+							<select class="attribute-select">
 								<option value="">Join</option>
 							</select>
-							<select>
+							<select class="attribute-select">
 								<option value="">Cap</option>
 							</select>
 						{/snippet}
 						{#snippet boxProps()}
-							<select>
+							<select class="attribute-select">
 								<option value="">Shape</option>
 							</select>
-							<input type="color" />
-							<input type="color" />
-							<input type="number" size="4" />
-							<select>
+							<span class="color-wrapper"><input type="color" class="color-swatch" /></span>
+							<span class="color-wrapper"><input type="color" class="color-swatch" /></span>
+							<input type="number" class="number-spinner" size="4" />
+							<select class="attribute-select">
 								<option value="">Dash</option>
 							</select>
-							<input type="number" size="4" />
+							<input type="number" class="number-spinner" size="4" />
 						{/snippet}
 						{#snippet textProps()}
-							<select>
+							<select class="attribute-select">
 								<option value="">Font Family</option>
 							</select>
-							<input type="number" size="4" />
+							<input type="number" class="number-spinner" size="4" />
 
 							<label><input type="checkbox" /> Bold</label>
 							<label><input type="checkbox" /> Italic</label>
 							<label><input type="checkbox" /> Underline</label>
-							<label>Text Color <input type="color" /></label>
-							<select>
+							<label class="attribute-field-label"
+								>Text Color <span class="color-wrapper"
+									><input type="color" class="color-swatch" /></span
+								></label
+							>
+							<select class="attribute-select">
 								<option value="">Alignment</option>
 							</select>
 						{/snippet}
@@ -1236,7 +1285,41 @@
 							</svg>
 						</div>
 						<hr />
-						<div draggable={true}>
+						<div
+							draggable={true}
+							ondragstart={(evt) => {
+								const d = {
+									content: {
+										body: 'Text'
+									},
+									mimeType: 'application/json+renewex-layer',
+									alignX: 0.5,
+									alignY: 0.5
+								};
+
+								evt.stopPropagation();
+								evt.dataTransfer.effectAllowed = 'copy';
+								evt.currentTarget.setAttribute('aria-grabbed', 'true');
+								const positionInfo = evt.currentTarget.getBoundingClientRect();
+								evt.dataTransfer.setDragImage(
+									evt.currentTarget,
+									positionInfo.width * d.alignX,
+									positionInfo.height * d.alignY
+								);
+								const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
+								evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+
+								// Work-around for
+								// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+								evt.dataTransfer.setData(
+									'text/plain',
+									JSON.stringify({
+										mime: d.mimeType,
+										data: data
+									})
+								);
+							}}
+						>
 							<svg class="droppable" viewBox="-4 -4 40 40" width="32">
 								<text text-anchor="middle" font-size="40" x="16" y="30" font-family="serif">T</text>
 							</svg>
@@ -1361,6 +1444,14 @@
 		background: #eee;
 	}
 
+	.menu-bar-item-button:disabled {
+		opacity: 0.3;
+	}
+
+	.menu-bar-item-danger {
+		color: #a00;
+	}
+
 	h2 {
 		margin: 0;
 		white-space: nowrap;
@@ -1483,11 +1574,27 @@
 	.attribute-select {
 		flex-grow: 1;
 		width: 100%;
-		box-sizing: border-box;
 		font: inherit;
 		height: 100%;
 		box-sizing: border-box;
-		padding: 1ex 1em;
+		padding: 0.5ex 1em;
+	}
+
+	.color-swatch {
+		box-sizing: border-box;
+		padding: 0;
+		height: 100%;
+		background: none;
+		border: none;
+		width: auto;
+		min-width: 2em;
+		aspect-ratio: 1;
+	}
+
+	.number-spinner {
+		box-sizing: border-box;
+		padding: 0.5ex;
+		height: 100%;
 	}
 
 	option {
@@ -1581,6 +1688,12 @@
 
 	.attribute-field:focus-visible {
 		outline: 2px solid #23875d;
+	}
+
+	.attribute-field-label {
+		display: flex;
+		align-items: center;
+		gap: 1ex;
 	}
 
 	.presence-list {
