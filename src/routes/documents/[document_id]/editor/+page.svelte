@@ -251,7 +251,7 @@
 			)}
 			{@const allSelectedLayers = view(
 				L.choose(({ d, sl }) => {
-					return ['d', 'layers', 'items', L.filter((l) => sl.includes(l.id))];
+					return L.partsOf(['d', 'layers', 'items', L.elems, L.when((l) => sl.includes(l.id))]);
 				}),
 				combine({ d: doc, sl: selectedLayers })
 			)}
@@ -260,11 +260,16 @@
 				selectedLayersType
 			)}
 			{@const singleSelectedLayer = view(
-				L.lens(
-					(l) => (l.length === 1 ? l[0] : null),
-					(l, old) => (old.length === 1 ? [l] : old)
-				),
-				allSelectedLayers
+				L.choose(({ d, sl }) => {
+					console.log('x');
+					return sl.length == 1
+						? ['d', 'layers', 'items', L.find((l) => sl.includes(l.id))]
+						: L.lens(
+								() => null,
+								(_, a) => a
+							);
+				}),
+				combine({ d: doc, sl: selectedLayers })
 			)}
 			<header class="header">
 				<div class="header-titel">
