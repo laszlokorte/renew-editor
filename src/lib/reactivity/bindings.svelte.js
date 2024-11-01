@@ -197,9 +197,14 @@ export function bindValue(node, someAtom) {
 
 	$effect.pre(() => {
 		const newVal = someAtom.value;
-		if(node.value != newVal) {	
-			node.value = newVal;
-		}
+
+		untrack(() => {
+			if(node.value !== newVal) {	
+				tick().then(() => {
+					node.value = newVal;
+				})
+			}
+		})
 	});
 
 	// $effect(() => {
@@ -215,10 +220,28 @@ export function bindValue(node, someAtom) {
 
 	}
 
-	return () => {
-		node.removeEventListener("beforeinput", onbeforeinput);
-		node.removeEventListener("input", oninput);
-		node.removeEventListener("change", oninput);
+	return {
+		update(newAtom) {
+			someAtom = newAtom
+			node.value = someAtom.value;
+
+			$effect(() => {
+				const newVal = someAtom.value;
+
+				untrack(() => {
+					if(node.value !== newVal) {	
+						tick().then(() => {
+							node.value = newVal;
+						})
+					}
+				})
+			});
+		},
+		destroy() {
+			node.removeEventListener("beforeinput", onbeforeinput);
+			node.removeEventListener("input", oninput);
+			node.removeEventListener("change", oninput);
+		}
 	};
 }
 

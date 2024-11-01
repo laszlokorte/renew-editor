@@ -67,6 +67,8 @@
 		{ name: 'Zoom', id: 'zoomer' },
 		{ name: 'Rotate', id: 'rotator' },
 		{ name: 'Pen', id: 'pen' },
+		{ name: 'Annotate', id: 'annotate' },
+		{ name: 'Edge', id: 'edge' },
 		{ name: 'Polygon', id: 'polygon' }
 
 		// Splines are not supported by the editor server yet
@@ -247,13 +249,26 @@
 				}),
 				combine({ d: doc, sl: selectedLayers })
 			)}
+			{@const allSelectedLayers = view(
+				L.choose(({ d, sl }) => {
+					return ['d', 'layers', 'items', L.filter((l) => sl.includes(l.id))];
+				}),
+				combine({ d: doc, sl: selectedLayers })
+			)}
 			{@const singleSelectedLayerType = read(
 				(l) => (l.length === 1 ? l[0] : null),
 				selectedLayersType
 			)}
+			{@const singleSelectedLayer = view(
+				L.lens(
+					(l) => (l.length === 1 ? l[0] : null),
+					(l, old) => (old.length === 1 ? [l] : old)
+				),
+				allSelectedLayers
+			)}
 			<header class="header">
 				<div class="header-titel">
-					<a href="{base}/documents" title="Back">Back</a>
+					<a href="{base}/documents" title="Back" class="nav-link">Back</a>
 
 					<h2>Document: {doc.value.name}</h2>
 				</div>
@@ -1073,56 +1088,268 @@
 						<hr />
 
 						{#snippet edgeProps()}
-							<input type="number" class="number-spinner" size="4" />
-							<span class="color-wrapper"><input type="color" class="color-swatch" /></span>
-							<select class="attribute-select">
-								<option value="">Source Arrow</option>
+							<input
+								type="number"
+								class="number-spinner"
+								size="4"
+								min="0"
+								use:bindValue={view(
+									['edge', 'style', 'stroke_width', L.valueOr(1)],
+									singleSelectedLayer
+								)}
+							/>
+							<span class="color-wrapper"
+								><input
+									type="color"
+									class="color-swatch"
+									use:bindValue={view(
+										['edge', 'style', 'stroke_color', L.valueOr('#000000')],
+										singleSelectedLayer
+									)}
+								/></span
+							>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['edge', 'style', 'source_tip_symbol_shape_id', L.defaults('')],
+									singleSelectedLayer
+								)}
+							>
+								{#await data.symbols then symbols}
+									<option value={''}>None</option>
+									{#each Array.from(symbols.entries()) as [id, symbol] (id)}
+										<option value={id}>{symbol.name}</option>
+									{/each}
+								{/await}
 							</select>
-							<select class="attribute-select">
-								<option value="">Dash</option>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['edge', 'style', 'stroke_dash_array', L.valueOr('')],
+									singleSelectedLayer
+								)}
+							>
+								<option value="">No Dash</option>
+								<option value="5 5">5 5</option>
+								<option value="10 5">10 5</option>
+								<option value="2 2">2 2</option>
 							</select>
-							<select class="attribute-select">
-								<option value="">Target Arrow</option>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['edge', 'style', 'target_tip_symbol_shape_id', L.valueOr(''), L.defaults('')],
+									singleSelectedLayer
+								)}
+							>
+								{#await data.symbols then symbols}
+									<option value={''}>None</option>
+									{#each Array.from(symbols.entries()) as [id, symbol] (id)}
+										<option value={id}>x{symbol.name}</option>
+									{/each}
+								{/await}
 							</select>
-							<select class="attribute-select">
-								<option value="">Linear</option>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['edge', 'style', 'smoothness', L.valueOr('linear')],
+									singleSelectedLayer
+								)}
+							>
+								<option value="linear">Linear</option>
+								<option value="autobezier">Auto Bezier</option>
 							</select>
-							<select class="attribute-select">
-								<option value="">Join</option>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['edge', 'style', 'stroke_join', L.valueOr('bevel')],
+									singleSelectedLayer
+								)}
+							>
+								<option value="bevel">bevel</option>
+								<option value="miter">miter</option>
+								<option value="miter-clip">miter-clip</option>
+								<option value="round">round</option>
 							</select>
-							<select class="attribute-select">
-								<option value="">Cap</option>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['edge', 'style', 'stroke_cap', L.valueOr('butt')],
+									singleSelectedLayer
+								)}
+							>
+								<option value="butt">Butt</option>
+								<option value="square">Square</option>
+								<option value="round">Round</option>
 							</select>
 						{/snippet}
 						{#snippet boxProps()}
-							<select class="attribute-select">
-								<option value="">Shape</option>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['box', 'shape', L.valueOr(''), L.valueOr(''), L.defaults('')],
+									singleSelectedLayer
+								)}
+							>
+								{#await data.symbols then symbols}
+									<option value="">None</option>
+									{#each Array.from(symbols.entries()) as [id, symbol] (id)}
+										<option value={id}>{symbol.name}</option>
+									{/each}
+								{/await}
 							</select>
-							<span class="color-wrapper"><input type="color" class="color-swatch" /></span>
-							<span class="color-wrapper"><input type="color" class="color-swatch" /></span>
-							<input type="number" class="number-spinner" size="4" />
-							<select class="attribute-select">
-								<option value="">Dash</option>
+							<span class="color-wrapper"
+								><input
+									type="color"
+									class="color-swatch"
+									use:bindValue={view(
+										['style', 'background_color', L.valueOr('#70DB93')],
+										singleSelectedLayer
+									)}
+								/></span
+							>
+							<span class="color-wrapper"
+								><input
+									type="color"
+									class="color-swatch"
+									use:bindValue={view(
+										['style', 'border_color', L.valueOr('#000000')],
+										singleSelectedLayer
+									)}
+								/></span
+							>
+							<input
+								type="number"
+								class="number-spinner"
+								size="4"
+								min="0"
+								max="1"
+								step="0.01"
+								use:bindValue={view(['style', 'opacity', L.valueOr(1)], singleSelectedLayer)}
+							/>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['style', 'border_dash_array', L.valueOr('')],
+									singleSelectedLayer
+								)}
+							>
+								<option value="">No Dash</option>
+								<option value="5 5">5 5</option>
+								<option value="10 5">10 5</option>
+								<option value="2 2">2 2</option>
 							</select>
-							<input type="number" class="number-spinner" size="4" />
+							<input
+								type="number"
+								class="number-spinner"
+								size="4"
+								min="0"
+								use:bindValue={view(['style', 'border_width', L.valueOr('1')], singleSelectedLayer)}
+							/>
 						{/snippet}
 						{#snippet textProps()}
-							<select class="attribute-select">
+							{@const bold = view(['text', 'style', 'bold', L.valueOr(false)], singleSelectedLayer)}
+							{@const italic = view(
+								['text', 'style', 'italic', L.valueOr(false)],
+								singleSelectedLayer
+							)}
+							{@const underline = view(
+								['text', 'style', 'underline', L.valueOr(false)],
+								singleSelectedLayer
+							)}
+							<select
+								class="attribute-select"
+								use:bindValue={view(['text', 'style', 'font_family'], singleSelectedLayer)}
+							>
 								<option value="">Font Family</option>
+								<option value="serif">Serif</option>
+								<option value="sans-serif">Sans-Serif</option>
+								<option value="monospace">Monospace</option>
 							</select>
-							<input type="number" class="number-spinner" size="4" />
+							<input
+								type="number"
+								class="number-spinner"
+								size="4"
+								min="1"
+								max="128"
+								use:bindValue={view(['text', 'style', 'font_size'], singleSelectedLayer)}
+							/>
 
-							<label><input type="checkbox" /> Bold</label>
-							<label><input type="checkbox" /> Italic</label>
-							<label><input type="checkbox" /> Underline</label>
+							<label><input type="checkbox" bind:checked={bold.value} /> Bold</label>
+							<label><input type="checkbox" bind:checked={italic.value} /> Italic</label>
+							<label><input type="checkbox" bind:checked={underline.value} /> Underline</label>
 							<label class="attribute-field-label"
 								>Text Color <span class="color-wrapper"
-									><input type="color" class="color-swatch" /></span
+									><input
+										type="color"
+										class="color-swatch"
+										use:bindValue={view(['text', 'style', 'text_color'], singleSelectedLayer)}
+									/></span
 								></label
 							>
-							<select class="attribute-select">
-								<option value="">Alignment</option>
+							<select
+								class="attribute-select"
+								use:bindValue={view(['text', 'style', 'alignment'], singleSelectedLayer)}
+							>
+								<option value="left">Left</option>
+								<option value="center">Center</option>
+								<option value="right">Right</option>
 							</select>
+
+							<textarea
+								style="height: 100%; resize: none; min-height: 0;"
+								rows="1"
+								cols="50"
+								use:bindValue={view(['text', 'body'], singleSelectedLayer)}
+							></textarea>
+
+							<span class="color-wrapper"
+								><input
+									type="color"
+									class="color-swatch"
+									use:bindValue={view(
+										['style', 'background_color', L.valueOr('#ffffff')],
+										singleSelectedLayer
+									)}
+								/></span
+							>
+							<span class="color-wrapper"
+								><input
+									type="color"
+									class="color-swatch"
+									use:bindValue={view(
+										['style', 'border_color', L.valueOr('#000000')],
+										singleSelectedLayer
+									)}
+								/></span
+							>
+							<input
+								type="number"
+								class="number-spinner"
+								size="4"
+								min="0"
+								max="1"
+								step="0.01"
+								use:bindValue={view(['style', 'opacity', L.valueOr(1)], singleSelectedLayer)}
+							/>
+							<select
+								class="attribute-select"
+								use:bindValue={view(
+									['style', 'border_dash_array', L.valueOr('')],
+									singleSelectedLayer
+								)}
+							>
+								<option value="">No Dash</option>
+								<option value="5 5">5 5</option>
+								<option value="10 5">10 5</option>
+								<option value="2 2">2 2</option>
+							</select>
+							<input
+								type="number"
+								class="number-spinner"
+								size="4"
+								min="0"
+								use:bindValue={view(['style', 'border_width', L.valueOr('0')], singleSelectedLayer)}
+							/>
 						{/snippet}
 						Selected:
 						{#if singleSelectedLayerType.value}
@@ -1187,9 +1414,19 @@
 							Debug Document
 							<hr />
 							<textarea use:bindValue={view(L.inverse(L.json({ space: '  ' })), doc)}></textarea>
+							Debug Selection
+							<hr />
+							<textarea
+								use:bindValue={view(L.inverse(L.json({ space: '  ' })), singleSelectedLayer)}
+							></textarea>
 							Debug Camera
 							<hr />
 							<textarea bind:value={cameraJson.value}></textarea>
+							Debug Symbols
+							<hr />
+							{#await data.symbols then symbols}
+								<textarea value={JSON.stringify(Array.from(symbols.entries()))}></textarea>
+							{/await}
 						</div>
 					{/if}
 				</div>
@@ -1364,6 +1601,10 @@
 		grid-area: top-left;
 	}
 
+	.nav-link {
+		user-select: none;
+	}
+
 	.menu-bar {
 		display: flex;
 		margin: 0;
@@ -1512,6 +1753,7 @@
 		justify-items: stretch;
 		grid-auto-rows: 1fr;
 		overflow: auto;
+		user-select: none;
 	}
 
 	hr {
@@ -1578,6 +1820,7 @@
 		height: 100%;
 		box-sizing: border-box;
 		padding: 0.5ex 1em;
+		max-width: 10em;
 	}
 
 	.color-swatch {

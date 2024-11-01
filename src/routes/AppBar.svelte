@@ -16,7 +16,7 @@
 </script>
 
 <div
-	style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 1ex 1em; background: #222; color: #fff"
+	style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 1ex 1em; background: #222; color: #fff; user-select: none;"
 >
 	<a href="{base}/"
 		><h2 class="app-name">

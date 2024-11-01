@@ -49,7 +49,7 @@ export async function load({params, fetch}) {
 						document: j,
 						commands: createCommands(fetch, j),
 						symbols: api.loadJson(j.links.symbols.href).then(symbols => {
-							return new Map(symbols.shapes.map(s => [s.id, {paths: s.paths}]))
+							return new Map(symbols.shapes.map(s => [s.id, {name:s.name, paths: s.paths}]))
 						}),
 					}
 				})
