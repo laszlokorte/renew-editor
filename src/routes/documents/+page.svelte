@@ -188,6 +188,13 @@
 					{#each documents.value.items as d (d.id)}
 						<li class="document-list-item">
 							{#if renamingId == d.id}
+								<div
+									onclick={() => {
+										renamingId = null;
+										renamingNewName = null;
+									}}
+									style="background:#0005;position: absolute; left:0;right:0;bottom:0;top: 0;"
+								></div>
 								<form
 									style="display: contents;"
 									onsubmit={(evt) => {
@@ -198,28 +205,37 @@
 										});
 									}}
 								>
-									<input
-										bind:value={renamingNewName}
-										use:autofocusIf={{ focus: true, select: true }}
-										class="document-list-input"
-										type="text"
-										onkeydown={(evt) => {
-											if (evt.key === 'Escape') {
-												renamingId = null;
-												renamingNewName = null;
-											}
-										}}
-										class:warn={renamingOrigName !== d.name}
-									/>
+									<div
+										style="display: grid; grid-template-columns: 1fr auto;flex-grow: 1; z-index: 100;background: #fff;"
+										class="document-list-pop"
+									>
+										<input
+											id="rename_{renamingId}"
+											bind:value={renamingNewName}
+											autocomplete="off"
+											use:autofocusIf={{ focus: true, select: true }}
+											class="document-list-input"
+											type="text"
+											onkeydown={(evt) => {
+												if (evt.key === 'Escape') {
+													renamingId = null;
+													renamingNewName = null;
+												}
+											}}
+											class:warn={renamingOrigName !== d.name}
+										/>
+										<div class="document-list-pop-actions">
+											<button class="action-confirm" type="submit">Confirm</button>
+											<button
+												class="action-cancel"
+												onclick={() => {
+													renamingId = null;
+													renamingNewName = null;
+												}}>Cancel</button
+											>
+										</div>
+									</div>
 									<div class="document-list-actions">
-										<button class="action-confirm" type="submit">Confirm</button>
-										<button
-											class="action-cancel"
-											onclick={() => {
-												renamingId = null;
-												renamingNewName = null;
-											}}>Cancel</button
-										>
 										<button
 											class="action-export"
 											onclick={() => {
@@ -519,7 +535,30 @@
 		font: inherit;
 	}
 
+	.document-list-pop {
+		grid-column: 1 / span 1;
+		grid-row: 1;
+		box-sizing: border-box;
+		margin-right: -1.5ex;
+	}
+
 	.document-list-actions {
+		grid-column: 2 / span 1;
+		grid-row: 1;
+		padding: 1ex;
+		user-select: none;
+		touch-action: pan-x pan-y;
+		-webkit-user-select: none;
+
+		-webkit-touch-callout: none;
+		-webkit-user-callout: none;
+		-webkit-user-select: none;
+		-webkit-user-drag: none;
+		-webkit-user-modify: none;
+		-webkit-highlight: none;
+	}
+
+	.document-list-pop-actions {
 		grid-column: 2 / span 1;
 		grid-row: 1;
 		padding: 1ex;

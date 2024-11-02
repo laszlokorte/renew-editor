@@ -797,6 +797,8 @@
 														stroke="black"
 														fill="none"
 														stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+														stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+														stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 													/>
 
 													{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
@@ -992,6 +994,8 @@
 																	stroke="black"
 																	fill="none"
 																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+																	stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+																	stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 																/>
 
 																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
@@ -1144,6 +1148,23 @@
 									)}
 								/></span
 							>
+
+							<input
+								type="number"
+								class="number-spinner"
+								size="4"
+								min="0"
+								max="1"
+								step="0.01"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'layer',
+										attr: 'opacity',
+										val: evt.currentTarget.value
+									})}
+								use:bindValue={view(['style', 'opacity', L.valueOr(1)], singleSelectedLayer)}
+							/>
 							<select
 								class="attribute-select"
 								onchange={(evt) =>
@@ -1481,7 +1502,7 @@
 							</select>
 
 							<textarea
-								style="height: 100%; resize: none; min-height: 0;"
+								style="height: 100%; resize: none; min-height: 0; min-width: 10em;"
 								rows="1"
 								cols="50"
 								onchange={(evt) =>
@@ -1576,19 +1597,21 @@
 								use:bindValue={view(['style', 'border_width', L.valueOr('0')], singleSelectedLayer)}
 							/>
 						{/snippet}
-						Selected:
-						{#if singleSelectedLayerType.value}
-							{@render {
-								text: textProps,
-								box: boxProps,
-								edge: edgeProps,
-								group: groupProps
-							}[singleSelectedLayerType.value]()}
-						{:else if selectedLayersType.value.length > 1}
-							{selectedLayersType.value.length} layers
-						{:else}
-							none
-						{/if}
+						<div style="display: flex; gap: 1ex; align-items: center;">
+							Selected:
+							{#if singleSelectedLayerType.value}
+								{@render {
+									text: textProps,
+									box: boxProps,
+									edge: edgeProps,
+									group: groupProps
+								}[singleSelectedLayerType.value]()}
+							{:else if selectedLayersType.value.length > 1}
+								{selectedLayersType.value.length} layers
+							{:else}
+								none
+							{/if}
+						</div>
 					</div>
 				</div>
 
@@ -1964,6 +1987,9 @@
 	h2 {
 		margin: 0;
 		white-space: nowrap;
+		max-width: 80vw;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.overlay {
@@ -2021,6 +2047,7 @@
 		justify-items: stretch;
 		grid-auto-rows: 1fr;
 		overflow: auto;
+		scrollbar-width: thin;
 		user-select: none;
 	}
 
@@ -2089,7 +2116,7 @@
 		box-sizing: border-box;
 		padding: 0.5ex 1em;
 		max-width: 10em;
-		min-width: 3em;
+		min-width: 6em;
 	}
 
 	.color-swatch {
@@ -2140,6 +2167,7 @@
 		grid-auto-columns: 1ex;
 		grid-auto-rows: 1ex;
 		cursor: pointer;
+		flex-shrink: 0;
 	}
 
 	.color-wrapper > input[type='color'] {
@@ -2206,6 +2234,7 @@
 		display: flex;
 		align-items: center;
 		gap: 1ex;
+		white-space: nowrap;
 	}
 
 	.presence-list {
@@ -2237,8 +2266,8 @@
 	}
 
 	rect.selected {
-		stroke: var(--selection-color, #7af);
-		fill: var(--selection-color, #7af);
+		stroke: var(--selection-color, #7afa);
+		fill: var(--selection-color, #7afa);
 		fill-opacity: 0.3;
 		stroke-width: 5;
 		pointer-events: none;
@@ -2246,22 +2275,20 @@
 		stroke-linejoin: round;
 	}
 	text.selected {
-		stroke: var(--selection-color, #7af);
-		fill: var(--selection-color, #7af);
+		stroke: var(--selection-color, #7afa);
+		fill: var(--selection-color, #7afa);
 		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
 	path.selected {
-		stroke: var(--selection-color, #7af);
+		stroke: var(--selection-color, #7afa);
 		pointer-events: none;
-		stroke-linecap: round;
-		stroke-linejoin: round;
 	}
 	g.selected {
-		stroke: var(--selection-color, #7af);
-		fill: var(--selection-color, #7af);
+		stroke: var(--selection-color, #7afa);
+		fill: var(--selection-color, #7afa);
 		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: butt;
