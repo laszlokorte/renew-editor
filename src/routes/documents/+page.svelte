@@ -404,24 +404,6 @@
 		padding: 0 1em;
 	}
 
-	dl {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		margin: 0;
-		padding: 0;
-		gap: 1ex;
-		align-items: baseline;
-		box-sizing: border-box;
-	}
-
-	dt,
-	dd {
-		margin: 0;
-	}
-
-	dt {
-		text-align: right;
-	}
 	button:focus-visible {
 		outline: 2px solid #00aaff;
 	}

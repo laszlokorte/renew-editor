@@ -237,6 +237,7 @@ export function bindValue(node, someAtom) {
 				})
 			});
 		},
+		
 		destroy() {
 			node.removeEventListener("beforeinput", onbeforeinput);
 			node.removeEventListener("input", oninput);

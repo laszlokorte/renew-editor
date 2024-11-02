@@ -261,7 +261,6 @@
 			)}
 			{@const singleSelectedLayer = view(
 				L.choose(({ d, sl }) => {
-					console.log('x');
 					return sl.length == 1
 						? ['d', 'layers', 'items', L.find((l) => sl.includes(l.id))]
 						: L.lens(
@@ -614,10 +613,12 @@
 										<g transform={rotationTransform.value}>
 											<g id="full-document-{data.document.id}">
 												{#each layersInOrder.value as { index, id, depth } (id)}
-													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+													{@const el = view(
+														['layers', 'items', L.find((el) => el.id == id && !el.hidden)],
+														doc
+													)}
 
-													{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
-													{#if el.value?.box && !el.value?.hidden}
+													{#if el.value?.box}
 														<g
 															role="button"
 															onclick={(evt) => {
@@ -650,7 +651,8 @@
 															/>
 														</g>
 													{/if}
-													{#if el.value?.text && !el.value?.hidden}
+													{#if el.value?.text}
+														{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
 														{#key el.id}
 															<g
 																role="button"
@@ -670,7 +672,7 @@
 															</g>
 														{/key}
 													{/if}
-													{#if el.value?.edge && !el.value?.hidden}
+													{#if el.value?.edge}
 														<g
 															role="button"
 															onclick={(evt) => {
@@ -756,8 +758,11 @@
 										</g>
 										<g transform={rotationTransform.value}>
 											{#each selectedLayers.value as id (id)}
-												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-												{#if el.value?.box && !el.value?.hidden}
+												{@const el = view(
+													['layers', 'items', L.find((el) => el.id == id && !el.hidden)],
+													doc
+												)}
+												{#if el.value?.box}
 													<rect
 														class="selected"
 														x={el.value?.box.position_x}
@@ -766,18 +771,20 @@
 														height={el.value?.box.height}
 													></rect>
 												{/if}
-												{#if el.value?.text && !el.value?.hidden}
+												{#if el.value?.text}
 													{@const bbox = view(L.prop(el.value?.id), textBounds)}
 
-													<rect
-														class="selected"
-														x={bbox.value.x}
-														y={bbox.value.y}
-														width={bbox.value.width}
-														height={bbox.value.height}
-													></rect>
+													{#if bbox.value}
+														<rect
+															class="selected"
+															x={bbox.value.x}
+															y={bbox.value.y}
+															width={bbox.value.width}
+															height={bbox.value.height}
+														></rect>
+													{/if}
 												{/if}
-												{#if el.value?.edge && !el.value?.hidden}
+												{#if el.value?.edge}
 													<path
 														class="selected"
 														d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
@@ -815,6 +822,7 @@
 																				},
 																				path
 																			)}
+																			fill-rule="evenodd"
 																		/>
 																	{/each}
 																{/if}
@@ -849,6 +857,7 @@
 																				},
 																				path
 																			)}
+																			fill-rule="evenodd"
 																		/>
 																	{/each}
 																{/if}
@@ -945,10 +954,10 @@
 													<g style:--selection-color={color}>
 														{#each selections.filter(({ self }) => !self) as { value: id }}
 															{@const el = view(
-																['layers', 'items', L.find((el) => el.id == id)],
+																['layers', 'items', L.find((el) => el.id == id && !el.hidden)],
 																doc
 															)}
-															{#if el.value?.box && !el.value?.hidden}
+															{#if el.value?.box}
 																<rect
 																	class="selected"
 																	x={el.value?.box.position_x}
@@ -957,18 +966,20 @@
 																	height={el.value?.box.height}
 																></rect>
 															{/if}
-															{#if el.value?.text && !el.value?.hidden}
+															{#if el.value?.text}
 																{@const bbox = view(L.prop(el.value?.id), textBounds)}
 
-																<rect
-																	class="selected"
-																	x={bbox.value.x}
-																	y={bbox.value.y}
-																	width={bbox.value.width}
-																	height={bbox.value.height}
-																></rect>
+																{#if bbox.value}
+																	<rect
+																		class="selected"
+																		x={bbox.value.x}
+																		y={bbox.value.y}
+																		width={bbox.value.width}
+																		height={bbox.value.height}
+																	></rect>
+																{/if}
 															{/if}
-															{#if el.value?.edge && !el.value?.hidden}
+															{#if el.value?.edge}
 																<path
 																	class="selected"
 																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
@@ -1006,6 +1017,7 @@
 																							},
 																							path
 																						)}
+																						fill-rule="evenodd"
 																					/>
 																				{/each}
 																			{/if}
@@ -1040,6 +1052,7 @@
 																							},
 																							path
 																						)}
+																						fill-rule="evenodd"
 																					/>
 																				{/each}
 																			{/if}
@@ -1098,6 +1111,13 @@
 								class="number-spinner"
 								size="4"
 								min="0"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'edge',
+										attr: 'stroke_width',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['edge', 'style', 'stroke_width', L.valueOr(1)],
 									singleSelectedLayer
@@ -1107,6 +1127,13 @@
 								><input
 									type="color"
 									class="color-swatch"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'stroke_color',
+											val: evt.currentTarget.value
+										})}
 									use:bindValue={view(
 										['edge', 'style', 'stroke_color', L.valueOr('#000000')],
 										singleSelectedLayer
@@ -1115,6 +1142,13 @@
 							>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'edge',
+										attr: 'source_tip_symbol_shape_id',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['edge', 'style', 'source_tip_symbol_shape_id', L.defaults('')],
 									singleSelectedLayer
@@ -1129,6 +1163,13 @@
 							</select>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'edge',
+										attr: 'stroke_dash_array',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['edge', 'style', 'stroke_dash_array', L.valueOr('')],
 									singleSelectedLayer
@@ -1141,6 +1182,13 @@
 							</select>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'edge',
+										attr: 'target_tip_symbol_shape_id',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['edge', 'style', 'target_tip_symbol_shape_id', L.valueOr(''), L.defaults('')],
 									singleSelectedLayer
@@ -1155,6 +1203,13 @@
 							</select>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'edge',
+										attr: 'smoothness',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['edge', 'style', 'smoothness', L.valueOr('linear')],
 									singleSelectedLayer
@@ -1165,6 +1220,13 @@
 							</select>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'edge',
+										attr: 'stroke_join',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['edge', 'style', 'stroke_join', L.valueOr('bevel')],
 									singleSelectedLayer
@@ -1177,6 +1239,13 @@
 							</select>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'edge',
+										attr: 'stroke_cap',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['edge', 'style', 'stroke_cap', L.valueOr('butt')],
 									singleSelectedLayer
@@ -1190,6 +1259,11 @@
 						{#snippet boxProps()}
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_layer_shape', {
+										layer_id: singleSelectedLayer.value.id,
+										shape_id: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['box', 'shape', L.valueOr(''), L.valueOr(''), L.defaults('')],
 									singleSelectedLayer
@@ -1206,6 +1280,13 @@
 								><input
 									type="color"
 									class="color-swatch"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'background_color',
+											val: evt.currentTarget.value
+										})}
 									use:bindValue={view(
 										['style', 'background_color', L.valueOr('#70DB93')],
 										singleSelectedLayer
@@ -1216,6 +1297,13 @@
 								><input
 									type="color"
 									class="color-swatch"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'border_color',
+											val: evt.currentTarget.value
+										})}
 									use:bindValue={view(
 										['style', 'border_color', L.valueOr('#000000')],
 										singleSelectedLayer
@@ -1229,10 +1317,24 @@
 								min="0"
 								max="1"
 								step="0.01"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'layer',
+										attr: 'opacity',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(['style', 'opacity', L.valueOr(1)], singleSelectedLayer)}
 							/>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'layer',
+										attr: 'border_dash_array',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['style', 'border_dash_array', L.valueOr('')],
 									singleSelectedLayer
@@ -1248,6 +1350,13 @@
 								class="number-spinner"
 								size="4"
 								min="0"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'layer',
+										attr: 'border_width',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(['style', 'border_width', L.valueOr('1')], singleSelectedLayer)}
 							/>
 						{/snippet}
@@ -1263,6 +1372,13 @@
 							)}
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'text',
+										attr: 'font_family',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(['text', 'style', 'font_family'], singleSelectedLayer)}
 							>
 								<option value="">Font Family</option>
@@ -1276,23 +1392,80 @@
 								size="4"
 								min="1"
 								max="128"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'text',
+										attr: 'font_size',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(['text', 'style', 'font_size'], singleSelectedLayer)}
 							/>
 
-							<label><input type="checkbox" bind:checked={bold.value} /> Bold</label>
-							<label><input type="checkbox" bind:checked={italic.value} /> Italic</label>
-							<label><input type="checkbox" bind:checked={underline.value} /> Underline</label>
+							<label style="white-space: nowrap;"
+								><input
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'bold',
+											val: evt.currentTarget.checked
+										})}
+									type="checkbox"
+									bind:checked={bold.value}
+								/> Bold</label
+							>
+							<label style="white-space: nowrap;"
+								><input
+									type="checkbox"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'italic',
+											val: evt.currentTarget.checked
+										})}
+									bind:checked={italic.value}
+								/> Italic</label
+							>
+							<label style="white-space: nowrap;"
+								><input
+									type="checkbox"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'underline',
+											val: evt.currentTarget.checked
+										})}
+									bind:checked={underline.value}
+								/> Underline</label
+							>
 							<label class="attribute-field-label"
 								>Text Color <span class="color-wrapper"
 									><input
 										type="color"
 										class="color-swatch"
+										onchange={(evt) =>
+											cast('change_style', {
+												layer_id: singleSelectedLayer.value.id,
+												type: 'text',
+												attr: 'text_color',
+												val: evt.currentTarget.value
+											})}
 										use:bindValue={view(['text', 'style', 'text_color'], singleSelectedLayer)}
 									/></span
 								></label
 							>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'text',
+										attr: 'alignment',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(['text', 'style', 'alignment'], singleSelectedLayer)}
 							>
 								<option value="left">Left</option>
@@ -1304,6 +1477,11 @@
 								style="height: 100%; resize: none; min-height: 0;"
 								rows="1"
 								cols="50"
+								onchange={(evt) =>
+									cast('change_text_body', {
+										layer_id: singleSelectedLayer.value.id,
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(['text', 'body'], singleSelectedLayer)}
 							></textarea>
 
@@ -1311,6 +1489,13 @@
 								><input
 									type="color"
 									class="color-swatch"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'background_color',
+											val: evt.currentTarget.value
+										})}
 									use:bindValue={view(
 										['style', 'background_color', L.valueOr('#ffffff')],
 										singleSelectedLayer
@@ -1321,6 +1506,13 @@
 								><input
 									type="color"
 									class="color-swatch"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'border_color',
+											val: evt.currentTarget.value
+										})}
 									use:bindValue={view(
 										['style', 'border_color', L.valueOr('#000000')],
 										singleSelectedLayer
@@ -1334,10 +1526,24 @@
 								min="0"
 								max="1"
 								step="0.01"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'layer',
+										attr: 'opacity',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(['style', 'opacity', L.valueOr(1)], singleSelectedLayer)}
 							/>
 							<select
 								class="attribute-select"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'layer',
+										attr: 'border_dash_array',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(
 									['style', 'border_dash_array', L.valueOr('')],
 									singleSelectedLayer
@@ -1353,6 +1559,13 @@
 								class="number-spinner"
 								size="4"
 								min="0"
+								onchange={(evt) =>
+									cast('change_style', {
+										layer_id: singleSelectedLayer.value.id,
+										type: 'layer',
+										attr: 'border_width',
+										val: evt.currentTarget.value
+									})}
 								use:bindValue={view(['style', 'border_width', L.valueOr('0')], singleSelectedLayer)}
 							/>
 						{/snippet}
@@ -1395,43 +1608,82 @@
 					<div class="toolbar vertical">
 						Hierarchy
 						<hr />
-						<input style="" type="search" name="" placeholder="search" />
-						<select multiple size="5" bind:value={selectedLayers.value}>
+						<!-- <input style="" type="search" name="" placeholder="search" /> -->
+						<div
+							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;gap:2px;"
+						>
 							{#each layersInOrder.value as { index, id, depth } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 								{@const elId = view('id', el)}
+								{@const visible = view(['hidden', L.complement], el)}
 								{@const elType = view(
 									L.reread((el) => {
 										return el.text ? 'text' : el.edge ? 'edge' : el.box ? 'box' : '';
 									}),
 									el
 								)}
-								<option value={id}
-									>{Array(depth).fill('-').join('')}
-									{elType.value}
-									({elId.value})
-								</option>
+								{@const selected = view(
+									L.lens(
+										(s) => s.includes(id),
+										(s, old) => (s ? [id] : old.filter((o) => o !== id))
+									),
+									selectedLayers
+								)}
+								<div
+									style="display: flex;  gap: 0.5ex; align-items: stretch; justify-content: stretch;"
+									style:opacity={visible.value ? 1 : 0.5}
+									style:background={selected.value ? '#23875d44' : '#fafafa'}
+								>
+									<label
+										style="display: grid; align-items: center; justify-items: center; padding: 0.5em"
+									>
+										<input
+											style="accent-color: #23875d;"
+											type="checkbox"
+											bind:checked={visible.value}
+											onchange={(evt) =>
+												cast('set_visibility', {
+													layer_id: id,
+													visible: evt.currentTarget.checked
+												})}
+										/>
+									</label>
+									<div
+										style:paddig-left="{depth}ex;"
+										onclick={() => update(R.not, selected)}
+										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center;"
+									>
+										{elType.value}
+										<small style="color: #aaa">({elId.value})</small>
+									</div>
+								</div>
 							{/each}
-						</select>
+						</div>
 					</div>
 					{#if showDebug.value}
 						<div class="toolbar vertical">
-							Debug Document
-							<hr />
-							<textarea use:bindValue={view(L.inverse(L.json({ space: '  ' })), doc)}></textarea>
-							Debug Selection
-							<hr />
-							<textarea
-								use:bindValue={view(L.inverse(L.json({ space: '  ' })), singleSelectedLayer)}
-							></textarea>
-							Debug Camera
-							<hr />
-							<textarea bind:value={cameraJson.value}></textarea>
-							Debug Symbols
-							<hr />
-							{#await data.symbols then symbols}
-								<textarea value={JSON.stringify(Array.from(symbols.entries()))}></textarea>
-							{/await}
+							<details>
+								<summary>Debug Document </summary>
+								<textarea use:bindValue={view(L.inverse(L.json({ space: '  ' })), doc)}></textarea>
+							</details>
+							<details>
+								<summary> Debug Selection </summary>
+								<textarea
+									use:bindValue={view(L.inverse(L.json({ space: '  ' })), singleSelectedLayer)}
+								></textarea>
+							</details>
+							<details>
+								<summary>Debug Camera </summary>
+
+								<textarea bind:value={cameraJson.value}></textarea>
+							</details>
+							<details>
+								<summary>Debug Symbols </summary>
+
+								{#await data.symbols then symbols}
+									<textarea value={JSON.stringify(Array.from(symbols.entries()))}></textarea>
+								{/await}
+							</details>
 						</div>
 					{/if}
 				</div>
@@ -1826,6 +2078,7 @@
 		box-sizing: border-box;
 		padding: 0.5ex 1em;
 		max-width: 10em;
+		min-width: 3em;
 	}
 
 	.color-swatch {
