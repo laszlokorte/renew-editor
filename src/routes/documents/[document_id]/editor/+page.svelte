@@ -196,15 +196,18 @@
 		}
 	};
 
-	function walkLayer(doc, parent, depth) {
+	function walkLayer(doc, parent, depth, hidden) {
 		return doc.layers.items
 			.map((l, index) => ({ l, index }))
 			.filter(({ l }) => l.parent_id === parent)
-			.flatMap(({ l, index }) => [{ id: l.id, index, depth }, ...walkLayer(doc, l.id, depth + 1)]);
+			.flatMap(({ l, index }) => [
+				{ id: l.id, index, depth, hidden: l.hidden || hidden },
+				...walkLayer(doc, l.id, depth + 1, l.hidden || hidden)
+			]);
 	}
 
 	function walkDocument(doc) {
-		return [...walkLayer(doc, null, 0)];
+		return [...walkLayer(doc, null, 0, false)];
 	}
 
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
@@ -242,7 +245,7 @@
 							} else if (l.box) {
 								return 'box';
 							} else {
-								return null;
+								return 'group';
 							}
 						})
 						.filter((t) => t !== null);
@@ -541,7 +544,9 @@
 									<button class="menu-bar-item-button">Reference</button>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Website</button>
+									<a class="menu-bar-item-button" target="_blank" href="http://www.renew.de"
+										>Website</a
+									>
 								</li>
 							</ul>
 						</li>
@@ -612,48 +617,68 @@
 
 										<g transform={rotationTransform.value}>
 											<g id="full-document-{data.document.id}">
-												{#each layersInOrder.value as { index, id, depth } (id)}
-													{@const el = view(
-														['layers', 'items', L.find((el) => el.id == id && !el.hidden)],
-														doc
-													)}
+												{#each layersInOrder.value as { index, id, depth, hidden } (id)}
+													{#if !hidden}
+														{@const el = view(
+															['layers', 'items', L.find((el) => el.id == id)],
+															doc
+														)}
 
-													{#if el.value?.box}
-														<g
-															role="button"
-															onclick={(evt) => {
-																evt.stopPropagation();
-																selectedLayers.value = [el.value?.id];
+														{#if el.value?.box}
+															<g
+																role="button"
+																onclick={(evt) => {
+																	evt.stopPropagation();
+																	selectedLayers.value = [el.value?.id];
 
-																if (el.value?.id) {
-																	cast('select', el.value?.id);
-																}
-															}}
-															tabindex="-1"
-															onkeydown={() => {
-																selectedLayers.value = [el.value?.id];
-															}}
-															fill={el.value?.style?.background_color ?? '#70DB93'}
-															stroke={el.value?.style?.border_color ?? 'black'}
-															stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
-															stroke-width={el.value?.style?.border_width ?? '1'}
-															opacity={el.value?.style?.opacity ?? '1'}
-														>
-															<Symbol
-																symbols={data.symbols}
-																symbolId={el.value?.box.shape}
-																box={{
-																	x: el.value?.box.position_x,
-																	y: el.value?.box.position_y,
-																	width: el.value?.box.width,
-																	height: el.value?.box.height
+																	if (el.value?.id) {
+																		cast('select', el.value?.id);
+																	}
 																}}
-															/>
-														</g>
-													{/if}
-													{#if el.value?.text}
-														{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
-														{#key el.id}
+																tabindex="-1"
+																onkeydown={() => {
+																	selectedLayers.value = [el.value?.id];
+																}}
+																fill={el.value?.style?.background_color ?? '#70DB93'}
+																stroke={el.value?.style?.border_color ?? 'black'}
+																stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
+																stroke-width={el.value?.style?.border_width ?? '1'}
+																opacity={el.value?.style?.opacity ?? '1'}
+															>
+																<Symbol
+																	symbols={data.symbols}
+																	symbolId={el.value?.box.shape}
+																	box={{
+																		x: el.value?.box.position_x,
+																		y: el.value?.box.position_y,
+																		width: el.value?.box.width,
+																		height: el.value?.box.height
+																	}}
+																/>
+															</g>
+														{/if}
+														{#if el.value?.text}
+															{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
+															{#key el.id}
+																<g
+																	role="button"
+																	onclick={(evt) => {
+																		evt.stopPropagation();
+																		selectedLayers.value = [el.value?.id];
+																		if (el.value?.id) {
+																			cast('select', el.value?.id);
+																		}
+																	}}
+																	tabindex="-1"
+																	onkeydown={() => {
+																		selectedLayers.value = [el.value?.id];
+																	}}
+																>
+																	<TextElement bbox={thisbbox} el={el.value} />
+																</g>
+															{/key}
+														{/if}
+														{#if el.value?.edge}
 															<g
 																role="button"
 																onclick={(evt) => {
@@ -667,101 +692,80 @@
 																onkeydown={() => {
 																	selectedLayers.value = [el.value?.id];
 																}}
+																opacity={el.value?.style?.opacity ?? '1'}
+																stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
+																stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
+																stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+																stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 															>
-																<TextElement bbox={thisbbox} el={el.value} />
+																<path
+																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																		el.value?.edge
+																	)}
+																	pointer-events="stroke"
+																	fill="none"
+																	stroke="none"
+																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 10}
+																/>
+																<path
+																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																		el.value?.edge
+																	)}
+																	stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
+																	fill="none"
+																/>
+
+																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+																	{@const source_angle = edgeAngle['source'](el.value?.edge)}
+																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+																	<g
+																		fill={el.value?.style?.background_color ?? 'black'}
+																		transform="rotate({source_angle} {el.value?.edge.source_x} {el
+																			.value?.edge.source_y})"
+																	>
+																		<Symbol
+																			symbols={data.symbols}
+																			symbolId={el.value?.edge?.style?.source_tip_symbol_shape_id}
+																			box={{
+																				x: el.value?.edge.source_x - size,
+																				y: el.value?.edge.source_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			}}
+																		/>
+																	</g>
+																{/if}
+
+																{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+																	{@const target_angle = edgeAngle['target'](el.value?.edge)}
+																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																	<g
+																		fill={el.value?.style?.background_color ?? 'black'}
+																		transform="rotate({target_angle} {el.value?.edge.target_x} {el
+																			.value?.edge.target_y})"
+																	>
+																		<Symbol
+																			symbols={data.symbols}
+																			symbolId={el.value?.edge?.style?.target_tip_symbol_shape_id}
+																			box={{
+																				x: el.value?.edge.target_x - size,
+																				y: el.value?.edge.target_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			}}
+																		/>
+																	</g>
+																{/if}
 															</g>
-														{/key}
-													{/if}
-													{#if el.value?.edge}
-														<g
-															role="button"
-															onclick={(evt) => {
-																evt.stopPropagation();
-																selectedLayers.value = [el.value?.id];
-																if (el.value?.id) {
-																	cast('select', el.value?.id);
-																}
-															}}
-															tabindex="-1"
-															onkeydown={() => {
-																selectedLayers.value = [el.value?.id];
-															}}
-															opacity={el.value?.style?.opacity ?? '1'}
-															stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
-															stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
-															stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
-															stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
-														>
-															<path
-																d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																	el.value?.edge
-																)}
-																pointer-events="stroke"
-																fill="none"
-																stroke="none"
-																stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 10}
-															/>
-															<path
-																d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																	el.value?.edge
-																)}
-																stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
-																fill="none"
-															/>
-
-															{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-																{@const source_angle = edgeAngle['source'](el.value?.edge)}
-																{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-
-																<g
-																	fill={el.value?.style?.background_color ?? 'black'}
-																	transform="rotate({source_angle} {el.value?.edge.source_x} {el
-																		.value?.edge.source_y})"
-																>
-																	<Symbol
-																		symbols={data.symbols}
-																		symbolId={el.value?.edge?.style?.source_tip_symbol_shape_id}
-																		box={{
-																			x: el.value?.edge.source_x - size,
-																			y: el.value?.edge.source_y - size,
-																			width: 2 * size,
-																			height: 2 * size
-																		}}
-																	/>
-																</g>
-															{/if}
-
-															{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-																{@const target_angle = edgeAngle['target'](el.value?.edge)}
-																{@const size = el.value?.edge?.style?.stroke_width ?? 1}
-																<g
-																	fill={el.value?.style?.background_color ?? 'black'}
-																	transform="rotate({target_angle} {el.value?.edge.target_x} {el
-																		.value?.edge.target_y})"
-																>
-																	<Symbol
-																		symbols={data.symbols}
-																		symbolId={el.value?.edge?.style?.target_tip_symbol_shape_id}
-																		box={{
-																			x: el.value?.edge.target_x - size,
-																			y: el.value?.edge.target_y - size,
-																			width: 2 * size,
-																			height: 2 * size
-																		}}
-																	/>
-																</g>
-															{/if}
-														</g>
+														{/if}
 													{/if}
 												{/each}
 											</g>
 										</g>
 										<g transform={rotationTransform.value}>
 											{#each selectedLayers.value as id (id)}
-												{@const el = view(
-													['layers', 'items', L.find((el) => el.id == id && !el.hidden)],
-													doc
-												)}
+												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 												{#if el.value?.box}
 													<rect
 														class="selected"
@@ -954,7 +958,7 @@
 													<g style:--selection-color={color}>
 														{#each selections.filter(({ self }) => !self) as { value: id }}
 															{@const el = view(
-																['layers', 'items', L.find((el) => el.id == id && !el.hidden)],
+																['layers', 'items', L.find((el) => el.id == id)],
 																doc
 															)}
 															{#if el.value?.box}
@@ -1360,6 +1364,9 @@
 								use:bindValue={view(['style', 'border_width', L.valueOr('1')], singleSelectedLayer)}
 							/>
 						{/snippet}
+						{#snippet groupProps()}
+							Group
+						{/snippet}
 						{#snippet textProps()}
 							{@const bold = view(['text', 'style', 'bold', L.valueOr(false)], singleSelectedLayer)}
 							{@const italic = view(
@@ -1574,7 +1581,8 @@
 							{@render {
 								text: textProps,
 								box: boxProps,
-								edge: edgeProps
+								edge: edgeProps,
+								group: groupProps
 							}[singleSelectedLayerType.value]()}
 						{:else if selectedLayersType.value.length > 1}
 							{selectedLayersType.value.length} layers
@@ -1612,7 +1620,7 @@
 						<div
 							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;gap:2px;"
 						>
-							{#each layersInOrder.value as { index, id, depth } (id)}
+							{#each layersInOrder.value as { index, id, depth, hidden } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 								{@const elId = view('id', el)}
 								{@const visible = view(['hidden', L.complement], el)}
@@ -1630,8 +1638,8 @@
 									selectedLayers
 								)}
 								<div
-									style="display: flex;  gap: 0.5ex; align-items: stretch; justify-content: stretch;"
-									style:opacity={visible.value ? 1 : 0.5}
+									style="max-width: 100%; display: flex;  gap: 0.5ex; align-items: stretch; justify-content: stretch; box-sizing: border-box;"
+									style:opacity={hidden ? 0.5 : 1}
 									style:background={selected.value ? '#23875d44' : '#fafafa'}
 								>
 									<label
@@ -1649,12 +1657,15 @@
 										/>
 									</label>
 									<div
-										style:paddig-left="{depth}ex;"
 										onclick={() => update(R.not, selected)}
-										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center;"
+										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center; box-sizing: border-box;"
+										style:padding-left="{depth}em"
 									>
-										{elType.value}
-										<small style="color: #aaa">({elId.value})</small>
+										{elType.value || 'group'}
+										<small
+											style="color: #aaa; display: block; max-width: 100%; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: none; white-space: nowrap; box-sizing: border-box;"
+											>({elId.value})</small
+										>
 									</div>
 								</div>
 							{/each}
