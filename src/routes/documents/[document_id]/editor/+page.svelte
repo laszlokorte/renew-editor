@@ -1059,6 +1059,7 @@
 
 													<circle
 														fill="white"
+														cursor="move"
 														stroke="#7af"
 														stroke-width="2"
 														r={6 * cameraScale.value}
@@ -1069,6 +1070,7 @@
 													<circle
 														fill="white"
 														stroke="#7af"
+														cursor="move"
 														stroke-width="2"
 														r={6 * cameraScale.value}
 														cx={el.value?.edge?.target_x}
@@ -1078,54 +1080,59 @@
 											{/each}
 										</g>
 
-										{#await data.socket_schemas then s}
-											{#each layersInOrder.value as { index, id, depth, hidden } (id)}
-												{#if !hidden}
-													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+										<g transform={rotationTransform.value}>
+											{#await data.socket_schemas then s}
+												{#each layersInOrder.value as { index, id, depth, hidden } (id)}
+													{#if !hidden}
+														{@const el = view(
+															['layers', 'items', L.find((el) => el.id == id)],
+															doc
+														)}
 
-													{#if el.value?.box && el.value?.interface_id}
-														{@const socket_schema = s.get(el.value?.interface_id)}
-														{#each socket_schema.sockets as sock}
-															{@const coordX = buildCoord(
-																{
-																	x: el.value?.box.position_x,
-																	y: el.value?.box.position_y,
-																	width: el.value?.box.width,
-																	height: el.value?.box.height
-																},
-																'x',
-																false,
-																sock.x
-															)}
-															{@const coordY = buildCoord(
-																{
-																	x: el.value?.box.position_x,
-																	y: el.value?.box.position_y,
-																	width: el.value?.box.width,
-																	height: el.value?.box.height
-																},
-																'y',
-																false,
-																sock.y
-															)}
+														{#if el.value?.box && el.value?.interface_id}
+															{@const socket_schema = s.get(el.value?.interface_id)}
+															{#each socket_schema.sockets as sock}
+																{@const coordX = buildCoord(
+																	{
+																		x: el.value?.box.position_x,
+																		y: el.value?.box.position_y,
+																		width: el.value?.box.width,
+																		height: el.value?.box.height
+																	},
+																	'x',
+																	false,
+																	sock.x
+																)}
+																{@const coordY = buildCoord(
+																	{
+																		x: el.value?.box.position_x,
+																		y: el.value?.box.position_y,
+																		width: el.value?.box.width,
+																		height: el.value?.box.height
+																	},
+																	'y',
+																	false,
+																	sock.y
+																)}
 
-															<circle
-																fill="white"
-																stroke="#23875d"
-																stroke-width="2"
-																vector-effect="non-scaling-stroke"
-																r={10 * cameraScale.value}
-																cx={coordX}
-																cy={coordY}
-																cursor="alias"
-															/>
-														{/each}
+																<circle
+																	fill="white"
+																	stroke="#23875d"
+																	stroke-width="2"
+																	vector-effect="non-scaling-stroke"
+																	r={10 * cameraScale.value}
+																	cx={coordX}
+																	cy={coordY}
+																	cursor="alias"
+																/>
+															{/each}
+														{/if}
+
+														{#if el.value?.text}{/if}
 													{/if}
-
-													{#if el.value?.text}{/if}
-												{/if}
-											{/each}
-										{/await}
+												{/each}
+											{/await}
+										</g>
 
 										{#if activeTool.value === 'pen'}
 											<Pen
@@ -1380,10 +1387,10 @@
 									singleSelectedLayer
 								)}
 							>
-								<option value="bevel">bevel</option>
-								<option value="miter">miter</option>
-								<option value="miter-clip">miter-clip</option>
-								<option value="round">round</option>
+								<option value="bevel">Bevel</option>
+								<option value="miter">Miter</option>
+								<option value="miter-clip">Miter Clip</option>
+								<option value="round">Round</option>
 							</select>
 							<select
 								class="attribute-select"
@@ -1775,6 +1782,10 @@
 									}),
 									el
 								)}
+								{@const elSemantic = view(
+									['semantic_tag', L.defaults(''), L.reread(R.compose(R.last, R.split('.')))],
+									el
+								)}
 								{@const selected = view(
 									L.lens(
 										(s) => s.includes(id),
@@ -1806,7 +1817,10 @@
 										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center; box-sizing: border-box;"
 										style:padding-left="{depth}em"
 									>
-										{elType.value || 'group'}
+										<div style="white-space: nowrap;">
+											<span>{elType.value || 'group'}</span>
+											<span>{elSemantic.value}</span>
+										</div>
 										<small
 											style="color: #aaa; display: block; max-width: 100%; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: none; white-space: nowrap; box-sizing: border-box;"
 											>({elId.value})</small
@@ -1815,6 +1829,49 @@
 								</div>
 							{/each}
 						</div>
+						<label>
+							Interface: <select
+								disabled={!singleSelectedLayer.value}
+								onchange={(evt) =>
+									cast('set_socket_schema', {
+										layer_id: singleSelectedLayer.value.id,
+										val: evt.currentTarget.value
+									})}
+								use:bindValue={view(
+									['interface_id', L.defaults(''), L.valueOr('')],
+									singleSelectedLayer
+								)}
+							>
+								{#await data.socket_schemas then schemas}
+									<option value="">None</option>
+									{#each schemas.entries() as [id, s]}
+										<option value={id}>{s.name}</option>
+									{/each}
+								{/await}
+							</select>
+						</label>
+						<label
+							><span>Semantic Tag:</span><br />
+							<select
+								disabled={!singleSelectedLayer.value}
+								onchange={(evt) =>
+									cast('set_semantic_tag', {
+										layer_id: singleSelectedLayer.value.id,
+										val: evt.currentTarget.value
+									})}
+								use:bindValue={view(
+									['semantic_tag', L.defaults(''), L.valueOr('')],
+									singleSelectedLayer
+								)}
+							>
+								{#await data.semantic_tags then tags}
+									<option value="">None</option>
+									{#each tags as t}
+										<option value={t}>{t}</option>
+									{/each}
+								{/await}
+							</select></label
+						>
 						<button
 							disabled={!singleSelectedLayerType.value}
 							onclick={(evt) => {

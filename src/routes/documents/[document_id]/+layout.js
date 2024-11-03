@@ -54,6 +54,9 @@ export async function load({params, fetch}) {
 						socket_schemas: api.loadJson(j.links.socket_schemas.href).then(socket_schemas => {
 							return new Map(socket_schemas.socket_schemas.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
+						semantic_tags: api.loadJson(j.links.semantic_tags.href).then(semantic_tags => {
+							return semantic_tags.semantic_tags
+						}),
 					}
 				})
 			} else {
