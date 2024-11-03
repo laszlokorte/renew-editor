@@ -26,7 +26,7 @@
 	import Spline from '$lib/components/editor/tools/spline/Spline.svelte';
 	import Polygon from '$lib/components/editor/tools/polygon/Polygon.svelte';
 
-	import { buildPath } from './symbols';
+	import { buildPath, buildCoord } from './symbols';
 	import Symbol from './Symbol.svelte';
 	import TextElement from './TextElement.svelte';
 
@@ -763,7 +763,7 @@
 												{/each}
 											</g>
 										</g>
-										<g transform={rotationTransform.value}>
+										<g transform={rotationTransform.value} opacity="0.7">
 											{#each selectedLayers.value as id (id)}
 												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 												{#if el.value?.box}
@@ -874,87 +874,7 @@
 											{/each}
 										</g>
 
-										{#if activeTool.value === 'pen'}
-											<Pen
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												{cameraScale}
-												{rotationTransform}
-												onDraw={(points) => {
-													cast('create_layer', {
-														points
-													});
-												}}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'magnifier'}
-											<Magnifier
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												cameraRotationLens={liveLenses.cameraRotationIso}
-												{cameraRotation}
-												onZoomDelta={navigationActions.zoomDelta}
-												onZoomFrame={navigationActions.zoomFrame}
-												{cameraScale}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'paner'}
-											<Paner
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												onPan={navigationActions.panMove}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'rotator'}
-											<Rotator
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												onRotate={navigationActions.rotate}
-												{rotationTransform}
-												{cameraScale}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'zoomer'}
-											<Zoomer
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												onZoom={navigationActions.zoomDelta}
-												{rotationTransform}
-												{cameraScale}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'polygon'}
-											<Polygon
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												{rotationTransform}
-												{cameraScale}
-												onDraw={(points) => {
-													cast('create_layer', {
-														points
-													});
-												}}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'spline'}
-											<Spline
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												{rotationTransform}
-												{cameraScale}
-												onDraw={(points) => {
-													alert('splines currently not implemented');
-												}}
-											/>
-										{/if}
-
-										<g transform={rotationTransform.value}>
+										<g transform={rotationTransform.value} opacity="0.6">
 											{#each presence.value as { data: { cursors, color, username, selections } }}
 												{#if showOtherSelections.value}
 													<g style:--selection-color={color}>
@@ -1084,6 +1004,209 @@
 												{/if}
 											{/each}
 										</g>
+
+										<g transform={rotationTransform.value}>
+											{#each selectedLayers.value as id (id)}
+												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+												{@const waypoints = view(['edge', 'waypoints'], el)}
+												{@const waypointProposals = view(
+													[
+														'edge',
+														L.choose((e) => {
+															return [
+																'waypoints',
+																L.reread(
+																	R.pipe(
+																		R.prepend({ x: e.source_x, y: e.source_y }),
+																		R.append({ x: e.target_x, y: e.target_y }),
+																		R.aperture(2),
+																		R.map(([a, b]) => ({
+																			x: (a.x + b.x) / 2,
+																			y: (a.y + b.y) / 2
+																		}))
+																	)
+																)
+															];
+														})
+													],
+													el
+												)}
+												{#if el.value?.edge}
+													{#each waypoints.value as wp}
+														<circle
+															fill="white"
+															cursor="move"
+															stroke="#7af"
+															stroke-width="2"
+															vector-effect="non-scaling-stroke"
+															r={6 * cameraScale.value}
+															cx={wp.x}
+															cy={wp.y}
+														/>
+													{/each}
+													{#each waypointProposals.value as wp}
+														<circle
+															fill="white"
+															cursor="move"
+															stroke="#7af"
+															stroke-width="2"
+															vector-effect="non-scaling-stroke"
+															r={4 * cameraScale.value}
+															cx={wp.x}
+															cy={wp.y}
+														/>
+													{/each}
+
+													<circle
+														fill="white"
+														stroke="#7af"
+														stroke-width="2"
+														r={6 * cameraScale.value}
+														cx={el.value?.edge?.source_x}
+														cy={el.value?.edge?.source_y}
+													/>
+
+													<circle
+														fill="white"
+														stroke="#7af"
+														stroke-width="2"
+														r={6 * cameraScale.value}
+														cx={el.value?.edge?.target_x}
+														cy={el.value?.edge?.target_y}
+													/>
+												{/if}
+											{/each}
+										</g>
+
+										{#await data.socket_schemas then s}
+											{#each layersInOrder.value as { index, id, depth, hidden } (id)}
+												{#if !hidden}
+													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+
+													{#if el.value?.box && el.value?.interface_id}
+														{@const socket_schema = s.get(el.value?.interface_id)}
+														{#each socket_schema.sockets as sock}
+															{@const coordX = buildCoord(
+																{
+																	x: el.value?.box.position_x,
+																	y: el.value?.box.position_y,
+																	width: el.value?.box.width,
+																	height: el.value?.box.height
+																},
+																'x',
+																false,
+																sock.x
+															)}
+															{@const coordY = buildCoord(
+																{
+																	x: el.value?.box.position_x,
+																	y: el.value?.box.position_y,
+																	width: el.value?.box.width,
+																	height: el.value?.box.height
+																},
+																'y',
+																false,
+																sock.y
+															)}
+
+															<circle
+																fill="white"
+																stroke="#23875d"
+																stroke-width="2"
+																vector-effect="non-scaling-stroke"
+																r={10 * cameraScale.value}
+																cx={coordX}
+																cy={coordY}
+																cursor="alias"
+															/>
+														{/each}
+													{/if}
+
+													{#if el.value?.text}{/if}
+												{/if}
+											{/each}
+										{/await}
+
+										{#if activeTool.value === 'pen'}
+											<Pen
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												{cameraScale}
+												{rotationTransform}
+												onDraw={(points) => {
+													cast('create_layer', {
+														points
+													});
+												}}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'magnifier'}
+											<Magnifier
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												cameraRotationLens={liveLenses.cameraRotationIso}
+												{cameraRotation}
+												onZoomDelta={navigationActions.zoomDelta}
+												onZoomFrame={navigationActions.zoomFrame}
+												{cameraScale}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'paner'}
+											<Paner
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onPan={navigationActions.panMove}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'rotator'}
+											<Rotator
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onRotate={navigationActions.rotate}
+												{rotationTransform}
+												{cameraScale}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'zoomer'}
+											<Zoomer
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onZoom={navigationActions.zoomDelta}
+												{rotationTransform}
+												{cameraScale}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'polygon'}
+											<Polygon
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												{rotationTransform}
+												{cameraScale}
+												onDraw={(points) => {
+													cast('create_layer', {
+														points
+													});
+												}}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'spline'}
+											<Spline
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												{rotationTransform}
+												{cameraScale}
+												onDraw={(points) => {
+													alert('splines currently not implemented');
+												}}
+											/>
+										{/if}
+
 										<MountTrigger
 											onMount={() => {
 												call((c) => {
@@ -1175,12 +1298,12 @@
 										val: evt.currentTarget.value
 									})}
 								use:bindValue={view(
-									['edge', 'style', 'source_tip_symbol_shape_id', L.defaults('')],
+									['edge', 'style', 'source_tip_symbol_shape_id', L.valueOr(''), L.defaults('')],
 									singleSelectedLayer
 								)}
 							>
 								{#await data.symbols then symbols}
-									<option value={''}>None</option>
+									<option value="">None</option>
 									{#each Array.from(symbols.entries()) as [id, symbol] (id)}
 										<option value={id}>{symbol.name}</option>
 									{/each}
@@ -1220,7 +1343,7 @@
 								)}
 							>
 								{#await data.symbols then symbols}
-									<option value={''}>None</option>
+									<option value="">None</option>
 									{#each Array.from(symbols.entries()) as [id, symbol] (id)}
 										<option value={id}>x{symbol.name}</option>
 									{/each}
@@ -1409,7 +1532,6 @@
 									})}
 								use:bindValue={view(['text', 'style', 'font_family'], singleSelectedLayer)}
 							>
-								<option value="">Font Family</option>
 								<option value="serif">Serif</option>
 								<option value="sans-serif">Sans-Serif</option>
 								<option value="monospace">Monospace</option>
@@ -1693,6 +1815,13 @@
 								</div>
 							{/each}
 						</div>
+						<button
+							disabled={!singleSelectedLayerType.value}
+							onclick={(evt) => {
+								evt.preventDefault();
+								cast('delete_layer', selectedLayers.value[0]);
+							}}>Delete</button
+						>
 					</div>
 					{#if showDebug.value}
 						<div class="toolbar vertical">
@@ -2266,8 +2395,8 @@
 	}
 
 	rect.selected {
-		stroke: var(--selection-color, #7afa);
-		fill: var(--selection-color, #7afa);
+		stroke: var(--selection-color, #7af);
+		fill: var(--selection-color, #7af);
 		fill-opacity: 0.3;
 		stroke-width: 5;
 		pointer-events: none;
@@ -2275,20 +2404,20 @@
 		stroke-linejoin: round;
 	}
 	text.selected {
-		stroke: var(--selection-color, #7afa);
-		fill: var(--selection-color, #7afa);
+		stroke: var(--selection-color, #7af);
+		fill: var(--selection-color, #7af);
 		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
 	path.selected {
-		stroke: var(--selection-color, #7afa);
+		stroke: var(--selection-color, #7af);
 		pointer-events: none;
 	}
 	g.selected {
-		stroke: var(--selection-color, #7afa);
-		fill: var(--selection-color, #7afa);
+		stroke: var(--selection-color, #7af);
+		fill: var(--selection-color, #7af);
 		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: butt;

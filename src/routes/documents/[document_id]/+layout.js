@@ -51,6 +51,9 @@ export async function load({params, fetch}) {
 						symbols: api.loadJson(j.links.symbols.href).then(symbols => {
 							return new Map(symbols.shapes.map(s => [s.id, {name:s.name, paths: s.paths}]))
 						}),
+						socket_schemas: api.loadJson(j.links.socket_schemas.href).then(socket_schemas => {
+							return new Map(socket_schemas.socket_schemas.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
+						}),
 					}
 				})
 			} else {
