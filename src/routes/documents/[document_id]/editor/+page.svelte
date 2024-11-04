@@ -1201,6 +1201,77 @@
 														}}
 													/>
 												{/if}
+
+												{@const corners = {
+													topLeft: L.pick({
+														x: ['position_x', L.subtract(5)],
+														y: ['position_y', L.subtract(5)]
+													}),
+													topRight: L.pick({
+														x: ['position_x', L.subtract(5)],
+														y: L.choose((b) => [
+															'height',
+															L.normalize(R.max(0)),
+															L.add(b ? b.position_y : 0),
+															L.add(5)
+														])
+													}),
+													bottomLeft: L.pick({
+														y: ['position_y', L.subtract(5)],
+														x: L.choose((b) => [
+															'width',
+															L.normalize(R.max(0)),
+															L.add(b ? b.position_x : 0),
+															L.add(5)
+														])
+													}),
+													bottomRight: L.pick({
+														x: L.choose((b) => [
+															'width',
+															L.normalize(R.max(0)),
+															L.add(b ? b.position_x : 0),
+															L.add(5)
+														]),
+														y: L.choose((b) => [
+															'height',
+															L.normalize(R.max(0)),
+															L.add(b ? b.position_y : 0),
+															L.add(5)
+														])
+													}),
+													center: L.pick({
+														x: L.choose((b) => ['position_x', L.add(b ? b.width / 2 : 0)]),
+														y: L.choose((b) => ['position_y', L.add(b ? b.height / 2 : 0)])
+													})
+												}}
+												{#each Object.entries(corners) as [type, lens]}
+													{@const pos = view(['box', lens], el)}
+													{@const posVal = pos.value}
+													{#if posVal}
+														<circle
+															fill="white"
+															stroke="#7af"
+															cursor="move"
+															stroke-width="2"
+															r="6"
+															cx={posVal.x}
+															cy={posVal.y}
+															onpointerdown={(evt) => {
+																if (evt.isPrimary) {
+																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																}
+															}}
+															onpointermove={(evt) => {
+																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																}
+															}}
+															onclick={(evt) => {
+																evt.stopPropagation();
+															}}
+														/>
+													{/if}
+												{/each}
 											{/each}
 										</g>
 
