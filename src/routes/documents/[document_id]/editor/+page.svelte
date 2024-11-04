@@ -1061,6 +1061,11 @@
 															ondblclick={(evt) => {
 																pos.value = undefined;
 																evt.stopPropagation();
+
+																cast('delete_waypoint', {
+																	layer_id: el.value.id,
+																	waypoint_id: wp.id
+																});
 															}}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary) {
@@ -1070,6 +1075,19 @@
 															onpointermove={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
 																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																}
+															}}
+															onpointerup={(evt) => {
+																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																	const newPos = liveLenses.clientToCanvas(
+																		evt.clientX,
+																		evt.clientY
+																	);
+																	cast('update_waypoint_position', {
+																		layer_id: el.value.id,
+																		waypoint_id: wp.id,
+																		value: newPos
+																	});
 																}
 															}}
 														/>
@@ -1138,6 +1156,19 @@
 																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
 																}
 															}}
+															onpointerup={(evt) => {
+																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																	const newPos = liveLenses.clientToCanvas(
+																		evt.clientX,
+																		evt.clientY
+																	);
+																	cast('create_waypoint', {
+																		layer_id: el.value.id,
+																		after_waypoint_id: wp_proposal.id_before,
+																		position: liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	});
+																}
+															}}
 														/>
 													{/each}
 
@@ -1204,11 +1235,45 @@
 
 												{@const corners = {
 													topLeft: L.pick({
-														x: ['position_x', L.subtract(5)],
-														y: ['position_y', L.subtract(5)]
+														x: [
+															L.lens(
+																(o) => o && o.position_x,
+																(n, o) => {
+																	const d = Math.min(n - o.position_x, o.width);
+
+																	return { ...o, position_x: o.position_x + d, width: o.width - d };
+																}
+															),
+															L.subtract(5)
+														],
+														y: [
+															L.lens(
+																(o) => o && o.position_y,
+																(n, o) => {
+																	const d = Math.min(n - o.position_y, o.height);
+
+																	return {
+																		...o,
+																		position_y: o.position_y + d,
+																		height: o.height - d
+																	};
+																}
+															),
+															L.subtract(5)
+														]
 													}),
 													topRight: L.pick({
-														x: ['position_x', L.subtract(5)],
+														x: [
+															L.lens(
+																(o) => o && o.position_x,
+																(n, o) => {
+																	const d = Math.min(n - o.position_x, o.width);
+
+																	return { ...o, position_x: o.position_x + d, width: o.width - d };
+																}
+															),
+															L.subtract(5)
+														],
 														y: L.choose((b) => [
 															'height',
 															L.normalize(R.max(0)),
@@ -1217,7 +1282,21 @@
 														])
 													}),
 													bottomLeft: L.pick({
-														y: ['position_y', L.subtract(5)],
+														y: [
+															L.lens(
+																(o) => o && o.position_y,
+																(n, o) => {
+																	const d = Math.min(n - o.position_y, o.height);
+
+																	return {
+																		...o,
+																		position_y: o.position_y + d,
+																		height: o.height - d
+																	};
+																}
+															),
+															L.subtract(5)
+														],
 														x: L.choose((b) => [
 															'width',
 															L.normalize(R.max(0)),
@@ -1264,6 +1343,20 @@
 															onpointermove={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
 																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																}
+															}}
+															onpointerup={(evt) => {
+																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																	cast('update_box_size', {
+																		layer_id: el.value.id,
+																		value: L.get(
+																			[
+																				'box',
+																				L.props('position_x', 'position_y', 'width', 'height')
+																			],
+																			el.value
+																		)
+																	});
 																}
 															}}
 															onclick={(evt) => {
