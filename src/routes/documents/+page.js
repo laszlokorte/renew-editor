@@ -7,9 +7,7 @@ import LiveState from '$lib/api/livestate';
 
 export const ssr = false;
 
-function createCommands(fetchFn) {
-	const api = documentApi(fetchFn, authState.routes, authState.authHeader)
-
+function createCommands(api, fetchFn) {
 	return {
 		createDocument: (redirect = false) => {
 			return api.createDocument()
@@ -54,15 +52,11 @@ function downloadFile(blob, name = "file.pdf") {
 
 export async function load({fetch}) {
 	if(authState.isAuthenticated) {
-		return fetch(authState.value.routes.documents.href, {
-			headers: {
-				"Content-Type": "application/json",
-				"Authorization" : authState.authHeader,
-			},
-			contentType: "application/json",
-		}).then(r => r.json()).then(j => ({
+		const api = documentApi(fetch, authState.routes, authState.authHeader)
+
+		return api.listDocuments().then(j => ({
 			documents: j,
-			commands: createCommands(fetch),
+			commands: createCommands(api, fetch),
 		})).catch((e) => {
 			return error(503, {
 				message: 'Service Unavailable'

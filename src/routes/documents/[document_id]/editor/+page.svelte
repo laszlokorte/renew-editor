@@ -1,4 +1,6 @@
 <script>
+	// @ts-nocheck
+
 	import { base } from '$app/paths';
 	import {
 		view,
@@ -1009,6 +1011,7 @@
 											{#each selectedLayers.value as id (id)}
 												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 												{@const waypoints = view(['edge', 'waypoints'], el)}
+												{@const persistentWaypoints = view(L.filter(R.prop('id')), waypoints)}
 												{@const waypointProposals = view(
 													[
 														'edge',
@@ -1017,13 +1020,15 @@
 																'waypoints',
 																L.reread(
 																	R.pipe(
-																		R.prepend({ x: e.source_x, y: e.source_y }),
-																		R.append({ x: e.target_x, y: e.target_y }),
+																		R.prepend({ x: e.source_x, y: e.source_y, id: 'source' }),
+																		R.append({ x: e.target_x, y: e.target_y, id: 'target' }),
 																		R.aperture(2),
 																		R.map(([a, b]) => ({
-																			x: (a.x + b.x) / 2,
-																			y: (a.y + b.y) / 2
-																		}))
+																			id_before: a.id,
+																			x: b.id ? (a.x + b.x) / 2 : b.x,
+																			y: b.id ? (a.y + b.y) / 2 : b.y
+																		})),
+																		R.filter(R.prop('id_before'))
 																	)
 																)
 															];
@@ -1032,7 +1037,15 @@
 													el
 												)}
 												{#if el.value?.edge}
-													{#each waypoints.value as wp}
+													{#each persistentWaypoints.value as wp, wi}
+														{@const pos = view(
+															[
+																L.find(R.whereEq({ id: wp.id }), { hint: wi }),
+																L.removable('x', 'y'),
+																L.props('x', 'y')
+															],
+															waypoints
+														)}
 														<circle
 															fill="white"
 															cursor="move"
@@ -1042,9 +1055,67 @@
 															r={6 * cameraScale.value}
 															cx={wp.x}
 															cy={wp.y}
+															onclick={(evt) => {
+																evt.stopPropagation();
+															}}
+															ondblclick={(evt) => {
+																pos.value = undefined;
+																evt.stopPropagation();
+															}}
+															onpointerdown={(evt) => {
+																if (evt.isPrimary) {
+																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																}
+															}}
+															onpointermove={(evt) => {
+																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																}
+															}}
 														/>
 													{/each}
-													{#each waypointProposals.value as wp}
+													{#each waypointProposals.value as wp_proposal, wi (wp_proposal.id_before)}
+														{@const pos = view(
+															[
+																L.lens(
+																	(list) => {
+																		const i =
+																			R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) + 1;
+																		console.log(list);
+																		if (list[i] && !list[i].id) {
+																			return list[i];
+																		} else {
+																			return undefined;
+																		}
+																	},
+																	(n, list) => {
+																		console.log(wp_proposal.id_before);
+																		const i =
+																			R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) + 1;
+																		if (list[i] && !list[i].id) {
+																			if (n === undefined) {
+																				console.log('a');
+																				return [...list.slice(0, i - 1), ...list.slice(i)];
+																			} else {
+																				console.log('b');
+																				return [...list.slice(0, i), n, ...list.slice(i + 1)];
+																			}
+																		} else {
+																			if (n === undefined) {
+																				console.log('c');
+																				return list;
+																			} else {
+																				console.log('d');
+																				return [...list.slice(0, i), n, ...list.slice(i)];
+																			}
+																		}
+																	}
+																),
+																L.removable('x', 'y'),
+																L.props('x', 'y')
+															],
+															waypoints
+														)}
 														<circle
 															fill="white"
 															cursor="move"
@@ -1052,11 +1123,32 @@
 															stroke-width="2"
 															vector-effect="non-scaling-stroke"
 															r={4 * cameraScale.value}
-															cx={wp.x}
-															cy={wp.y}
+															cx={wp_proposal.x}
+															cy={wp_proposal.y}
+															onclick={(evt) => {
+																evt.stopPropagation();
+															}}
+															onpointerdown={(evt) => {
+																if (evt.isPrimary) {
+																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																}
+															}}
+															onpointermove={(evt) => {
+																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																}
+															}}
 														/>
 													{/each}
 
+													{@const source_pos = view(
+														['edge', L.pick({ x: 'source_x', y: 'source_y' })],
+														el
+													)}
+													{@const target_pos = view(
+														['edge', L.pick({ x: 'target_x', y: 'target_y' })],
+														el
+													)}
 													<circle
 														fill="white"
 														cursor="move"
@@ -1065,6 +1157,22 @@
 														r={6 * cameraScale.value}
 														cx={el.value?.edge?.source_x}
 														cy={el.value?.edge?.source_y}
+														onclick={(evt) => {
+															evt.stopPropagation();
+														}}
+														onpointerdown={(evt) => {
+															if (evt.isPrimary) {
+																evt.currentTarget.setPointerCapture(evt.pointerId);
+															}
+														}}
+														onpointermove={(evt) => {
+															if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																source_pos.value = liveLenses.clientToCanvas(
+																	evt.clientX,
+																	evt.clientY
+																);
+															}
+														}}
 													/>
 
 													<circle
@@ -1075,6 +1183,22 @@
 														r={6 * cameraScale.value}
 														cx={el.value?.edge?.target_x}
 														cy={el.value?.edge?.target_y}
+														onclick={(evt) => {
+															evt.stopPropagation();
+														}}
+														onpointerdown={(evt) => {
+															if (evt.isPrimary) {
+																evt.currentTarget.setPointerCapture(evt.pointerId);
+															}
+														}}
+														onpointermove={(evt) => {
+															if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																target_pos.value = liveLenses.clientToCanvas(
+																	evt.clientX,
+																	evt.clientY
+																);
+															}
+														}}
 													/>
 												{/if}
 											{/each}
@@ -2055,6 +2179,7 @@
 		z-index: -1;
 		grid-template-rows: auto auto;
 		grid-auto-rows: 1fr;
+		overflow: hidden;
 	}
 
 	.header {

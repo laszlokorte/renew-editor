@@ -2,6 +2,10 @@ import {fetchJson} from './json'
 
 export default function(fetchFn, routes, token) {
 	return {
+		listDocuments() {
+			return fetchJson(fetchFn, routes.documents.href, 'get', {"Authorization" : token})
+		},
+
 		deleteDocument(id) {
 			return fetchJson(fetchFn, routes.document.href.replace(':id', id), 'delete', {"Authorization" : token})
 		},
