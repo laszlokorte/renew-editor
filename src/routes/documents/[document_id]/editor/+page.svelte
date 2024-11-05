@@ -9,6 +9,7 @@
 		combine,
 		read,
 		failableView,
+		viewCombined,
 		call
 	} from '$lib/reactivity/atom.svelte';
 	import { bindValue } from '$lib/reactivity/bindings.svelte.js';
@@ -35,6 +36,7 @@
 	import * as L from 'partial.lenses';
 	import * as R from 'ramda';
 	import Minimap from '$lib/components/editor/overlays/minimap/Minimap.svelte';
+	import * as Geo from '$lib/math/geometry';
 
 	import {
 		frameBoxLens,
@@ -59,6 +61,7 @@
 	const showOtherSelections = atom(true);
 	const showDebug = atom(true);
 	const showGrid = atom(false);
+	const pointerOffset = atom({ x: 0, y: 0 });
 	const gridDistance = atom(32);
 	const gridDistanceExp = view(logLens(2), gridDistance);
 
@@ -775,6 +778,7 @@
 														y={el.value?.box.position_y}
 														width={el.value?.box.width}
 														height={el.value?.box.height}
+														cursor="move"
 													></rect>
 												{/if}
 												{#if el.value?.text}
@@ -876,7 +880,7 @@
 											{/each}
 										</g>
 
-										<g transform={rotationTransform.value} opacity="0.6">
+										<g transform={rotationTransform.value} opacity="0.6" pointer-events="none">
 											{#each presence.value as { data: { cursors, color, username, selections } }}
 												{#if showOtherSelections.value}
 													<g style:--selection-color={color}>
@@ -1008,6 +1012,7 @@
 										</g>
 
 										<g transform={rotationTransform.value}>
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
 											{#each selectedLayers.value as id (id)}
 												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 												{@const waypoints = view(['edge', 'waypoints'], el)}
@@ -1070,18 +1075,25 @@
 															onpointerdown={(evt) => {
 																if (evt.isPrimary) {
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	pointerOffset.value = Geo.diff2d(
+																		wp,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
 																}
 															}}
 															onpointermove={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																	pos.value = Geo.translate(
+																		pointerOffset.value,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
 																}
 															}}
 															onpointerup={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-																	const newPos = liveLenses.clientToCanvas(
-																		evt.clientX,
-																		evt.clientY
+																	const newPos = Geo.translate(
+																		pointerOffset.value,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
 																	cast('update_waypoint_position', {
 																		layer_id: el.value.id,
@@ -1099,7 +1111,6 @@
 																	(list) => {
 																		const i =
 																			R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) + 1;
-																		console.log(list);
 																		if (list[i] && !list[i].id) {
 																			return list[i];
 																		} else {
@@ -1107,23 +1118,18 @@
 																		}
 																	},
 																	(n, list) => {
-																		console.log(wp_proposal.id_before);
 																		const i =
 																			R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) + 1;
 																		if (list[i] && !list[i].id) {
 																			if (n === undefined) {
-																				console.log('a');
 																				return [...list.slice(0, i - 1), ...list.slice(i)];
 																			} else {
-																				console.log('b');
 																				return [...list.slice(0, i), n, ...list.slice(i + 1)];
 																			}
 																		} else {
 																			if (n === undefined) {
-																				console.log('c');
 																				return list;
 																			} else {
-																				console.log('d');
 																				return [...list.slice(0, i), n, ...list.slice(i)];
 																			}
 																		}
@@ -1149,18 +1155,25 @@
 															onpointerdown={(evt) => {
 																if (evt.isPrimary) {
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	pointerOffset.value = Geo.diff2d(
+																		wp_proposal,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
 																}
 															}}
 															onpointermove={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																	pos.value = Geo.translate(
+																		pointerOffset.value,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
 																}
 															}}
 															onpointerup={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-																	const newPos = liveLenses.clientToCanvas(
-																		evt.clientX,
-																		evt.clientY
+																	const newPos = Geo.translate(
+																		pointerOffset.value,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
 																	cast('create_waypoint', {
 																		layer_id: el.value.id,
@@ -1194,6 +1207,13 @@
 														onpointerdown={(evt) => {
 															if (evt.isPrimary) {
 																evt.currentTarget.setPointerCapture(evt.pointerId);
+																pointerOffset.value = Geo.diff2d(
+																	{
+																		x: el.value.edge.source_x,
+																		y: el.value.edge.source_y
+																	},
+																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																);
 															}
 														}}
 														onpointermove={(evt) => {
@@ -1202,6 +1222,21 @@
 																	evt.clientX,
 																	evt.clientY
 																);
+															}
+														}}
+														onpointerup={(evt) => {
+															if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																const newPos = Geo.translate(
+																	pointerOffset.value,
+																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																);
+																cast('update_edge_position', {
+																	layer_id: el.value.id,
+																	value: {
+																		source_x: newPos.x,
+																		source_y: newPos.y
+																	}
+																});
 															}
 														}}
 													/>
@@ -1220,6 +1255,13 @@
 														onpointerdown={(evt) => {
 															if (evt.isPrimary) {
 																evt.currentTarget.setPointerCapture(evt.pointerId);
+																pointerOffset.value = Geo.diff2d(
+																	{
+																		x: el.value.edge.target_x,
+																		y: el.value.edge.target_y
+																	},
+																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																);
 															}
 														}}
 														onpointermove={(evt) => {
@@ -1228,6 +1270,21 @@
 																	evt.clientX,
 																	evt.clientY
 																);
+															}
+														}}
+														onpointerup={(evt) => {
+															if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																const newPos = Geo.translate(
+																	pointerOffset.value,
+																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																);
+																cast('update_edge_position', {
+																	layer_id: el.value.id,
+																	value: {
+																		target_x: newPos.x,
+																		target_y: newPos.y
+																	}
+																});
 															}
 														}}
 													/>
@@ -1317,12 +1374,88 @@
 															L.add(b ? b.position_y : 0),
 															L.add(5)
 														])
-													}),
-													center: L.pick({
-														x: L.choose((b) => ['position_x', L.add(b ? b.width / 2 : 0)]),
-														y: L.choose((b) => ['position_y', L.add(b ? b.height / 2 : 0)])
 													})
 												}}
+												{@const boxDim = viewCombined(
+													[
+														L.cond(
+															[
+																R.path(['el', 'box']),
+																[
+																	'el',
+																	'box',
+																	L.pick({
+																		x: 'position_x',
+																		y: 'position_y',
+																		width: 'width',
+																		height: 'height'
+																	})
+																]
+															],
+															[
+																(x, i) => R.path(['el', 'text']),
+																[L.choose(({ el }) => ['textBounds', L.prop(el.id)])]
+															]
+														)
+													],
+													{ el, textBounds }
+												)}
+												{@const boxPos = view(
+													[
+														L.cond([R.prop('box'), 'box'], [R.prop('text'), 'text']),
+														L.pick({
+															x: 'position_x',
+															y: 'position_y'
+														})
+													],
+													el
+												)}
+												<rect
+													{...boxDim.value}
+													fill="none"
+													class="draggable"
+													onpointerdown={(evt) => {
+														if (evt.isPrimary) {
+															evt.currentTarget.setPointerCapture(evt.pointerId);
+															pointerOffset.value = Geo.diff2d(
+																boxPos.value,
+																liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+															);
+														}
+													}}
+													onpointermove={(evt) => {
+														if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+															boxPos.value = Geo.translate(
+																pointerOffset.value,
+																liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+															);
+														}
+													}}
+													onpointerup={(evt) => {
+														if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+															if (el.value.box) {
+																cast('update_box_size', {
+																	layer_id: el.value.id,
+																	value: L.get(
+																		['box', L.props('position_x', 'position_y', 'width', 'height')],
+																		el.value
+																	)
+																});
+															} else if (el.value.text) {
+																cast('update_text_position', {
+																	layer_id: el.value.id,
+																	value: L.get(
+																		['text', L.props('position_x', 'position_y')],
+																		el.value
+																	)
+																});
+															}
+														}
+													}}
+													onclick={(evt) => {
+														evt.stopPropagation();
+													}}
+												/>
 												{#each Object.entries(corners) as [type, lens]}
 													{@const pos = view(['box', lens], el)}
 													{@const posVal = pos.value}
@@ -1338,11 +1471,18 @@
 															onpointerdown={(evt) => {
 																if (evt.isPrimary) {
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	pointerOffset.value = Geo.diff2d(
+																		posVal,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
 																}
 															}}
 															onpointermove={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-																	pos.value = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																	pos.value = Geo.translate(
+																		pointerOffset.value,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
 																}
 															}}
 															onpointerup={(evt) => {
@@ -1408,7 +1548,7 @@
 																	stroke="#23875d"
 																	stroke-width="2"
 																	vector-effect="non-scaling-stroke"
-																	r={10 * cameraScale.value}
+																	r={5 * cameraScale.value}
 																	cx={coordX}
 																	cy={coordY}
 																	cursor="alias"
@@ -2749,6 +2889,12 @@
 		stroke-linecap: round;
 		stroke-linejoin: round;
 	}
+
+	.draggable {
+		pointer-events: all;
+		cursor: move;
+	}
+
 	text.selected {
 		stroke: var(--selection-color, #7af);
 		fill: var(--selection-color, #7af);
