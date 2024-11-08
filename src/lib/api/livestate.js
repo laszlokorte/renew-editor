@@ -224,7 +224,8 @@ export class LiveState {
       this.eventTarget.dispatchEvent(new CustomEvent('livestate-change', {
         detail: {
           state: this.state,
-          version: this.stateVersion
+          version: this.stateVersion,
+          patch: (oldState) => applyPatch(oldState, patch, false, false).newDocument
         }
       }));
     } else {
