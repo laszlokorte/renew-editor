@@ -218,6 +218,7 @@
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 
 	let cameraScroller = atom(undefined);
+	const externalGraphics = atom([]);
 </script>
 
 <div class="full-page">
@@ -226,7 +227,7 @@
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
-			{@const extension = view(
+			{@const docExtension = view(
 				[
 					'viewbox',
 					L.pick({
@@ -237,6 +238,31 @@
 					})
 				],
 				doc
+			)}
+			{@const externalGraphicsExtensions = view(
+				L.reread((gs) =>
+					gs.reduce(
+						({ minX, minY, maxX, maxY }, g) => {
+							return {
+								minX: Math.min(minX, g.x),
+								minY: Math.min(minY, g.y),
+								maxX: Math.max(maxX, g.x + g.width),
+								maxY: Math.max(maxY, g.y + g.height)
+							};
+						},
+						{ minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+					)
+				),
+				externalGraphics
+			)}
+			{@const extension = viewCombined(
+				L.reread(({ de, eg }) => ({
+					minX: Math.min(de.minX, eg.minX),
+					minY: Math.min(de.minY, eg.minY),
+					maxX: Math.max(de.maxX, eg.maxX),
+					maxY: Math.max(de.maxY, eg.maxY)
+				})),
+				{ de: docExtension, eg: externalGraphicsExtensions }
 			)}
 			{@const selectedLayersType = read(
 				L.reread(({ d, sl }) => {
@@ -384,6 +410,16 @@
 											cast('delete_layer', selectedLayers.value[0]);
 										}}
 										class="menu-bar-item-button menu-bar-item-danger">Delete</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										disabled={!externalGraphics.value.length}
+										onclick={(evt) => {
+											evt.preventDefault();
+											externalGraphics.value = [];
+										}}
+										class="menu-bar-item-button menu-bar-item-danger">Clear Sketches</button
 									>
 								</li>
 							</ul>
@@ -583,6 +619,28 @@
 								pos,
 								...content
 							});
+						}}
+						onDropFile={(file, pos) => {
+							const reader = new FileReader();
+							reader.onload = function (event) {
+								const parser = new DOMParser();
+								const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
+
+								const blob = new Blob([event.target.result], { type: 'image/svg+xml' });
+								const url = URL.createObjectURL(blob);
+
+								update(
+									R.append({
+										href: url,
+										x: -svgDoc.documentElement.width.baseVal.value / 2 / 10 + pos.x,
+										y: -svgDoc.documentElement.height.baseVal.value / 2 / 10 + pos.y,
+										width: svgDoc.documentElement.width.baseVal.value / 10,
+										height: svgDoc.documentElement.height.baseVal.value / 10
+									}),
+									externalGraphics
+								);
+							};
+							reader.readAsText(file);
 						}}
 					>
 						<CameraScroller bind:this={cameraScroller.value} {camera} {extension}>
@@ -1394,7 +1452,11 @@
 															],
 															[
 																(x, i) => R.path(['el', 'text']),
-																[L.choose(({ el }) => ['textBounds', L.prop(el.id)])]
+																[
+																	L.choose(({ el }) =>
+																		el ? ['textBounds', L.prop(el.id)] : L.zero
+																	)
+																]
 															]
 														)
 													],
@@ -1641,6 +1703,16 @@
 												}}
 											/>
 										{/if}
+
+										{#each externalGraphics.value as eg}
+											<image
+												x={eg.x}
+												y={eg.y}
+												width={eg.width}
+												height={eg.height}
+												xlink:href={eg.href}
+											/>
+										{/each}
 
 										<MountTrigger
 											onMount={() => {

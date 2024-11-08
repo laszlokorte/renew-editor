@@ -1,7 +1,7 @@
 <script>
 	import { atom } from '$lib/reactivity/atom.svelte.js';
 	import { constructLenses } from '$lib/components/camera/live_lenses';
-	const { children, camera, onDrop, dragging = atom(0) } = $props();
+	const { children, camera, onDrop, dragging = atom(0), onDropFile } = $props();
 
 	const domElement = atom(undefined);
 	const lenses = constructLenses(domElement, camera);
@@ -68,7 +68,9 @@
 					alert('dropped: ' + s);
 				});
 			} else if (item.kind === 'file') {
-				alert('dropped file ');
+				if (onDropFile) {
+					onDropFile(item.getAsFile(), position);
+				}
 			}
 		}
 	};
