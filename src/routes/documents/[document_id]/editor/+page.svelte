@@ -218,7 +218,6 @@
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 
 	let cameraScroller = atom(undefined);
-	const externalGraphics = atom([]);
 </script>
 
 <div class="full-page">
@@ -227,7 +226,7 @@
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
-			{@const docExtension = view(
+			{@const extension = view(
 				[
 					'viewbox',
 					L.pick({
@@ -238,31 +237,6 @@
 					})
 				],
 				doc
-			)}
-			{@const externalGraphicsExtensions = view(
-				L.reread((gs) =>
-					gs.reduce(
-						({ minX, minY, maxX, maxY }, g) => {
-							return {
-								minX: Math.min(minX, g.x),
-								minY: Math.min(minY, g.y),
-								maxX: Math.max(maxX, g.x + g.width),
-								maxY: Math.max(maxY, g.y + g.height)
-							};
-						},
-						{ minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
-					)
-				),
-				externalGraphics
-			)}
-			{@const extension = viewCombined(
-				L.reread(({ de, eg }) => ({
-					minX: Math.min(de.minX, eg.minX),
-					minY: Math.min(de.minY, eg.minY),
-					maxX: Math.max(de.maxX, eg.maxX),
-					maxY: Math.max(de.maxY, eg.maxY)
-				})),
-				{ de: docExtension, eg: externalGraphicsExtensions }
 			)}
 			{@const selectedLayersType = read(
 				L.reread(({ d, sl }) => {
@@ -410,16 +384,6 @@
 											cast('delete_layer', selectedLayers.value[0]);
 										}}
 										class="menu-bar-item-button menu-bar-item-danger">Delete</button
-									>
-								</li>
-								<li class="menu-bar-menu-item">
-									<button
-										disabled={!externalGraphics.value.length}
-										onclick={(evt) => {
-											evt.preventDefault();
-											externalGraphics.value = [];
-										}}
-										class="menu-bar-item-button menu-bar-item-danger">Clear Sketches</button
 									>
 								</li>
 							</ul>
@@ -626,19 +590,14 @@
 								const parser = new DOMParser();
 								const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
 
-								const blob = new Blob([event.target.result], { type: 'image/svg+xml' });
-								const url = URL.createObjectURL(blob);
-
-								update(
-									R.append({
-										href: url,
-										x: -svgDoc.documentElement.width.baseVal.value / 2 / 10 + pos.x,
-										y: -svgDoc.documentElement.height.baseVal.value / 2 / 10 + pos.y,
-										width: svgDoc.documentElement.width.baseVal.value / 10,
-										height: svgDoc.documentElement.height.baseVal.value / 10
-									}),
-									externalGraphics
-								);
+								data.commands.uploadSvg(svgDoc).then((j) => {
+									cast('create_layer', {pos: {
+										x: -svgDoc.documentElement.width.baseVal.value / 2 + pos.x,
+										y: -svgDoc.documentElement.height.baseVal.value / 2 + pos.y,
+										width: svgDoc.documentElement.width.baseVal.value,
+										height: svgDoc.documentElement.height.baseVal.value
+									}, "image": j.url});
+								})
 							};
 							reader.readAsText(file);
 						}}
@@ -679,6 +638,8 @@
 										{/if}
 
 										<g transform={rotationTransform.value}>
+
+
 											<g id="full-document-{data.document.id}">
 												{#each layersInOrder.value as { index, id, depth, hidden } (id)}
 													{#if !hidden}
@@ -711,6 +672,7 @@
 																<Symbol
 																	symbols={data.symbols}
 																	symbolId={el.value?.box.shape}
+																	background_url={el.value?.style?.background_url}
 																	box={{
 																		x: el.value?.box.position_x,
 																		y: el.value?.box.position_y,
@@ -1622,6 +1584,8 @@
 													{/if}
 												{/each}
 											{/await}
+
+
 										</g>
 
 										{#if activeTool.value === 'pen'}
@@ -1704,15 +1668,6 @@
 											/>
 										{/if}
 
-										{#each externalGraphics.value as eg}
-											<image
-												x={eg.x}
-												y={eg.y}
-												width={eg.width}
-												height={eg.height}
-												xlink:href={eg.href}
-											/>
-										{/each}
 
 										<MountTrigger
 											onMount={() => {

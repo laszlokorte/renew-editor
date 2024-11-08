@@ -24,6 +24,10 @@ function createCommands(fetchFn, doc) {
 				.then((r) => {
 					return goto(`${base}/documents/${r.id}/editor`)
 				})
+		},
+
+		uploadSvg(svg) {
+			return api.uploadSvg(doc.id, svg)
 		}
 	}
 }

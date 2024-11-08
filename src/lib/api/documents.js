@@ -57,5 +57,24 @@ export default function(fetchFn, routes, token) {
 				body: formData,
 			})
 		},
+
+		uploadSvg(_doc_id, svgDocument) {
+			const formData = new FormData();
+
+			formData.append('svg[width]', svgDocument.documentElement.width.baseVal.value)
+			formData.append('svg[height]', svgDocument.documentElement.height.baseVal.value)
+			formData.append('svg[xml]', new XMLSerializer().serializeToString(svgDocument.documentElement))
+
+			return fetch('http://localhost:4000/api/media/svg', {
+				method: "post",
+				body: formData
+			}).then(r => {
+				if(r.ok) {
+					return r.json()
+				} else {
+					throw r
+				}
+			})
+		}
 	}
 }

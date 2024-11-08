@@ -1,6 +1,8 @@
 <script>
 	import { buildPath } from './symbols';
-	const { symbols, symbolId, box } = $props();
+	const { symbols, symbolId, box, background_url } = $props();
+
+	let error = $state(false)
 </script>
 
 {#await symbols}
@@ -16,6 +18,28 @@
 				fill-rule="evenodd"
 			/>
 		{/each}
+	{:else if background_url}
+	<image
+		x={box.x}
+		y={box.y}
+		width={box.width}
+		height={box.height}
+		xlink:href={background_url}
+		onerror={() => {error = true; }}
+	/>
+	{#if error}
+	<rect x={box.x} y={box.y} width={box.width} height={box.height} fill="none" stroke="#a00" stroke-width="2"></rect>
+	<text
+		x={box.x + box.width / 2}
+		y={box.y + box.height / 2}
+		fill="#a00"
+		text-anchor="middle"
+		><tspan
+		x={box.x + box.width / 2}>Image not available</tspan>
+		<tspan font-size="0.5em"
+		x={box.x + box.width / 2} dy="2em">{background_url}</tspan>
+	</text>
+	{/if}
 	{:else}
 		<rect x={box.x} y={box.y} width={box.width} height={box.height}></rect>
 	{/if}
