@@ -65,7 +65,7 @@ export default function(fetchFn, routes, token) {
 			formData.append('svg[height]', svgDocument.documentElement.height.baseVal.value)
 			formData.append('svg[xml]', new XMLSerializer().serializeToString(svgDocument.documentElement))
 
-			return fetch('http://localhost:4000/api/media/svg', {
+			return fetch(routes.upload_svg.href, {
 				method: "post",
 				body: formData
 			}).then(r => {
