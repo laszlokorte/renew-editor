@@ -156,47 +156,43 @@
 	}
 
 	const edgeAngle = {
-		source: function (edge) {
-			const waypointX = edge.waypoints.length ? edge.waypoints[0].x : edge.target_x;
-			const waypointY = edge.waypoints.length ? edge.waypoints[0].y : edge.target_y;
+		source: function (edge, wps) {
+			const waypointX = wps.length ? wps[0].x : edge.target_x;
+			const waypointY = wps.length ? wps[0].y : edge.target_y;
 
 			return (Math.atan2(edge.source_y - waypointY, edge.source_x - waypointX) * 180) / Math.PI;
 		},
-		target: function (edge) {
-			const waypointX = edge.waypoints.length
-				? edge.waypoints[edge.waypoints.length - 1].x
-				: edge.source_x;
-			const waypointY = edge.waypoints.length
-				? edge.waypoints[edge.waypoints.length - 1].y
-				: edge.source_y;
+		target: function (edge, wps) {
+			const waypointX = wps.length ? wps[wps.length - 1].x : edge.source_x;
+			const waypointY = wps.length ? wps[wps.length - 1].y : edge.source_y;
 
 			return (Math.atan2(edge.target_y - waypointY, edge.target_x - waypointX) * 180) / Math.PI;
 		}
 	};
 
 	const edgePath = {
-		linear: function (edge) {
-			const waypoints = edge.waypoints.map(({ x, y }) => `L ${x} ${y}`).join(' ');
+		linear: function (edge, wps) {
+			const waypoints = wps.map(({ x, y }) => `L ${x} ${y}`).join(' ');
 
 			return `M ${edge.source_x} ${edge.source_y} ${waypoints} L ${edge.target_x} ${edge.target_y}`;
 		},
-		autobezier: function (edge) {
-			switch (edge.waypoints.length) {
+		autobezier: function (edge, wps) {
+			switch (wps.length) {
 				case 0:
 					return `M ${edge.source_x} ${edge.source_y} L ${edge.target_x} ${edge.target_y}`;
 				case 1:
-					return `M ${edge.source_x} ${edge.source_y}  Q ${edge.waypoints[0].x} ${edge.waypoints[0].y} ${edge.target_x} ${edge.target_y}`;
+					return `M ${edge.source_x} ${edge.source_y}  Q ${wps[0].x} ${wps[0].y} ${edge.target_x} ${edge.target_y}`;
 				default:
-					const points = [{ x: edge.source_x, y: edge.source_y }, ...edge.waypoints];
+					const points = [{ x: edge.source_x, y: edge.source_y }, ...wps];
 					let path = '';
-					for (let i = 0; i < edge.waypoints.length; i++) {
+					for (let i = 0; i < wps.length; i++) {
 						const x1 = points[i].x;
 						const y1 = points[i].y;
 						const x2 = points[i + 1].x;
 						const y2 = points[i + 1].y;
 						path += `Q ${x1} ${y1} ${(x2 + x1) / 2} ${(y2 + y1) / 2}`;
 					}
-					const waypoints = [{ x: edge.source_x, y: edge.source_y }, ...edge.waypoints];
+					const waypoints = [{ x: edge.source_x, y: edge.source_y }, ...wps];
 
 					return `M ${edge.source_x} ${edge.source_y} ${path} T ${edge.target_x} ${edge.target_y}`;
 			}
@@ -220,6 +216,32 @@
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 
 	let cameraScroller = atom(undefined);
+
+	function localProp(prop) {
+		return L.lens(
+			(x) => {
+				if (x.__draft?.[prop]?.base === x[prop]) {
+					return x.__draft?.[prop]?.live;
+				} else {
+					return x[prop];
+				}
+			},
+			(n, o) =>
+				n === localProp.reset
+					? { ...o, __draft: undefined }
+					: {
+							...o,
+							__draft: {
+								[prop]: {
+									live: n,
+									base: o?.__draft?.[prop]?.base ?? o[prop]
+								}
+							}
+						}
+		);
+	}
+
+	localProp.reset = Object.create(null);
 </script>
 
 <div class="full-page">
@@ -732,7 +754,8 @@
 															>
 																<path
 																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																		el.value?.edge
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
 																	)}
 																	pointer-events="stroke"
 																	fill="none"
@@ -741,14 +764,18 @@
 																/>
 																<path
 																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																		el.value?.edge
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
 																	)}
 																	stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
 																	fill="none"
 																/>
 
 																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-																	{@const source_angle = edgeAngle['source'](el.value?.edge)}
+																	{@const source_angle = edgeAngle['source'](
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
+																	)}
 																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
 
 																	<g
@@ -770,7 +797,10 @@
 																{/if}
 
 																{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-																	{@const target_angle = edgeAngle['target'](el.value?.edge)}
+																	{@const target_angle = edgeAngle['target'](
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
+																	)}
 																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
 																	<g
 																		fill={el.value?.style?.background_color ?? 'black'}
@@ -818,6 +848,7 @@
 															y={bbox.value.y}
 															width={bbox.value.width}
 															height={bbox.value.height}
+															stroke-width={cameraScale.value * 6}
 														></rect>
 													{/if}
 												{/if}
@@ -825,17 +856,22 @@
 													<path
 														class="selected"
 														d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-															el.value?.edge
+															el.value?.edge,
+															L.get(localProp('waypoints'), el.value?.edge)
 														)}
 														stroke="black"
 														fill="none"
-														stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+														stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+															6 * cameraScale.value}
 														stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
 														stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 													/>
 
 													{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-														{@const source_angle = edgeAngle['source'](el.value?.edge)}
+														{@const source_angle = edgeAngle['source'](
+															el.value?.edge,
+															L.get(localProp('waypoints'), el.value?.edge)
+														)}
 														<g
 															class="selected"
 															transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
@@ -870,7 +906,10 @@
 													{/if}
 
 													{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-														{@const target_angle = edgeAngle['target'](el.value?.edge)}
+														{@const target_angle = edgeAngle['target'](
+															el.value?.edge,
+															L.get(localProp('waypoints'), el.value?.edge)
+														)}
 														<g
 															class="selected"
 															transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
@@ -942,17 +981,22 @@
 																<path
 																	class="selected"
 																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																		el.value?.edge
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
 																	)}
 																	stroke="black"
 																	fill="none"
-																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 4}
+																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+																		4 * cameraScale.value}
 																	stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
 																	stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 																/>
 
 																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-																	{@const source_angle = edgeAngle['source'](el.value?.edge)}
+																	{@const source_angle = edgeAngle['source'](
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
+																	)}
 																	<g
 																		class="selected"
 																		transform="rotate({source_angle} {el.value?.edge.source_x} {el
@@ -987,7 +1031,10 @@
 																{/if}
 
 																{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-																	{@const target_angle = edgeAngle['target'](el.value?.edge)}
+																	{@const target_angle = edgeAngle['target'](
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
+																	)}
 																	<g
 																		class="selected"
 																		transform="rotate({target_angle} {el.value?.edge.target_x} {el
@@ -1042,14 +1089,14 @@
 											<!-- svelte-ignore a11y_no_static_element_interactions -->
 											{#each selectedLayers.value as id (id)}
 												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-												{@const waypoints = view(['edge', 'waypoints'], el)}
+												{@const waypoints = view(['edge', localProp('waypoints')], el)}
 												{@const persistentWaypoints = view(L.filter(R.prop('id')), waypoints)}
 												{@const waypointProposals = view(
 													[
 														'edge',
 														L.choose((e) => {
 															return [
-																'waypoints',
+																localProp('waypoints'),
 																L.reread(
 																	R.pipe(
 																		R.prepend({ x: e.source_x, y: e.source_y, id: 'source' }),
@@ -1103,6 +1150,7 @@
 																if (evt.isPrimary) {
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = pos.value;
+																	waypoints.value = localProp.reset;
 																	pointerOffset.value = Geo.diff2d(
 																		wp,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1137,7 +1185,7 @@
 																	}
 																	evt.stopPropagation();
 																	evt.currentTarget.releasePointerCapture(evt.pointerId);
-																	pos.value = backoffValue.value;
+																	waypoints.value = localProp.reset;
 																}
 															}}
 															role="button"
@@ -1199,13 +1247,14 @@
 																	}
 																	evt.stopPropagation();
 																	evt.currentTarget.releasePointerCapture(evt.pointerId);
-																	pos.value = backoffValue.value;
+																	waypoints.value = localProp.reset;
 																}
 															}}
 															role="button"
 															tabindex="-1"
 															onpointerdown={(evt) => {
 																if (evt.isPrimary) {
+																	waypoints.value = localProp.reset;
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = wp_proposal;
 																	pointerOffset.value = Geo.diff2d(
@@ -1229,8 +1278,6 @@
 																		after_waypoint_id: wp_proposal.id_before,
 																		position: pos.value
 																	});
-
-																	pos.value = undefined;
 																}
 															}}
 														/>
@@ -1362,90 +1409,106 @@
 												{/if}
 
 												{@const corners = {
-													topLeft: L.pick({
-														x: [
-															L.lens(
-																(o) => o && o.position_x,
-																(n, o) => {
-																	const d = Math.min(n - o.position_x, o.width);
+													topLeft: {
+														dx: -1,
+														dy: -1,
+														lens: L.pick({
+															x: [
+																L.lens(
+																	(o) => o && o.position_x,
+																	(n, o) => {
+																		const d = Math.min(n - o.position_x, o.width);
 
-																	return { ...o, position_x: o.position_x + d, width: o.width - d };
-																}
-															),
-															L.subtract(5)
-														],
-														y: [
-															L.lens(
-																(o) => o && o.position_y,
-																(n, o) => {
-																	const d = Math.min(n - o.position_y, o.height);
+																		return {
+																			...o,
+																			position_x: o.position_x + d,
+																			width: o.width - d
+																		};
+																	}
+																)
+															],
+															y: [
+																L.lens(
+																	(o) => o && o.position_y,
+																	(n, o) => {
+																		const d = Math.min(n - o.position_y, o.height);
 
-																	return {
-																		...o,
-																		position_y: o.position_y + d,
-																		height: o.height - d
-																	};
-																}
-															),
-															L.subtract(5)
-														]
-													}),
-													topRight: L.pick({
-														x: [
-															L.lens(
-																(o) => o && o.position_x,
-																(n, o) => {
-																	const d = Math.min(n - o.position_x, o.width);
+																		return {
+																			...o,
+																			position_y: o.position_y + d,
+																			height: o.height - d
+																		};
+																	}
+																)
+															]
+														})
+													},
+													topRight: {
+														dx: 1,
+														dy: -1,
+														lens: L.pick({
+															x: [
+																L.lens(
+																	(o) => o && o.position_x,
+																	(n, o) => {
+																		const d = Math.min(n - o.position_x, o.width);
 
-																	return { ...o, position_x: o.position_x + d, width: o.width - d };
-																}
-															),
-															L.subtract(5)
-														],
-														y: L.choose((b) => [
-															'height',
-															L.normalize(R.max(0)),
-															L.add(b ? b.position_y : 0),
-															L.add(5)
-														])
-													}),
-													bottomLeft: L.pick({
-														y: [
-															L.lens(
-																(o) => o && o.position_y,
-																(n, o) => {
-																	const d = Math.min(n - o.position_y, o.height);
+																		return {
+																			...o,
+																			position_x: o.position_x + d,
+																			width: o.width - d
+																		};
+																	}
+																)
+															],
+															y: L.choose((b) => [
+																'height',
+																L.normalize(R.max(0)),
+																L.add(b ? b.position_y : 0)
+															])
+														})
+													},
+													bottomLeft: {
+														dx: -1,
+														dy: 1,
+														lens: L.pick({
+															y: [
+																L.lens(
+																	(o) => o && o.position_y,
+																	(n, o) => {
+																		const d = Math.min(n - o.position_y, o.height);
 
-																	return {
-																		...o,
-																		position_y: o.position_y + d,
-																		height: o.height - d
-																	};
-																}
-															),
-															L.subtract(5)
-														],
-														x: L.choose((b) => [
-															'width',
-															L.normalize(R.max(0)),
-															L.add(b ? b.position_x : 0),
-															L.add(5)
-														])
-													}),
-													bottomRight: L.pick({
-														x: L.choose((b) => [
-															'width',
-															L.normalize(R.max(0)),
-															L.add(b ? b.position_x : 0),
-															L.add(5)
-														]),
-														y: L.choose((b) => [
-															'height',
-															L.normalize(R.max(0)),
-															L.add(b ? b.position_y : 0),
-															L.add(5)
-														])
-													})
+																		return {
+																			...o,
+																			position_y: o.position_y + d,
+																			height: o.height - d
+																		};
+																	}
+																)
+															],
+															x: L.choose((b) => [
+																'width',
+																L.normalize(R.max(0)),
+																L.add(b ? b.position_x : 0)
+															])
+														})
+													},
+													bottomRight: {
+														dx: 1,
+														dy: 1,
+														lens: L.pick({
+															x: L.choose((b) => [
+																'width',
+																L.normalize(R.max(0)),
+																L.add(b ? b.position_x : 0)
+															]),
+															y: L.choose((b) => [
+																'height',
+																L.normalize(R.max(0)),
+																L.add(b ? b.position_y : 0)
+															])
+														})
+													}
 												}}
 												{@const boxDim = viewCombined(
 													[
@@ -1544,7 +1607,7 @@
 													role="button"
 													tabindex="-1"
 												/>
-												{#each Object.entries(corners) as [type, lens]}
+												{#each Object.entries(corners) as [type, { lens, dx, dy }]}
 													{@const pos = view(['box', lens], el)}
 													{@const posVal = pos.value}
 													{#if posVal}
@@ -1552,8 +1615,12 @@
 															fill="white"
 															stroke="#7af"
 															cursor="move"
+															vector-effect="non-scaling-stroke"
 															stroke-width="2"
-															r="6"
+															transform="translate({dy * cameraScale.value * 6},{dx *
+																cameraScale.value *
+																6})"
+															r={cameraScale.value * 6}
 															cx={posVal.x}
 															cy={posVal.y}
 															onpointerdown={(evt) => {
@@ -2299,7 +2366,7 @@
 						<hr />
 						<!-- <input style="" type="search" name="" placeholder="search" /> -->
 						<div
-							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;gap:2px;"
+							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
 						>
 							{#each layersInOrder.value as { index, id, depth, hidden } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
@@ -2323,6 +2390,15 @@
 									selectedLayers
 								)}
 								<div
+									ondragenter={(evt) => {
+										evt.currentTarget.style.backgroundColor = 'orange';
+									}}
+									ondragleave={(evt) => {
+										evt.currentTarget.style.backgroundColor = 'yellow';
+									}}
+									style="background: yellow; height: 5px; width: 100%; flex-shrink: 0;"
+								></div>
+								<div
 									style="max-width: 100%; display: flex;  gap: 0.5ex; align-items: stretch; justify-content: stretch; box-sizing: border-box;"
 									style:opacity={hidden ? 0.5 : 1}
 									style:background={selected.value ? '#23875d44' : '#fafafa'}
@@ -2342,6 +2418,27 @@
 										/>
 									</label>
 									<div
+										draggable="true"
+										ondragstart={(evt) => {
+											const p = evt.currentTarget.parentNode;
+											const rect = p.getBoundingClientRect();
+											evt.dataTransfer.setDragImage(
+												evt.currentTarget.parentNode,
+												evt.clientX - rect.left,
+												evt.clientY - rect.top
+											);
+										}}
+										ondragenter={(evt) => {
+											evt.currentTarget.style.backgroundColor = 'orange';
+										}}
+										ondragleave={(evt) => {
+											evt.currentTarget.style.backgroundColor = '#333';
+										}}
+										style="font-weight: bold; text-align: center; background: #333; color: #fff; align-self: center; height: 1.6em; width: 1.6em; cursor: move; display: grid; align-content: center; justify-content: center;"
+									>
+										☰
+									</div>
+									<div
 										onclick={() => update(R.not, selected)}
 										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center; box-sizing: border-box;"
 										style:padding-left="{depth}em"
@@ -2357,6 +2454,15 @@
 									</div>
 								</div>
 							{/each}
+							<div
+								ondragenter={(evt) => {
+									evt.currentTarget.style.backgroundColor = 'orange';
+								}}
+								ondragleave={(evt) => {
+									evt.currentTarget.style.backgroundColor = 'yellow';
+								}}
+								style="background: yellow; height: 5px; width: 100%; flex-shrink: 0;"
+							></div>
 						</div>
 						<label>
 							Interface: <select
@@ -2986,6 +3092,7 @@
 		fill: var(--selection-color, #7af);
 		fill-opacity: 0.3;
 		stroke-width: 5;
+		vector-effect: non-scaling-stroke;
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;
@@ -3000,6 +3107,7 @@
 		stroke: var(--selection-color, #7af);
 		fill: var(--selection-color, #7af);
 		stroke-width: 5;
+		vector-effect: non-scaling-stroke;
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;

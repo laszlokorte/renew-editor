@@ -95,6 +95,20 @@
 		magnifierFrame
 	);
 
+	const magnifierFrameStretchedEnough = read(
+		[
+			L.valueOr({}),
+			L.getter(({ start, size }) => {
+				return start &&
+					size &&
+					(12 * cameraScale.value < Math.abs(size.x) || 12 * cameraScale.value < Math.abs(size.y))
+					? true
+					: false;
+			})
+		],
+		magnifierFrame
+	);
+
 	export const canCancel = read(R.identity, isActive);
 	export function cancel() {
 		isActive.value = false;
@@ -167,7 +181,7 @@
 				px: worldPos.x,
 				py: worldPos.y
 			});
-		} else if (onZoomFrame) {
+		} else if (onZoomFrame && magnifierFrameStretchedEnough.value) {
 			onZoomFrame({
 				start: magnifierFrameStart.value,
 				size: magnifierFrameSize.value,
@@ -197,6 +211,7 @@
 		d={magnifierFramePath.value}
 		fill="none"
 		class="magnifier"
+		class:ready={magnifierFrameStretchedEnough.value}
 		pointer-events="none"
 	/>
 {/if}
@@ -215,10 +230,17 @@
 	.magnifier {
 		fill: #aaa;
 		stroke: #aaa;
-		fill-opacity: 0.5;
+		fill-opacity: 0;
+		stroke-opacity: 0.5;
 		fill-rule: evenodd;
 		stroke-width: 1px;
 		shape-rendering: crispEdges;
 		vector-effect: non-scaling-stroke;
+		transition: fill-opacity ease 0.1s;
+	}
+
+	.magnifier.ready {
+		fill-opacity: 0.5;
+		stroke-opacity: 1;
 	}
 </style>
