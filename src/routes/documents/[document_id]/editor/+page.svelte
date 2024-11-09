@@ -831,10 +831,10 @@
 												{#if el.value?.box}
 													<rect
 														class="selected"
-														x={el.value?.box.position_x}
-														y={el.value?.box.position_y}
-														width={el.value?.box.width}
-														height={el.value?.box.height}
+														x={el.value?.box.position_x - 1}
+														y={el.value?.box.position_y - 1}
+														width={el.value?.box.width + 1}
+														height={el.value?.box.height + 1}
 														cursor="move"
 													></rect>
 												{/if}
@@ -958,10 +958,10 @@
 															{#if el.value?.box}
 																<rect
 																	class="selected"
-																	x={el.value?.box.position_x}
-																	y={el.value?.box.position_y}
-																	width={el.value?.box.width}
-																	height={el.value?.box.height}
+																	x={el.value?.box.position_x - 1}
+																	y={el.value?.box.position_y - 1}
+																	width={el.value?.box.width + 1}
+																	height={el.value?.box.height + 1}
 																></rect>
 															{/if}
 															{#if el.value?.text}
@@ -1171,6 +1171,7 @@
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
+																	backoffValue.value = undefined;
 																	cast('update_waypoint_position', {
 																		layer_id: el.value.id,
 																		waypoint_id: wp.id,
@@ -1273,6 +1274,7 @@
 															}}
 															onpointerup={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																	backoffValue.value = undefined;
 																	cast('create_waypoint', {
 																		layer_id: el.value.id,
 																		after_waypoint_id: wp_proposal.id_before,
@@ -1296,6 +1298,7 @@
 														cursor="move"
 														stroke="#7af"
 														stroke-width="2"
+														vector-effect="non-scaling-stroke"
 														r={6 * cameraScale.value}
 														cx={el.value?.edge?.source_x}
 														cy={el.value?.edge?.source_y}
@@ -1354,6 +1357,7 @@
 														stroke="#7af"
 														cursor="move"
 														stroke-width="2"
+														vector-effect="non-scaling-stroke"
 														r={6 * cameraScale.value}
 														cx={el.value?.edge?.target_x}
 														cy={el.value?.edge?.target_y}
@@ -1608,7 +1612,7 @@
 													tabindex="-1"
 												/>
 												{#each Object.entries(corners) as [type, { lens, dx, dy }]}
-													{@const pos = view(['box', lens], el)}
+													{@const pos = view(L.cond([R.prop('box'), ['box', lens]]), el)}
 													{@const posVal = pos.value}
 													{#if posVal}
 														<circle
@@ -2391,12 +2395,39 @@
 								)}
 								<div
 									ondragenter={(evt) => {
+										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
+										if (!sourceId || sourceId === id) {
+											return;
+										}
 										evt.currentTarget.style.backgroundColor = 'orange';
 									}}
 									ondragleave={(evt) => {
 										evt.currentTarget.style.backgroundColor = 'yellow';
 									}}
+									ondrop={(evt) => {
+										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
+										if (!sourceId || sourceId === id) {
+											return;
+										}
+
+										console.log(id);
+										console.log(sourceId);
+
+										evt.preventDefault();
+										evt.currentTarget.style.backgroundColor = 'yellow';
+									}}
 									style="background: yellow; height: 5px; width: 100%; flex-shrink: 0;"
+									ondragover={(evt) => {
+										if (evt.dataTransfer.items.length < 1) {
+											return;
+										}
+										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
+										if (!sourceId || sourceId === id) {
+											return;
+										}
+										evt.preventDefault();
+										evt.dataTransfer.dropEffect = 'move';
+									}}
 								></div>
 								<div
 									style="max-width: 100%; display: flex;  gap: 0.5ex; align-items: stretch; justify-content: stretch; box-sizing: border-box;"
@@ -2427,21 +2458,55 @@
 												evt.clientX - rect.left,
 												evt.clientY - rect.top
 											);
+											evt.dataTransfer.effectAllowed = 'move';
+											evt.dataTransfer.setData('application/json+renewex-layer-id', id);
+										}}
+										ondragover={(evt) => {
+											if (evt.dataTransfer.items.length < 1) {
+												return;
+											}
+											const sourceId = evt.dataTransfer.getData(
+												'application/json+renewex-layer-id'
+											);
+											if (!sourceId || sourceId === id) {
+												return;
+											}
+											evt.preventDefault();
+											evt.dataTransfer.dropEffect = 'move';
 										}}
 										ondragenter={(evt) => {
+											const sourceId = evt.dataTransfer.getData(
+												'application/json+renewex-layer-id'
+											);
+											if (!sourceId || sourceId === id) {
+												return;
+											}
 											evt.currentTarget.style.backgroundColor = 'orange';
 										}}
 										ondragleave={(evt) => {
 											evt.currentTarget.style.backgroundColor = '#333';
 										}}
-										style="font-weight: bold; text-align: center; background: #333; color: #fff; align-self: center; height: 1.6em; width: 1.6em; cursor: move; display: grid; align-content: center; justify-content: center;"
+										ondrop={(evt) => {
+											const sourceId = evt.dataTransfer.getData(
+												'application/json+renewex-layer-id'
+											);
+											if (!sourceId || sourceId === id) {
+												return;
+											}
+
+											console.log(id);
+											console.log(sourceId);
+											evt.preventDefault();
+											evt.currentTarget.style.backgroundColor = '#333';
+										}}
+										style="flex-shrink: 0; font-weight: bold; text-align: center; background: #333; color: #fff; align-self: center; height: 1.6em; width: 1.6em; cursor: move; display: grid; align-content: center; justify-content: center;"
+										style:margin-left="{depth}em"
 									>
 										☰
 									</div>
 									<div
 										onclick={() => update(R.not, selected)}
 										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center; box-sizing: border-box;"
-										style:padding-left="{depth}em"
 									>
 										<div style="white-space: nowrap;">
 											<span>{elType.value || 'group'}</span>
@@ -3096,6 +3161,7 @@
 		pointer-events: none;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+		paint-order: stroke;
 	}
 
 	.draggable {
