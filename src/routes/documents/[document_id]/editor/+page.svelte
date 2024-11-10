@@ -760,7 +760,8 @@
 																	pointer-events="stroke"
 																	fill="none"
 																	stroke="none"
-																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 + 10}
+																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+																		10 * cameraScale.value}
 																/>
 																<path
 																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
