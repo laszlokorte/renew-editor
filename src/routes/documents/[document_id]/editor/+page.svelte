@@ -1135,6 +1135,7 @@
 															cx={wp.x}
 															cy={wp.y}
 															onclick={(evt) => {
+																backoffValue.value = undefined;
 																evt.stopPropagation();
 															}}
 															ondblclick={(evt) => {
@@ -1171,7 +1172,6 @@
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
-																	backoffValue.value = undefined;
 																	cast('update_waypoint_position', {
 																		layer_id: el.value.id,
 																		waypoint_id: wp.id,
@@ -1240,6 +1240,7 @@
 															cy={wp_proposal.y}
 															onclick={(evt) => {
 																evt.stopPropagation();
+																backoffValue.value = undefined;
 															}}
 															onkeydown={(evt) => {
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
@@ -1274,7 +1275,6 @@
 															}}
 															onpointerup={(evt) => {
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-																	backoffValue.value = undefined;
 																	cast('create_waypoint', {
 																		layer_id: el.value.id,
 																		after_waypoint_id: wp_proposal.id_before,
@@ -1597,6 +1597,7 @@
 													}}
 													onclick={(evt) => {
 														evt.stopPropagation();
+														backoffValue.value = undefined;
 													}}
 													onkeydown={(evt) => {
 														if (evt.key === 'Escape' || evt.key === 'Esc') {
@@ -1661,6 +1662,7 @@
 															}}
 															onclick={(evt) => {
 																evt.stopPropagation();
+																backoffValue.value = undefined;
 															}}
 															onkeydown={(evt) => {
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
