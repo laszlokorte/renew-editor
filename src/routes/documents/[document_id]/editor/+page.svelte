@@ -205,7 +205,10 @@
 			.filter(({ l }) => l.parent_id === parent)
 			.flatMap(({ l, index }) => [
 				{ id: l.id, index, depth, hidden: l.hidden || hidden },
-				...walkLayer(doc, l.id, depth + 1, l.hidden || hidden)
+				...walkLayer(doc, l.id, depth + 1, l.hidden || hidden).map((x, i, a) => ({
+					...x,
+					isLast: i + 1 === a.length
+				}))
 			]);
 	}
 
@@ -2375,7 +2378,7 @@
 						<div
 							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
 						>
-							{#each layersInOrder.value as { index, id, depth, hidden } (id)}
+							{#each layersInOrder.value as { index, id, depth, hidden, isLast } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 								{@const elId = view('id', el)}
 								{@const visible = view(['hidden', L.complement], el)}
@@ -2396,16 +2399,18 @@
 									),
 									selectedLayers
 								)}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div
+									style:margin-left="{2.5 + depth}em"
 									ondragenter={(evt) => {
 										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
 										if (!sourceId || sourceId === id) {
 											return;
 										}
-										evt.currentTarget.style.backgroundColor = 'orange';
+										evt.currentTarget.style.backgroundColor = '#23875d';
 									}}
 									ondragleave={(evt) => {
-										evt.currentTarget.style.backgroundColor = 'yellow';
+										evt.currentTarget.style.backgroundColor = 'white';
 									}}
 									ondrop={(evt) => {
 										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
@@ -2413,13 +2418,17 @@
 											return;
 										}
 
-										console.log(id);
-										console.log(sourceId);
+										cast('move_layer', {
+											layer_id: sourceId,
+											target_layer_id: id,
+											order: 'below',
+											relative: 'outside'
+										});
 
 										evt.preventDefault();
-										evt.currentTarget.style.backgroundColor = 'yellow';
+										evt.currentTarget.style.backgroundColor = 'white';
 									}}
-									style="background: yellow; height: 5px; width: 100%; flex-shrink: 0;"
+									style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
 									ondragover={(evt) => {
 										if (evt.dataTransfer.items.length < 1) {
 											return;
@@ -2484,7 +2493,7 @@
 											if (!sourceId || sourceId === id) {
 												return;
 											}
-											evt.currentTarget.style.backgroundColor = 'orange';
+											evt.currentTarget.style.backgroundColor = '#23875d';
 										}}
 										ondragleave={(evt) => {
 											evt.currentTarget.style.backgroundColor = '#333';
@@ -2497,8 +2506,13 @@
 												return;
 											}
 
-											console.log(id);
-											console.log(sourceId);
+											cast('move_layer', {
+												layer_id: sourceId,
+												target_layer_id: id,
+												order: 'below',
+												relative: 'inside'
+											});
+
 											evt.preventDefault();
 											evt.currentTarget.style.backgroundColor = '#333';
 										}}
@@ -2521,16 +2535,49 @@
 										>
 									</div>
 								</div>
+								<div
+									style:display={isLast ? 'block' : 'none'}
+									style:margin-left="{2.5 + depth}em"
+									ondragenter={(evt) => {
+										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
+										if (!sourceId || sourceId === id) {
+											return;
+										}
+										evt.currentTarget.style.backgroundColor = '#23875d';
+									}}
+									ondragleave={(evt) => {
+										evt.currentTarget.style.backgroundColor = 'white';
+									}}
+									ondrop={(evt) => {
+										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
+										if (!sourceId || sourceId === id) {
+											return;
+										}
+
+										cast('move_layer', {
+											layer_id: sourceId,
+											target_layer_id: id,
+											order: 'above',
+											relative: 'outside'
+										});
+
+										evt.preventDefault();
+										evt.currentTarget.style.backgroundColor = 'white';
+									}}
+									style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
+									ondragover={(evt) => {
+										if (evt.dataTransfer.items.length < 1) {
+											return;
+										}
+										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
+										if (!sourceId || sourceId === id) {
+											return;
+										}
+										evt.preventDefault();
+										evt.dataTransfer.dropEffect = 'move';
+									}}
+								></div>
 							{/each}
-							<div
-								ondragenter={(evt) => {
-									evt.currentTarget.style.backgroundColor = 'orange';
-								}}
-								ondragleave={(evt) => {
-									evt.currentTarget.style.backgroundColor = 'yellow';
-								}}
-								style="background: yellow; height: 5px; width: 100%; flex-shrink: 0;"
-							></div>
 						</div>
 						<label>
 							Interface: <select
