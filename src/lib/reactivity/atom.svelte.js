@@ -204,7 +204,10 @@ export function mutableView(init, someAtom, equality = R.equals) {
 }
 
 export function update(fn, someAtom) {
-	someAtom.value = fn(someAtom.value)
+	const newValue = fn(someAtom.value)
+	someAtom.value = newValue
+
+	return newValue
 }
 
 export function call(fn, someAtom) {

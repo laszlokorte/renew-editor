@@ -606,9 +606,13 @@
 					<CanvasDropper
 						{camera}
 						onDrop={(mime, content, pos) => {
-							cast('create_layer', {
+							dispatch('create_layer', {
+								base_layer_id: L.get('id', singleSelectedLayer.value),
 								pos,
 								...content
+							}).then((l) => {
+								selectedLayers.value = [l.id];
+								cast('select', l.id);
 							});
 						}}
 						onDropFile={(file, pos) => {
@@ -618,7 +622,8 @@
 								const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
 
 								data.commands.uploadSvg(svgDoc).then((j) => {
-									cast('create_layer', {
+									dispatch('create_layer', {
+										base_layer_id: L.get('id', singleSelectedLayer.value),
 										pos: {
 											x: -svgDoc.documentElement.width.baseVal.value / 2 + pos.x,
 											y: -svgDoc.documentElement.height.baseVal.value / 2 + pos.y,
@@ -626,6 +631,9 @@
 											height: svgDoc.documentElement.height.baseVal.value
 										},
 										image: j.url
+									}).then((l) => {
+										selectedLayers.value = [l.id];
+										cast('select', l.id);
 									});
 								});
 							};
@@ -646,6 +654,7 @@
 								onkeydown={(evt) => {
 									if (evt.key == 'Escape') {
 										selectedLayers.value = [];
+										cast('select', null);
 									}
 								}}
 							>
@@ -694,6 +703,9 @@
 																tabindex="-1"
 																onkeydown={() => {
 																	selectedLayers.value = [el.value?.id];
+																	if (el.value?.id) {
+																		cast('select', el.value?.id);
+																	}
 																}}
 																fill={el.value?.style?.background_color ?? '#70DB93'}
 																stroke={el.value?.style?.border_color ?? 'black'}
@@ -729,6 +741,9 @@
 																	tabindex="-1"
 																	onkeydown={() => {
 																		selectedLayers.value = [el.value?.id];
+																		if (el.value?.id) {
+																			cast('select', el.value?.id);
+																		}
 																	}}
 																>
 																	<TextElement bbox={thisbbox} el={el.value} />
@@ -748,6 +763,9 @@
 																tabindex="-1"
 																onkeydown={() => {
 																	selectedLayers.value = [el.value?.id];
+																	if (el.value?.id) {
+																		cast('select', el.value?.id);
+																	}
 																}}
 																opacity={el.value?.style?.opacity ?? '1'}
 																stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
@@ -1747,8 +1765,11 @@
 												{cameraScale}
 												{rotationTransform}
 												onDraw={(points) => {
-													cast('create_layer', {
+													dispatch('create_layer', {
 														points
+													}).then((l) => {
+														selectedLayers.value = [l.id];
+														cast('select', l.id);
 													});
 												}}
 											/>
@@ -1801,8 +1822,11 @@
 												{rotationTransform}
 												{cameraScale}
 												onDraw={(points) => {
-													cast('create_layer', {
+													dispatch('create_layer', {
 														points
+													}).then((l) => {
+														selectedLayers.value = [l.id];
+														cast('select', l.id);
 													});
 												}}
 											/>
@@ -2522,7 +2546,15 @@
 										☰
 									</div>
 									<div
-										onclick={() => update(R.not, selected)}
+										onclick={() => {
+											const newSel = update(R.not, selected);
+
+											if (newSel) {
+												cast('select', id);
+											} else {
+												cast('select', null);
+											}
+										}}
 										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center; box-sizing: border-box;"
 									>
 										<div style="white-space: nowrap;">
