@@ -62,6 +62,7 @@
 	const showOtherSelections = atom(true);
 	const showDebug = atom(true);
 	const showGrid = atom(false);
+	const lockRotation = atom(false);
 	const backoffValue = atom(undefined);
 	const pointerOffset = atom({ x: 0, y: 0 });
 	const gridDistance = atom(32);
@@ -489,8 +490,16 @@
 										}}>Reset Rotation</button
 									>
 								</li>
+
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={lockRotation.value} />
+										Lock rotation</label
+									>
+								</li>
 								<li class="menu-bar-menu-item">
 									<input
+										disabled={lockRotation.value}
 										type="range"
 										bind:value={cameraRotation.value}
 										min="-180"
@@ -666,6 +675,7 @@
 										cast('cursor', null);
 									}}
 									{camera}
+									{lockRotation}
 									{frameBoxPath}
 								>
 									{#snippet children(liveLenses, navigationActions)}

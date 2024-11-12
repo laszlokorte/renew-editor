@@ -1,6 +1,6 @@
 <script>
 	import * as L from 'partial.lenses';
-	import { atom, view, read, update } from '$lib/reactivity/atom.svelte.js';
+	import { atom, view, read, update, viewCombined } from '$lib/reactivity/atom.svelte.js';
 	import { bindEvents } from './events';
 	import { constructLenses } from './live_lenses';
 	import { frameBoxLens } from './lenses';
@@ -14,7 +14,15 @@
 	} from './lenses';
 	import { zoomWithPivot, zoomIntoFrame } from './navigation';
 
-	const { camera, frameBoxPath, children, errorHandler, onworldcursor, onpointerout } = $props();
+	const {
+		camera,
+		frameBoxPath,
+		children,
+		errorHandler,
+		onworldcursor,
+		onpointerout,
+		lockRotation
+	} = $props();
 
 	const svgElement = atom(null);
 	const thisElement = view(
@@ -35,7 +43,16 @@
 	];
 
 	const zoomDelta = view(['focus', pivotZoomLens], camera);
-	const rotationDelta = view(['focus', pivotRotationLens], camera);
+	const rotationDelta = viewCombined(
+		L.choose(({ lockRotation }) =>
+			lockRotation ? L.zero : ['camera', 'focus', pivotRotationLens]
+		),
+		{
+			lockRotation,
+			camera
+		},
+		{ camera: true }
+	);
 	const panScreenDelta = view(['focus', panScreenLens], camera);
 
 	const eventToWorld = L.get(eventWorldLens);
@@ -64,7 +81,9 @@
 			panMovement.value = delta;
 		},
 		rotate(rot) {
-			rotateMovement.value = rot;
+			if (!lockRotation.value) {
+				rotateMovement.value = rot;
+			}
 		}
 	};
 </script>
