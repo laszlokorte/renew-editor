@@ -67,6 +67,7 @@ export default function(fetchFn, routes, token) {
 
 			return fetch(routes.upload_svg.href, {
 				method: "post",
+				headers: {"Authorization" : token},
 				body: formData
 			}).then(r => {
 				if(r.ok) {

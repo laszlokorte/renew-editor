@@ -199,13 +199,13 @@
 		}
 	};
 
-	function walkLayer(doc, parent, depth, hidden) {
+	function walkLayer(doc, parent, parents, hidden) {
 		return doc.layers.items
 			.map((l, index) => ({ l, index }))
 			.filter(({ l }) => l.parent_id === parent)
 			.flatMap(({ l, index }) => [
-				{ id: l.id, index, depth, hidden: l.hidden || hidden },
-				...walkLayer(doc, l.id, depth + 1, l.hidden || hidden).map((x, i, a) => ({
+				{ id: l.id, index, depth: parents.length, parents, hidden: l.hidden || hidden },
+				...walkLayer(doc, l.id, [l.id, ...parents], l.hidden || hidden).map((x, i, a) => ({
 					...x,
 					isLast: i + 1 === a.length
 				}))
@@ -213,7 +213,7 @@
 	}
 
 	function walkDocument(doc) {
-		return [...walkLayer(doc, null, 0, false)];
+		return [...walkLayer(doc, null, [], false)];
 	}
 
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
@@ -2378,7 +2378,7 @@
 						<div
 							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
 						>
-							{#each layersInOrder.value as { index, id, depth, hidden, isLast } (id)}
+							{#each layersInOrder.value as { index, id, depth, hidden, isLast, parents } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 								{@const elId = view('id', el)}
 								{@const visible = view(['hidden', L.complement], el)}
@@ -2535,48 +2535,59 @@
 										>
 									</div>
 								</div>
-								<div
-									style:display={isLast ? 'block' : 'none'}
-									style:margin-left="{2.5 + depth}em"
-									ondragenter={(evt) => {
-										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
-										if (!sourceId || sourceId === id) {
-											return;
-										}
-										evt.currentTarget.style.backgroundColor = '#23875d';
-									}}
-									ondragleave={(evt) => {
-										evt.currentTarget.style.backgroundColor = 'white';
-									}}
-									ondrop={(evt) => {
-										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
-										if (!sourceId || sourceId === id) {
-											return;
-										}
+								{#if isLast}
+									{#each [id, ...parents] as p, i (p)}
+										<div
+											style:margin-left="{2.5 + depth - i}em"
+											ondragenter={(evt) => {
+												const sourceId = evt.dataTransfer.getData(
+													'application/json+renewex-layer-id'
+												);
+												if (!sourceId || sourceId === p) {
+													return;
+												}
 
-										cast('move_layer', {
-											layer_id: sourceId,
-											target_layer_id: id,
-											order: 'above',
-											relative: 'outside'
-										});
+												evt.currentTarget.style.backgroundColor = '#23875d';
+											}}
+											ondragleave={(evt) => {
+												evt.currentTarget.style.backgroundColor = 'white';
+											}}
+											ondrop={(evt) => {
+												const sourceId = evt.dataTransfer.getData(
+													'application/json+renewex-layer-id'
+												);
 
-										evt.preventDefault();
-										evt.currentTarget.style.backgroundColor = 'white';
-									}}
-									style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
-									ondragover={(evt) => {
-										if (evt.dataTransfer.items.length < 1) {
-											return;
-										}
-										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
-										if (!sourceId || sourceId === id) {
-											return;
-										}
-										evt.preventDefault();
-										evt.dataTransfer.dropEffect = 'move';
-									}}
-								></div>
+												if (!sourceId || sourceId === p) {
+													return;
+												}
+
+												cast('move_layer', {
+													layer_id: sourceId,
+													target_layer_id: p,
+													order: 'above',
+													relative: 'outside'
+												});
+
+												evt.preventDefault();
+												evt.currentTarget.style.backgroundColor = 'white';
+											}}
+											ondragover={(evt) => {
+												if (evt.dataTransfer.items.length < 1) {
+													return;
+												}
+												const sourceId = evt.dataTransfer.getData(
+													'application/json+renewex-layer-id'
+												);
+												if (!sourceId || sourceId === p) {
+													return;
+												}
+												evt.preventDefault();
+												evt.dataTransfer.dropEffect = 'move';
+											}}
+											style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
+										></div>
+									{/each}
+								{/if}
 							{/each}
 						</div>
 						<label>
