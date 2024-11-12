@@ -855,8 +855,8 @@
 														class="selected"
 														x={el.value?.box.position_x - 1}
 														y={el.value?.box.position_y - 1}
-														width={el.value?.box.width + 1}
-														height={el.value?.box.height + 1}
+														width={el.value?.box.width + 2}
+														height={el.value?.box.height + 2}
 														cursor="move"
 													></rect>
 												{/if}
@@ -982,8 +982,8 @@
 																	class="selected"
 																	x={el.value?.box.position_x - 1}
 																	y={el.value?.box.position_y - 1}
-																	width={el.value?.box.width + 1}
-																	height={el.value?.box.height + 1}
+																	width={el.value?.box.width + 2}
+																	height={el.value?.box.height + 2}
 																></rect>
 															{/if}
 															{#if el.value?.text}
