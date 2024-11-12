@@ -853,10 +853,10 @@
 												{#if el.value?.box}
 													<rect
 														class="selected"
-														x={el.value?.box.position_x - 1}
-														y={el.value?.box.position_y - 1}
-														width={el.value?.box.width + 2}
-														height={el.value?.box.height + 2}
+														x={el.value?.box.position_x - cameraScale.value}
+														y={el.value?.box.position_y - cameraScale.value}
+														width={el.value?.box.width + 2 * cameraScale.value}
+														height={el.value?.box.height + 2 * cameraScale.value}
 														cursor="move"
 													></rect>
 												{/if}
@@ -980,10 +980,10 @@
 															{#if el.value?.box}
 																<rect
 																	class="selected"
-																	x={el.value?.box.position_x - 1}
-																	y={el.value?.box.position_y - 1}
-																	width={el.value?.box.width + 2}
-																	height={el.value?.box.height + 2}
+																	x={el.value?.box.position_x - 1 * cameraScale.value}
+																	y={el.value?.box.position_y - 1 * cameraScale.value}
+																	width={el.value?.box.width + 2 * cameraScale.value}
+																	height={el.value?.box.height + 2 * cameraScale.value}
 																></rect>
 															{/if}
 															{#if el.value?.text}
@@ -1181,7 +1181,10 @@
 																}
 															}}
 															onpointermove={(evt) => {
-																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
 																	pos.value = Geo.translate(
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1189,7 +1192,10 @@
 																}
 															}}
 															onpointerup={(evt) => {
-																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
 																	const newPos = Geo.translate(
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1288,7 +1294,10 @@
 																}
 															}}
 															onpointermove={(evt) => {
-																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
 																	pos.value = Geo.translate(
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1296,7 +1305,10 @@
 																}
 															}}
 															onpointerup={(evt) => {
-																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
 																	cast('create_waypoint', {
 																		layer_id: el.value.id,
 																		after_waypoint_id: wp_proposal.id_before,
@@ -1338,7 +1350,10 @@
 															}
 														}}
 														onpointermove={(evt) => {
-															if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+															if (
+																evt.isPrimary &&
+																evt.currentTarget.hasPointerCapture(evt.pointerId)
+															) {
 																source_pos.value = Geo.translate(
 																	pointerOffset.value,
 																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1346,7 +1361,10 @@
 															}
 														}}
 														onpointerup={(evt) => {
-															if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+															if (
+																evt.isPrimary &&
+																evt.currentTarget.hasPointerCapture(evt.pointerId)
+															) {
 																const newPos = Geo.translate(
 																	pointerOffset.value,
 																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1397,7 +1415,10 @@
 															}
 														}}
 														onpointermove={(evt) => {
-															if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+															if (
+																evt.isPrimary &&
+																evt.currentTarget.hasPointerCapture(evt.pointerId)
+															) {
 																target_pos.value = Geo.translate(
 																	pointerOffset.value,
 																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1405,7 +1426,10 @@
 															}
 														}}
 														onpointerup={(evt) => {
-															if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+															if (
+																evt.isPrimary &&
+																evt.currentTarget.hasPointerCapture(evt.pointerId)
+															) {
 																const newPos = Geo.translate(
 																	pointerOffset.value,
 																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1589,7 +1613,10 @@
 														}
 													}}
 													onpointermove={(evt) => {
-														if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+														if (
+															evt.isPrimary &&
+															evt.currentTarget.hasPointerCapture(evt.pointerId)
+														) {
 															boxPos.value = Geo.translate(
 																pointerOffset.value,
 																liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1597,7 +1624,10 @@
 														}
 													}}
 													onpointerup={(evt) => {
-														if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+														if (
+															evt.isPrimary &&
+															evt.currentTarget.hasPointerCapture(evt.pointerId)
+														) {
 															if (el.value.box) {
 																cast('update_box_size', {
 																	layer_id: el.value.id,
@@ -1661,7 +1691,10 @@
 																}
 															}}
 															onpointermove={(evt) => {
-																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
 																	pos.value = Geo.translate(
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -1669,7 +1702,10 @@
 																}
 															}}
 															onpointerup={(evt) => {
-																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
 																	cast('update_box_size', {
 																		layer_id: el.value.id,
 																		value: L.get(
@@ -2563,7 +2599,7 @@
 										</div>
 										<small
 											style="color: #aaa; display: block; max-width: 100%; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: none; white-space: nowrap; box-sizing: border-box;"
-											>({elId.value})</small
+											>({el.value.z_index}/{elId.value})</small
 										>
 									</div>
 								</div>
