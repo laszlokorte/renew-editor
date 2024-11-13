@@ -2537,6 +2537,7 @@
 												})}
 										/>
 									</label>
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div
 										draggable="true"
 										ondragstart={(evt) => {
@@ -2549,6 +2550,9 @@
 											);
 											evt.dataTransfer.effectAllowed = 'move';
 											evt.dataTransfer.setData('application/json+renewex-layer-id', id);
+
+											selectedLayers.value = [id];
+											cast('select', id);
 										}}
 										ondragover={(evt) => {
 											if (evt.dataTransfer.items.length < 1) {
@@ -2586,7 +2590,7 @@
 											cast('move_layer', {
 												layer_id: sourceId,
 												target_layer_id: id,
-												order: 'below',
+												order: 'above',
 												relative: 'inside'
 											});
 

@@ -4,7 +4,12 @@
 
 	const { auth, onSuccess } = $props();
 
-	let apiUrl = $state('');
+	const knownApis = [
+		{ label: 'RenewCollab', url: 'https://renewcollab.laszlokorte.de/api' },
+		{ label: 'LocalDev', url: 'http://localhost:4000/api' }
+	];
+
+	let apiUrl = $state(knownApis[0]?.url ?? '');
 
 	/** @type undefined | {error: string, message:string} */
 	let currentError = $state(undefined);
@@ -77,8 +82,9 @@
 				required
 			/>
 			<datalist id="known_apis">
-				<option value="https://renewcollab.laszlokorte.de/api">RenewCollab</option>
-				<option value="http://localhost:4000/api">Local</option>
+				{#each knownApis as ka}
+					<option value={ka.url}>{ka.label}</option>
+				{/each}
 			</datalist>
 		</dd>
 		<dt><label for="login_form_user">E-mail:</label></dt>
