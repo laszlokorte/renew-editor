@@ -1148,7 +1148,7 @@
 													el
 												)}
 												{#if el.value?.edge}
-													{#each persistentWaypoints.value as wp, wi}
+													{#each persistentWaypoints.value as wp, wi (wp.id)}
 														{@const pos = view(
 															[
 																L.find(R.whereEq({ id: wp.id }), { hint: wi }),
@@ -1299,6 +1299,11 @@
 																	backoffValue.value = wp_proposal;
 																	pointerOffset.value = Geo.diff2d(
 																		wp_proposal,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
+
+																	pos.value = Geo.translate(
+																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
 																}
@@ -2879,6 +2884,39 @@
 								<text text-anchor="middle" font-size="40" x="16" y="30" font-family="serif">T</text>
 							</svg>
 						</div>
+					</div>
+					<div
+						style="user-select: none; user-callout: none; text-align: center; font-size: 2em; cursor: pointer; display: grid; align-content: center; justify-content: center; line-height: 1; padding: 0.5ex"
+						onclick={() => update(R.not, lockRotation)}
+						ondblclick={() => {
+							cameraRotation.value = 0;
+						}}
+					>
+						<svg viewBox="-20 -20 40 40" width="40" height="40" style="width: 100%;">
+							<g transform="rotate({cameraRotation.value})">
+								<circle cx={0} cy={0} r={18} fill="#3333" stroke="#fff3" stroke-width="1" />
+								<path d="M0,0h-3l3,-16l3,16z" fill="#b00c" />
+								<path d="M0,0h-3l3,16l3,-16z" fill="#fffc" />
+							</g>
+
+							<g style:color={lockRotation.value ? '#000' : '#777'}>
+								<rect x="-20" y="10" width="11" height="8" fill="currentColor" />
+								<path
+									opacity={lockRotation.value ? 1 : 0}
+									d="M-18,10v-5 a 4 4 0 0 1  7 0 v5"
+									stroke="currentColor"
+									stroke-width="2"
+									fill="none"
+								/>
+								<path
+									opacity={lockRotation.value ? 0 : 1}
+									d="M-18,10v-8 a 4 4 0 0 1  7 0 v3"
+									stroke="currentColor"
+									stroke-width="2"
+									fill="none"
+								/>
+							</g>
+						</svg>
 					</div>
 				</div>
 			</div>
