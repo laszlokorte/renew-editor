@@ -1812,6 +1812,7 @@
 												{rotationTransform}
 												onDraw={(points) => {
 													dispatch('create_layer', {
+														base_layer_id: L.get('id', singleSelectedLayer.value),
 														points
 													}).then((l) => {
 														selectedLayers.value = [l.id];
@@ -1869,6 +1870,7 @@
 												{cameraScale}
 												onDraw={(points) => {
 													dispatch('create_layer', {
+														base_layer_id: L.get('id', singleSelectedLayer.value),
 														points
 													}).then((l) => {
 														selectedLayers.value = [l.id];
