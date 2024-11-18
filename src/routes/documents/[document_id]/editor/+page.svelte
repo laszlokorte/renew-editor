@@ -404,6 +404,32 @@
 									{/each}
 									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								{/if}
+
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item"><div style="padding: 1ex">Reorder:</div></li>
+								{#each [{ target_rel: 'before_parent', label: 'Before Parent' }, { target_rel: 'after_parent', label: 'After Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
+									<li class="menu-bar-menu-item">
+										<button
+											class="menu-bar-item-button"
+											disabled={!singleSelectedLayer.value}
+											onclick={(evt) => {
+												evt.preventDefault();
+
+												dispatch('reorder_relative', {
+													id: singleSelectedLayer.value.id,
+													target_rel
+												}).then(({ id }) => {
+													if (id) {
+														selectedLayers.value = [id];
+														cast('select', id);
+													}
+												});
+											}}>{label}</button
+										>
+									</li>
+								{/each}
+
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<button
 										disabled={!singleSelectedLayerType.value}
@@ -414,6 +440,32 @@
 										class="menu-bar-item-button menu-bar-item-danger">Delete</button
 									>
 								</li>
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							Selection
+							<ul class="menu-bar-menu">
+								{#each [{ label: 'Parent', rel: 'parent' }, { label: 'First Sibling', rel: 'sibling_first' }, { label: 'Last Sibling', rel: 'sibling_last' }, { label: 'Sibling Below', rel: 'sibling_prev' }, { label: 'Sibling Above', rel: 'sibling_next' }, { label: 'First Child', rel: 'child_first' }, { label: 'Last Child', rel: 'child_last' }] as { label, rel }}
+									<li class="menu-bar-menu-item">
+										<button
+											class="menu-bar-item-button"
+											disabled={!singleSelectedLayer.value}
+											onclick={(evt) => {
+												evt.preventDefault();
+
+												dispatch('fetch_relative', {
+													id: singleSelectedLayer.value.id,
+													rel
+												}).then(({ id }) => {
+													if (id) {
+														selectedLayers.value = [id];
+														cast('select', id);
+													}
+												});
+											}}>Select {label}</button
+										>
+									</li>
+								{/each}
 							</ul>
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
