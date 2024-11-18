@@ -28,6 +28,7 @@
 	import Zoomer from '$lib/components/editor/tools/zoomer/Zoomer.svelte';
 	import Spline from '$lib/components/editor/tools/spline/Spline.svelte';
 	import Polygon from '$lib/components/editor/tools/polygon/Polygon.svelte';
+	import Spacer from '$lib/components/editor/tools/spacer/Spacer.svelte';
 
 	import { buildPath, buildCoord } from './symbols';
 	import Symbol from './Symbol.svelte';
@@ -77,7 +78,8 @@
 		{ name: 'Pen', id: 'pen' },
 		{ name: 'Annotate', id: 'annotate' },
 		{ name: 'Edge', id: 'edge' },
-		{ name: 'Polygon', id: 'polygon' }
+		{ name: 'Polygon', id: 'polygon' },
+		{ name: 'Spacer', id: 'spacer' }
 
 		// Splines are not supported by the editor server yet
 		//{ name: 'Spline', id: 'spline' }
@@ -407,7 +409,7 @@
 
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item"><div style="padding: 1ex">Reorder:</div></li>
-								{#each [{ target_rel: 'before_parent', label: 'Before Parent' }, { target_rel: 'after_parent', label: 'After Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
+								{#each [{ target_rel: 'before_parent', label: 'Below Parent' }, { target_rel: 'after_parent', label: 'Above Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
 									<li class="menu-bar-menu-item">
 										<button
 											class="menu-bar-item-button"
@@ -1932,6 +1934,22 @@
 													}).then((l) => {
 														selectedLayers.value = [l.id];
 														cast('select', l.id);
+													});
+												}}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'spacer'}
+											<Spacer
+												{frameBoxObject}
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												{rotationTransform}
+												{cameraScale}
+												makeSpace={({ base, dir }) => {
+													cast('make_space', {
+														base,
+														dir
 													});
 												}}
 											/>
