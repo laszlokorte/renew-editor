@@ -3071,6 +3071,65 @@
 								<text text-anchor="middle" font-size="40" x="16" y="30" font-family="serif">T</text>
 							</svg>
 						</div>
+
+						<div
+							draggable={singleSelectedLayer.value}
+							ondragstart={(evt) => {
+								const d = {
+									content: {
+										body: 'Text',
+										hyperlink: singleSelectedLayer.value.id
+									},
+									mimeType: 'application/json+renewex-layer',
+									alignX: 0.5,
+									alignY: 0.5
+								};
+
+								evt.stopPropagation();
+								evt.dataTransfer.effectAllowed = 'copy';
+								evt.currentTarget.setAttribute('aria-grabbed', 'true');
+								const positionInfo = evt.currentTarget.getBoundingClientRect();
+								evt.dataTransfer.setDragImage(
+									evt.currentTarget,
+									positionInfo.width * d.alignX,
+									positionInfo.height * d.alignY
+								);
+								const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
+								evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+
+								// Work-around for
+								// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+								evt.dataTransfer.setData(
+									'text/plain',
+									JSON.stringify({
+										mime: d.mimeType,
+										data: data
+									})
+								);
+							}}
+						>
+							<svg
+								class:droppable={singleSelectedLayer.value}
+								style:opacity={singleSelectedLayer.value ? 1 : 0.5}
+								viewBox="-4 -4 40 40"
+								width="32"
+							>
+								<text text-anchor="middle" font-size="30" x="16" y="30" font-family="serif">A</text>
+								<rect
+									x="1"
+									y="3"
+									width="9"
+									height="14"
+									fill="none"
+									rx="5"
+									ry="5"
+									stroke="#555"
+									stroke-width="2"
+								/>
+
+								<rect x="3" y="9" width="5" height="14" fill="#555" rx="3" ry="3" stroke="none" />
+							</svg>
+						</div>
 					</div>
 					<div
 						style="user-select: none; user-callout: none; text-align: center; font-size: 2em; cursor: pointer; display: grid; align-content: center; justify-content: center; line-height: 1; padding: 0.5ex"
