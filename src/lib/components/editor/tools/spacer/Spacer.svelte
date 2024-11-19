@@ -6,7 +6,7 @@
 	import { numberSvgFormat } from '$lib/svg/formatter';
 	import { atom, view, read, combine, readCombined } from '$lib/reactivity/atom.svelte.js';
 
-	const minDragDistance = 25;
+	const minDragDistance = 5;
 
 	const {
 		frameBoxPath,
@@ -14,8 +14,7 @@
 		rotationTransform,
 		makeSpace,
 		frameBoxObject,
-		cameraScale,
-		cameraOrientation
+		cameraScale
 	} = $props();
 
 	const guide = atom(undefined);
@@ -24,6 +23,7 @@
 		guide
 	);
 
+	const inversed = view(['inversed', L.valueOr(false)], guide);
 	const guideStart = view([L.removable('start'), 'start', L.removable('x', 'y')], guide);
 	const guideEnd = view(
 		L.ifElse(R.prop('start'), [L.removable('end'), 'end', L.removable('x', 'y')], L.zero),
@@ -134,10 +134,19 @@
 	const newGuideRayPath = readCombined(
 		L.reread(
 			({ s: { a: sa, b: sb }, t: { a: ta, b: tb } }) =>
-				`M${sa.x},${sa.y}L${sb.x},${sb.y}L${tb.x},${tb.y} ${ta.x},${ta.y} z`
+				`M${sa.x},${sa.y}L${sb.x},${sb.y}L${tb.x},${tb.y} L${ta.x},${ta.y} z`
 		),
 		{ s: newGuideEdgePointsA, t: newGuideEdgePointsB }
 	);
+
+	const newGuideRayPathEdge = readCombined(
+		L.reread(
+			({ s: { a: sa, b: sb }, t: { a: ta, b: tb } }) =>
+				`M${sa.x},${sa.y}L${sb.x},${sb.y}M${ta.x},${ta.y} L${tb.x},${tb.y} z`
+		),
+		{ s: newGuideEdgePointsA, t: newGuideEdgePointsB }
+	);
+
 	export const canCancel = read(R.identity, isActive);
 	export function cancel() {
 		isActive.value = false;
@@ -158,9 +167,20 @@
 		if (evt.key === 'Escape' || evt.key === 'Esc') {
 			guideEnd.value = undefined;
 		}
+		if (!isActive.value) {
+			return;
+		}
+
+		inversed.value = evt.altKey || evt.shiftKey;
+	}}
+	onkeyup={(evt) => {
+		if (!isActive.value) {
+			return;
+		}
+		inversed.value = evt.altKey || evt.shiftKey;
 	}}
 	onpointerdown={(evt) => {
-		if (!evt.isPrimary || !E.isLeftButton(evt)) {
+		if (!evt.isPrimary) {
 			isActive.value = false;
 			return;
 		}
@@ -169,6 +189,7 @@
 
 		const worldPos = clientToCanvas(evt.clientX, evt.clientY);
 
+		inversed.value = evt.altKey || evt.shiftKey;
 		guideStart.value = worldPos;
 		guideEnd.value = worldPos;
 	}}
@@ -191,15 +212,10 @@
 		const angle = Math.atan2(dy, dx);
 
 		const snapCount = evt.ctrlKey ? 18 : 4;
-		const snappedAngle = evt.shiftKey
-			? (Math.round((angle / Math.PI + cameraOrientation.value / 180) * snapCount) * Math.PI) /
-					snapCount -
-				(cameraOrientation.value / 180) * Math.PI
-			: angle;
-
+		inversed.value = evt.altKey || evt.shiftKey;
 		guideEnd.value = {
-			x: start.x + Math.cos(snappedAngle) * len,
-			y: start.y + Math.sin(snappedAngle) * len
+			x: start.x + Math.cos(angle) * len,
+			y: start.y + Math.sin(angle) * len
 		};
 	}}
 	onpointerup={(evt) => {
@@ -216,7 +232,8 @@
 				dir: {
 					x: guideEnd.value.x - guideStart.value.x,
 					y: guideEnd.value.y - guideStart.value.y
-				}
+				},
+				inverse: inversed.value
 			});
 		}
 
@@ -242,7 +259,16 @@
 			fill="none"
 			stroke="black"
 			d={newGuideRayPath.value}
-			class="guide-ray"
+			class="spacer-area"
+			class:inversed={inversed.value}
+			pointer-events="none"
+		/>
+		<path
+			fill="none"
+			stroke="black"
+			d={newGuideRayPathEdge.value}
+			class="spacer-edge"
+			class:inversed={inversed.value}
 			pointer-events="none"
 		/>
 	{:else}
@@ -263,12 +289,23 @@
 		outline: none;
 	}
 
-	.guide-ray {
+	.spacer-area {
+		fill: #fffa;
+		stroke: none;
+	}
+	.spacer-area.inversed {
+		fill: #feea;
+		stroke: none;
+	}
+
+	.spacer-edge {
 		stroke: mediumaquamarine;
 		stroke-opacity: 0.3;
 		stroke-width: 4px;
 		vector-effect: non-scaling-stroke;
-		fill: #fffa;
+	}
+	.spacer-edge.inversed {
+		stroke: indianred;
 	}
 
 	.guide-handle {

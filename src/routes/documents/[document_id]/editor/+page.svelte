@@ -29,6 +29,7 @@
 	import Spline from '$lib/components/editor/tools/spline/Spline.svelte';
 	import Polygon from '$lib/components/editor/tools/polygon/Polygon.svelte';
 	import Spacer from '$lib/components/editor/tools/spacer/Spacer.svelte';
+	import Edger from '$lib/components/editor/tools/edger/Edger.svelte';
 
 	import { buildPath, buildCoord } from './symbols';
 	import Symbol from './Symbol.svelte';
@@ -1171,45 +1172,233 @@
 											{/each}
 										</g>
 
-										<g transform={rotationTransform.value}>
-											<!-- svelte-ignore a11y_no_static_element_interactions -->
-											{#each selectedLayers.value as id (id)}
-												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-												{@const waypoints = view(['edge', localProp('waypoints')], el)}
-												{@const persistentWaypoints = view(L.filter(R.prop('id')), waypoints)}
-												{@const waypointProposals = view(
-													[
-														'edge',
-														L.choose((e) => {
-															return [
-																localProp('waypoints'),
-																L.reread(
-																	R.pipe(
-																		R.prepend({ x: e.source_x, y: e.source_y, id: 'source' }),
-																		R.append({ x: e.target_x, y: e.target_y, id: 'target' }),
-																		R.aperture(2),
-																		R.map(([a, b]) => ({
-																			id_before: a.id,
-																			x: b.id ? (a.x + b.x) / 2 : b.x,
-																			y: b.id ? (a.y + b.y) / 2 : b.y
-																		})),
-																		R.filter(R.prop('id_before'))
+										{#if activeTool.value === 'select'}
+											<g transform={rotationTransform.value}>
+												<!-- svelte-ignore a11y_no_static_element_interactions -->
+												{#each selectedLayers.value as id (id)}
+													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+													{@const waypoints = view(['edge', localProp('waypoints')], el)}
+													{@const persistentWaypoints = view(L.filter(R.prop('id')), waypoints)}
+													{@const waypointProposals = view(
+														[
+															'edge',
+															L.choose((e) => {
+																return [
+																	localProp('waypoints'),
+																	L.reread(
+																		R.pipe(
+																			R.prepend({ x: e.source_x, y: e.source_y, id: 'source' }),
+																			R.append({ x: e.target_x, y: e.target_y, id: 'target' }),
+																			R.aperture(2),
+																			R.map(([a, b]) => ({
+																				id_before: a.id,
+																				x: b.id ? (a.x + b.x) / 2 : b.x,
+																				y: b.id ? (a.y + b.y) / 2 : b.y
+																			})),
+																			R.filter(R.prop('id_before'))
+																		)
 																	)
-																)
-															];
-														})
-													],
-													el
-												)}
-												{#if el.value?.edge}
-													{#each persistentWaypoints.value as wp, wi (wp.id)}
-														{@const pos = view(
-															[
-																L.find(R.whereEq({ id: wp.id }), { hint: wi }),
-																L.removable('x', 'y'),
-																L.props('x', 'y')
-															],
-															waypoints
+																];
+															})
+														],
+														el
+													)}
+													{#if el.value?.edge}
+														{#each persistentWaypoints.value as wp, wi (wp.id)}
+															{@const pos = view(
+																[
+																	L.find(R.whereEq({ id: wp.id }), { hint: wi }),
+																	L.removable('x', 'y'),
+																	L.props('x', 'y')
+																],
+																waypoints
+															)}
+															<circle
+																fill="white"
+																cursor="move"
+																stroke="#7af"
+																stroke-width="2"
+																vector-effect="non-scaling-stroke"
+																r={6 * cameraScale.value}
+																cx={wp.x}
+																cy={wp.y}
+																onclick={(evt) => {
+																	backoffValue.value = undefined;
+																	evt.stopPropagation();
+																}}
+																ondblclick={(evt) => {
+																	pos.value = undefined;
+																	evt.stopPropagation();
+
+																	cast('delete_waypoint', {
+																		layer_id: el.value.id,
+																		waypoint_id: wp.id
+																	});
+																}}
+																onpointerdown={(evt) => {
+																	if (evt.isPrimary) {
+																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		backoffValue.value = pos.value;
+																		waypoints.value = localProp.reset;
+																		pointerOffset.value = Geo.diff2d(
+																			wp,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																	}
+																}}
+																onpointermove={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		pos.value = Geo.translate(
+																			pointerOffset.value,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																	}
+																}}
+																onpointerup={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		const newPos = Geo.translate(
+																			pointerOffset.value,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																		cast('update_waypoint_position', {
+																			layer_id: el.value.id,
+																			waypoint_id: wp.id,
+																			value: newPos
+																		});
+																	}
+																}}
+																onkeydown={(evt) => {
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		if (!backoffValue.value) {
+																			return;
+																		}
+																		evt.stopPropagation();
+																		evt.currentTarget.releasePointerCapture(evt.pointerId);
+																		waypoints.value = localProp.reset;
+																	}
+																}}
+																role="button"
+																tabindex="-1"
+															/>
+														{/each}
+														{#each waypointProposals.value as wp_proposal, wi (wp_proposal.id_before)}
+															{@const pos = view(
+																[
+																	L.lens(
+																		(list) => {
+																			const i =
+																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) +
+																				1;
+																			if (list[i] && !list[i].id) {
+																				return list[i];
+																			} else {
+																				return undefined;
+																			}
+																		},
+																		(n, list) => {
+																			const i =
+																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) +
+																				1;
+																			if (list[i] && !list[i].id) {
+																				if (n === undefined || R.equals(wp_proposal, n)) {
+																					return [...list.slice(0, i), ...list.slice(i + 1)];
+																				} else {
+																					return [...list.slice(0, i), n, ...list.slice(i + 1)];
+																				}
+																			} else {
+																				if (n === undefined) {
+																					return list;
+																				} else {
+																					return [...list.slice(0, i), n, ...list.slice(i)];
+																				}
+																			}
+																		}
+																	),
+																	L.removable('x', 'y'),
+																	L.props('x', 'y')
+																],
+																waypoints
+															)}
+															<circle
+																fill="white"
+																cursor="move"
+																stroke="#7af"
+																stroke-width="2"
+																vector-effect="non-scaling-stroke"
+																r={4 * cameraScale.value}
+																cx={wp_proposal.x}
+																cy={wp_proposal.y}
+																onclick={(evt) => {
+																	evt.stopPropagation();
+																	backoffValue.value = undefined;
+																}}
+																onkeydown={(evt) => {
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		if (!backoffValue.value) {
+																			return;
+																		}
+																		evt.stopPropagation();
+																		evt.currentTarget.releasePointerCapture(evt.pointerId);
+																		waypoints.value = localProp.reset;
+																	}
+																}}
+																role="button"
+																tabindex="-1"
+																onpointerdown={(evt) => {
+																	if (evt.isPrimary) {
+																		waypoints.value = localProp.reset;
+																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		backoffValue.value = wp_proposal;
+																		pointerOffset.value = Geo.diff2d(
+																			wp_proposal,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+
+																		pos.value = Geo.translate(
+																			pointerOffset.value,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																	}
+																}}
+																onpointermove={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		pos.value = Geo.translate(
+																			pointerOffset.value,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																	}
+																}}
+																onpointerup={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		cast('create_waypoint', {
+																			layer_id: el.value.id,
+																			after_waypoint_id: wp_proposal.id_before,
+																			position: pos.value
+																		});
+																	}
+																}}
+															/>
+														{/each}
+
+														{@const source_pos = view(
+															['edge', L.pick({ x: 'source_x', y: 'source_y' })],
+															el
+														)}
+														{@const target_pos = view(
+															['edge', L.pick({ x: 'target_x', y: 'target_y' })],
+															el
 														)}
 														<circle
 															fill="white"
@@ -1218,28 +1407,17 @@
 															stroke-width="2"
 															vector-effect="non-scaling-stroke"
 															r={6 * cameraScale.value}
-															cx={wp.x}
-															cy={wp.y}
+															cx={el.value?.edge?.source_x}
+															cy={el.value?.edge?.source_y}
 															onclick={(evt) => {
-																backoffValue.value = undefined;
 																evt.stopPropagation();
-															}}
-															ondblclick={(evt) => {
-																pos.value = undefined;
-																evt.stopPropagation();
-
-																cast('delete_waypoint', {
-																	layer_id: el.value.id,
-																	waypoint_id: wp.id
-																});
 															}}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary) {
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
-																	backoffValue.value = pos.value;
-																	waypoints.value = localProp.reset;
+																	backoffValue.value = source_pos.value;
 																	pointerOffset.value = Geo.diff2d(
-																		wp,
+																		source_pos.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
 																}
@@ -1249,7 +1427,7 @@
 																	evt.isPrimary &&
 																	evt.currentTarget.hasPointerCapture(evt.pointerId)
 																) {
-																	pos.value = Geo.translate(
+																	source_pos.value = Geo.translate(
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
@@ -1264,10 +1442,12 @@
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
-																	cast('update_waypoint_position', {
+																	cast('update_edge_position', {
 																		layer_id: el.value.id,
-																		waypoint_id: wp.id,
-																		value: newPos
+																		value: {
+																			source_x: newPos.x,
+																			source_y: newPos.y
+																		}
 																	});
 																}
 															}}
@@ -1278,61 +1458,63 @@
 																	}
 																	evt.stopPropagation();
 																	evt.currentTarget.releasePointerCapture(evt.pointerId);
-																	waypoints.value = localProp.reset;
+																	source_pos.value = backoffValue.value;
 																}
 															}}
 															role="button"
 															tabindex="-1"
 														/>
-													{/each}
-													{#each waypointProposals.value as wp_proposal, wi (wp_proposal.id_before)}
-														{@const pos = view(
-															[
-																L.lens(
-																	(list) => {
-																		const i =
-																			R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) + 1;
-																		if (list[i] && !list[i].id) {
-																			return list[i];
-																		} else {
-																			return undefined;
-																		}
-																	},
-																	(n, list) => {
-																		const i =
-																			R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) + 1;
-																		if (list[i] && !list[i].id) {
-																			if (n === undefined || R.equals(wp_proposal, n)) {
-																				return [...list.slice(0, i), ...list.slice(i + 1)];
-																			} else {
-																				return [...list.slice(0, i), n, ...list.slice(i + 1)];
-																			}
-																		} else {
-																			if (n === undefined) {
-																				return list;
-																			} else {
-																				return [...list.slice(0, i), n, ...list.slice(i)];
-																			}
-																		}
-																	}
-																),
-																L.removable('x', 'y'),
-																L.props('x', 'y')
-															],
-															waypoints
-														)}
+
 														<circle
 															fill="white"
-															cursor="move"
 															stroke="#7af"
+															cursor="move"
 															stroke-width="2"
 															vector-effect="non-scaling-stroke"
-															r={4 * cameraScale.value}
-															cx={wp_proposal.x}
-															cy={wp_proposal.y}
+															r={6 * cameraScale.value}
+															cx={el.value?.edge?.target_x}
+															cy={el.value?.edge?.target_y}
 															onclick={(evt) => {
 																evt.stopPropagation();
-																backoffValue.value = undefined;
+															}}
+															onpointerdown={(evt) => {
+																if (evt.isPrimary) {
+																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	backoffValue.value = target_pos.value;
+																	pointerOffset.value = Geo.diff2d(
+																		target_pos.value,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
+																}
+															}}
+															onpointermove={(evt) => {
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
+																	target_pos.value = Geo.translate(
+																		pointerOffset.value,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
+																}
+															}}
+															onpointerup={(evt) => {
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
+																	const newPos = Geo.translate(
+																		pointerOffset.value,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
+																	cast('update_edge_position', {
+																		layer_id: el.value.id,
+																		value: {
+																			target_x: newPos.x,
+																			target_y: newPos.y
+																		}
+																	});
+																}
 															}}
 															onkeydown={(evt) => {
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
@@ -1341,79 +1523,164 @@
 																	}
 																	evt.stopPropagation();
 																	evt.currentTarget.releasePointerCapture(evt.pointerId);
-																	waypoints.value = localProp.reset;
+																	target_pos.value = backoffValue.value;
 																}
 															}}
 															role="button"
 															tabindex="-1"
-															onpointerdown={(evt) => {
-																if (evt.isPrimary) {
-																	waypoints.value = localProp.reset;
-																	evt.currentTarget.setPointerCapture(evt.pointerId);
-																	backoffValue.value = wp_proposal;
-																	pointerOffset.value = Geo.diff2d(
-																		wp_proposal,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-
-																	pos.value = Geo.translate(
-																		pointerOffset.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-																}
-															}}
-															onpointermove={(evt) => {
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	pos.value = Geo.translate(
-																		pointerOffset.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-																}
-															}}
-															onpointerup={(evt) => {
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	cast('create_waypoint', {
-																		layer_id: el.value.id,
-																		after_waypoint_id: wp_proposal.id_before,
-																		position: pos.value
-																	});
-																}
-															}}
 														/>
-													{/each}
+													{/if}
 
-													{@const source_pos = view(
-														['edge', L.pick({ x: 'source_x', y: 'source_y' })],
+													{@const corners = {
+														topLeft: {
+															dx: -1,
+															dy: -1,
+															lens: L.pick({
+																x: [
+																	L.lens(
+																		(o) => o && o.position_x,
+																		(n, o) => {
+																			const d = Math.min(n - o.position_x, o.width);
+
+																			return {
+																				...o,
+																				position_x: o.position_x + d,
+																				width: o.width - d
+																			};
+																		}
+																	)
+																],
+																y: [
+																	L.lens(
+																		(o) => o && o.position_y,
+																		(n, o) => {
+																			const d = Math.min(n - o.position_y, o.height);
+
+																			return {
+																				...o,
+																				position_y: o.position_y + d,
+																				height: o.height - d
+																			};
+																		}
+																	)
+																]
+															})
+														},
+														topRight: {
+															dx: 1,
+															dy: -1,
+															lens: L.pick({
+																x: [
+																	L.lens(
+																		(o) => o && o.position_x,
+																		(n, o) => {
+																			const d = Math.min(n - o.position_x, o.width);
+
+																			return {
+																				...o,
+																				position_x: o.position_x + d,
+																				width: o.width - d
+																			};
+																		}
+																	)
+																],
+																y: L.choose((b) => [
+																	'height',
+																	L.normalize(R.max(0)),
+																	L.add(b ? b.position_y : 0)
+																])
+															})
+														},
+														bottomLeft: {
+															dx: -1,
+															dy: 1,
+															lens: L.pick({
+																y: [
+																	L.lens(
+																		(o) => o && o.position_y,
+																		(n, o) => {
+																			const d = Math.min(n - o.position_y, o.height);
+
+																			return {
+																				...o,
+																				position_y: o.position_y + d,
+																				height: o.height - d
+																			};
+																		}
+																	)
+																],
+																x: L.choose((b) => [
+																	'width',
+																	L.normalize(R.max(0)),
+																	L.add(b ? b.position_x : 0)
+																])
+															})
+														},
+														bottomRight: {
+															dx: 1,
+															dy: 1,
+															lens: L.pick({
+																x: L.choose((b) => [
+																	'width',
+																	L.normalize(R.max(0)),
+																	L.add(b ? b.position_x : 0)
+																]),
+																y: L.choose((b) => [
+																	'height',
+																	L.normalize(R.max(0)),
+																	L.add(b ? b.position_y : 0)
+																])
+															})
+														}
+													}}
+													{@const boxDim = viewCombined(
+														[
+															L.cond(
+																[
+																	R.path(['el', 'box']),
+																	[
+																		'el',
+																		'box',
+																		L.pick({
+																			x: 'position_x',
+																			y: 'position_y',
+																			width: 'width',
+																			height: 'height'
+																		})
+																	]
+																],
+																[
+																	(x, i) => R.path(['el', 'text']),
+																	[
+																		L.choose(({ el }) =>
+																			el ? ['textBounds', L.prop(el.id)] : L.zero
+																		)
+																	]
+																]
+															)
+														],
+														{ el, textBounds }
+													)}
+													{@const boxPos = view(
+														[
+															L.cond([R.prop('box'), 'box'], [R.prop('text'), 'text']),
+															L.pick({
+																x: 'position_x',
+																y: 'position_y'
+															})
+														],
 														el
 													)}
-													{@const target_pos = view(
-														['edge', L.pick({ x: 'target_x', y: 'target_y' })],
-														el
-													)}
-													<circle
-														fill="white"
-														cursor="move"
-														stroke="#7af"
-														stroke-width="2"
-														vector-effect="non-scaling-stroke"
-														r={6 * cameraScale.value}
-														cx={el.value?.edge?.source_x}
-														cy={el.value?.edge?.source_y}
-														onclick={(evt) => {
-															evt.stopPropagation();
-														}}
+													<rect
+														{...boxDim.value}
+														fill="none"
+														class="draggable"
 														onpointerdown={(evt) => {
 															if (evt.isPrimary) {
 																evt.currentTarget.setPointerCapture(evt.pointerId);
-																backoffValue.value = source_pos.value;
+																backoffValue.value = boxPos.value;
 																pointerOffset.value = Geo.diff2d(
-																	source_pos.value,
+																	boxPos.value,
 																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																);
 															}
@@ -1423,7 +1690,7 @@
 																evt.isPrimary &&
 																evt.currentTarget.hasPointerCapture(evt.pointerId)
 															) {
-																source_pos.value = Geo.translate(
+																boxPos.value = Geo.translate(
 																	pointerOffset.value,
 																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																);
@@ -1434,347 +1701,7 @@
 																evt.isPrimary &&
 																evt.currentTarget.hasPointerCapture(evt.pointerId)
 															) {
-																const newPos = Geo.translate(
-																	pointerOffset.value,
-																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																);
-																cast('update_edge_position', {
-																	layer_id: el.value.id,
-																	value: {
-																		source_x: newPos.x,
-																		source_y: newPos.y
-																	}
-																});
-															}
-														}}
-														onkeydown={(evt) => {
-															if (evt.key === 'Escape' || evt.key === 'Esc') {
-																if (!backoffValue.value) {
-																	return;
-																}
-																evt.stopPropagation();
-																evt.currentTarget.releasePointerCapture(evt.pointerId);
-																source_pos.value = backoffValue.value;
-															}
-														}}
-														role="button"
-														tabindex="-1"
-													/>
-
-													<circle
-														fill="white"
-														stroke="#7af"
-														cursor="move"
-														stroke-width="2"
-														vector-effect="non-scaling-stroke"
-														r={6 * cameraScale.value}
-														cx={el.value?.edge?.target_x}
-														cy={el.value?.edge?.target_y}
-														onclick={(evt) => {
-															evt.stopPropagation();
-														}}
-														onpointerdown={(evt) => {
-															if (evt.isPrimary) {
-																evt.currentTarget.setPointerCapture(evt.pointerId);
-																backoffValue.value = target_pos.value;
-																pointerOffset.value = Geo.diff2d(
-																	target_pos.value,
-																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																);
-															}
-														}}
-														onpointermove={(evt) => {
-															if (
-																evt.isPrimary &&
-																evt.currentTarget.hasPointerCapture(evt.pointerId)
-															) {
-																target_pos.value = Geo.translate(
-																	pointerOffset.value,
-																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																);
-															}
-														}}
-														onpointerup={(evt) => {
-															if (
-																evt.isPrimary &&
-																evt.currentTarget.hasPointerCapture(evt.pointerId)
-															) {
-																const newPos = Geo.translate(
-																	pointerOffset.value,
-																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																);
-																cast('update_edge_position', {
-																	layer_id: el.value.id,
-																	value: {
-																		target_x: newPos.x,
-																		target_y: newPos.y
-																	}
-																});
-															}
-														}}
-														onkeydown={(evt) => {
-															if (evt.key === 'Escape' || evt.key === 'Esc') {
-																if (!backoffValue.value) {
-																	return;
-																}
-																evt.stopPropagation();
-																evt.currentTarget.releasePointerCapture(evt.pointerId);
-																target_pos.value = backoffValue.value;
-															}
-														}}
-														role="button"
-														tabindex="-1"
-													/>
-												{/if}
-
-												{@const corners = {
-													topLeft: {
-														dx: -1,
-														dy: -1,
-														lens: L.pick({
-															x: [
-																L.lens(
-																	(o) => o && o.position_x,
-																	(n, o) => {
-																		const d = Math.min(n - o.position_x, o.width);
-
-																		return {
-																			...o,
-																			position_x: o.position_x + d,
-																			width: o.width - d
-																		};
-																	}
-																)
-															],
-															y: [
-																L.lens(
-																	(o) => o && o.position_y,
-																	(n, o) => {
-																		const d = Math.min(n - o.position_y, o.height);
-
-																		return {
-																			...o,
-																			position_y: o.position_y + d,
-																			height: o.height - d
-																		};
-																	}
-																)
-															]
-														})
-													},
-													topRight: {
-														dx: 1,
-														dy: -1,
-														lens: L.pick({
-															x: [
-																L.lens(
-																	(o) => o && o.position_x,
-																	(n, o) => {
-																		const d = Math.min(n - o.position_x, o.width);
-
-																		return {
-																			...o,
-																			position_x: o.position_x + d,
-																			width: o.width - d
-																		};
-																	}
-																)
-															],
-															y: L.choose((b) => [
-																'height',
-																L.normalize(R.max(0)),
-																L.add(b ? b.position_y : 0)
-															])
-														})
-													},
-													bottomLeft: {
-														dx: -1,
-														dy: 1,
-														lens: L.pick({
-															y: [
-																L.lens(
-																	(o) => o && o.position_y,
-																	(n, o) => {
-																		const d = Math.min(n - o.position_y, o.height);
-
-																		return {
-																			...o,
-																			position_y: o.position_y + d,
-																			height: o.height - d
-																		};
-																	}
-																)
-															],
-															x: L.choose((b) => [
-																'width',
-																L.normalize(R.max(0)),
-																L.add(b ? b.position_x : 0)
-															])
-														})
-													},
-													bottomRight: {
-														dx: 1,
-														dy: 1,
-														lens: L.pick({
-															x: L.choose((b) => [
-																'width',
-																L.normalize(R.max(0)),
-																L.add(b ? b.position_x : 0)
-															]),
-															y: L.choose((b) => [
-																'height',
-																L.normalize(R.max(0)),
-																L.add(b ? b.position_y : 0)
-															])
-														})
-													}
-												}}
-												{@const boxDim = viewCombined(
-													[
-														L.cond(
-															[
-																R.path(['el', 'box']),
-																[
-																	'el',
-																	'box',
-																	L.pick({
-																		x: 'position_x',
-																		y: 'position_y',
-																		width: 'width',
-																		height: 'height'
-																	})
-																]
-															],
-															[
-																(x, i) => R.path(['el', 'text']),
-																[
-																	L.choose(({ el }) =>
-																		el ? ['textBounds', L.prop(el.id)] : L.zero
-																	)
-																]
-															]
-														)
-													],
-													{ el, textBounds }
-												)}
-												{@const boxPos = view(
-													[
-														L.cond([R.prop('box'), 'box'], [R.prop('text'), 'text']),
-														L.pick({
-															x: 'position_x',
-															y: 'position_y'
-														})
-													],
-													el
-												)}
-												<rect
-													{...boxDim.value}
-													fill="none"
-													class="draggable"
-													onpointerdown={(evt) => {
-														if (evt.isPrimary) {
-															evt.currentTarget.setPointerCapture(evt.pointerId);
-															backoffValue.value = boxPos.value;
-															pointerOffset.value = Geo.diff2d(
-																boxPos.value,
-																liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-															);
-														}
-													}}
-													onpointermove={(evt) => {
-														if (
-															evt.isPrimary &&
-															evt.currentTarget.hasPointerCapture(evt.pointerId)
-														) {
-															boxPos.value = Geo.translate(
-																pointerOffset.value,
-																liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-															);
-														}
-													}}
-													onpointerup={(evt) => {
-														if (
-															evt.isPrimary &&
-															evt.currentTarget.hasPointerCapture(evt.pointerId)
-														) {
-															if (el.value.box) {
-																cast('update_box_size', {
-																	layer_id: el.value.id,
-																	value: L.get(
-																		['box', L.props('position_x', 'position_y', 'width', 'height')],
-																		el.value
-																	)
-																});
-															} else if (el.value.text) {
-																cast('update_text_position', {
-																	layer_id: el.value.id,
-																	value: L.get(
-																		['text', L.props('position_x', 'position_y')],
-																		el.value
-																	)
-																});
-															}
-														}
-													}}
-													onclick={(evt) => {
-														evt.stopPropagation();
-														backoffValue.value = undefined;
-													}}
-													onkeydown={(evt) => {
-														if (evt.key === 'Escape' || evt.key === 'Esc') {
-															if (!backoffValue.value) {
-																return;
-															}
-															evt.stopPropagation();
-															evt.currentTarget.releasePointerCapture(evt.pointerId);
-															boxPos.value = backoffValue.value;
-														}
-													}}
-													role="button"
-													tabindex="-1"
-												/>
-												{#each Object.entries(corners) as [type, { lens, dx, dy }]}
-													{@const pos = view(L.cond([R.prop('box'), ['box', lens]]), el)}
-													{@const posVal = pos.value}
-													{#if posVal}
-														<circle
-															fill="white"
-															stroke="#7af"
-															cursor="move"
-															vector-effect="non-scaling-stroke"
-															stroke-width="2"
-															transform="translate({dy * cameraScale.value * 6},{dx *
-																cameraScale.value *
-																6})"
-															r={cameraScale.value * 6}
-															cx={posVal.x}
-															cy={posVal.y}
-															onpointerdown={(evt) => {
-																if (evt.isPrimary) {
-																	evt.currentTarget.setPointerCapture(evt.pointerId);
-																	backoffValue.value = pos.value;
-																	pointerOffset.value = Geo.diff2d(
-																		posVal,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-																}
-															}}
-															onpointermove={(evt) => {
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	pos.value = Geo.translate(
-																		pointerOffset.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-																}
-															}}
-															onpointerup={(evt) => {
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
+																if (el.value.box) {
 																	cast('update_box_size', {
 																		layer_id: el.value.id,
 																		value: L.get(
@@ -1785,83 +1712,182 @@
 																			el.value
 																		)
 																	});
+																} else if (el.value.text) {
+																	cast('update_text_position', {
+																		layer_id: el.value.id,
+																		value: L.get(
+																			['text', L.props('position_x', 'position_y')],
+																			el.value
+																		)
+																	});
 																}
-															}}
-															onclick={(evt) => {
+															}
+														}}
+														onclick={(evt) => {
+															evt.stopPropagation();
+															backoffValue.value = undefined;
+														}}
+														onkeydown={(evt) => {
+															if (evt.key === 'Escape' || evt.key === 'Esc') {
+																if (!backoffValue.value) {
+																	return;
+																}
 																evt.stopPropagation();
-																backoffValue.value = undefined;
-															}}
-															onkeydown={(evt) => {
-																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	if (!backoffValue.value) {
-																		return;
+																evt.currentTarget.releasePointerCapture(evt.pointerId);
+																boxPos.value = backoffValue.value;
+															}
+														}}
+														role="button"
+														tabindex="-1"
+													/>
+													{#each Object.entries(corners) as [type, { lens, dx, dy }]}
+														{@const pos = view(L.cond([R.prop('box'), ['box', lens]]), el)}
+														{@const posVal = pos.value}
+														{#if posVal}
+															<circle
+																fill="white"
+																stroke="#7af"
+																cursor="move"
+																vector-effect="non-scaling-stroke"
+																stroke-width="2"
+																transform="translate({dy * cameraScale.value * 6},{dx *
+																	cameraScale.value *
+																	6})"
+																r={cameraScale.value * 6}
+																cx={posVal.x}
+																cy={posVal.y}
+																onpointerdown={(evt) => {
+																	if (evt.isPrimary) {
+																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		backoffValue.value = pos.value;
+																		pointerOffset.value = Geo.diff2d(
+																			posVal,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
 																	}
+																}}
+																onpointermove={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		pos.value = Geo.translate(
+																			pointerOffset.value,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																	}
+																}}
+																onpointerup={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		cast('update_box_size', {
+																			layer_id: el.value.id,
+																			value: L.get(
+																				[
+																					'box',
+																					L.props('position_x', 'position_y', 'width', 'height')
+																				],
+																				el.value
+																			)
+																		});
+																	}
+																}}
+																onclick={(evt) => {
 																	evt.stopPropagation();
-																	evt.currentTarget.releasePointerCapture(evt.pointerId);
-																	pos.value = backoffValue.value;
-																}
-															}}
-															role="button"
-															tabindex="-1"
-														/>
-													{/if}
-												{/each}
-											{/each}
-										</g>
-
-										<g transform={rotationTransform.value}>
-											{#await data.socket_schemas then s}
-												{#each layersInOrder.value as { index, id, depth, hidden } (id)}
-													{#if !hidden}
-														{@const el = view(
-															['layers', 'items', L.find((el) => el.id == id)],
-															doc
-														)}
-
-														{#if el.value?.box && el.value?.interface_id}
-															{@const socket_schema = s.get(el.value?.interface_id)}
-															{#each socket_schema.sockets as sock}
-																{@const coordX = buildCoord(
-																	{
-																		x: el.value?.box.position_x,
-																		y: el.value?.box.position_y,
-																		width: el.value?.box.width,
-																		height: el.value?.box.height
-																	},
-																	'x',
-																	false,
-																	sock.x
-																)}
-																{@const coordY = buildCoord(
-																	{
-																		x: el.value?.box.position_x,
-																		y: el.value?.box.position_y,
-																		width: el.value?.box.width,
-																		height: el.value?.box.height
-																	},
-																	'y',
-																	false,
-																	sock.y
-																)}
-
-																<circle
-																	fill="white"
-																	stroke="#23875d"
-																	stroke-width="2"
-																	vector-effect="non-scaling-stroke"
-																	r={5 * cameraScale.value}
-																	cx={coordX}
-																	cy={coordY}
-																	cursor="alias"
-																/>
-															{/each}
+																	backoffValue.value = undefined;
+																}}
+																onkeydown={(evt) => {
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		if (!backoffValue.value) {
+																			return;
+																		}
+																		evt.stopPropagation();
+																		evt.currentTarget.releasePointerCapture(evt.pointerId);
+																		pos.value = backoffValue.value;
+																	}
+																}}
+																role="button"
+																tabindex="-1"
+															/>
 														{/if}
-
-														{#if el.value?.text}{/if}
-													{/if}
+													{/each}
 												{/each}
+											</g>
+										{/if}
+										{#if activeTool.value == 'edge'}
+											{#await data.socket_schemas then s}
+												<Edger
+													sockets={viewCombined(
+														[
+															L.reread(({ inOrder, flatLayers }) =>
+																inOrder
+																	.filter(R.complement(R.prop('hidden')))
+																	.flatMap(({ index, id, depth, hidden }) => {
+																		const el = R.find((l) => l.id === id, flatLayers);
+																		const iid = el?.interface_id;
+
+																		if (iid) {
+																			const socket_schema = s.get(iid);
+																			return socket_schema.sockets.map((sock) => ({
+																				id: {
+																					socket: sock.id,
+																					layer: id
+																				},
+																				x: buildCoord(
+																					{
+																						x: el.box.position_x,
+																						y: el.box.position_y,
+																						width: el.box.width,
+																						height: el.box.height
+																					},
+																					'x',
+																					false,
+																					sock.x
+																				),
+																				y: buildCoord(
+																					{
+																						x: el.box.position_x,
+																						y: el.box.position_y,
+																						width: el.box.width,
+																						height: el.box.height
+																					},
+																					'y',
+																					false,
+																					sock.y
+																				)
+																			}));
+																		} else {
+																			return [];
+																		}
+																	})
+															)
+														],
+														{ inOrder: layersInOrder, flatLayers: read(['layers', 'items'], doc) }
+													)}
+													{frameBoxObject}
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													{rotationTransform}
+													{cameraScale}
+													newEdge={(e) => {
+														dispatch('create_layer', {
+															base_layer_id: L.get('id', singleSelectedLayer.value),
+															source: {
+																socket_id: e.source.socket,
+																layer_id: e.source.layer
+															},
+															target: { socket_id: e.target.socket, layer_id: e.target.layer }
+														}).then((l) => {
+															selectedLayers.value = [l.id];
+															cast('select', l.id);
+														});
+													}}
+													newEdgeNode={(t) => {}}
+												/>
 											{/await}
-										</g>
+										{/if}
 
 										{#if activeTool.value === 'pen'}
 											<Pen
@@ -1946,10 +1972,11 @@
 												clientToCanvas={liveLenses.clientToCanvas}
 												{rotationTransform}
 												{cameraScale}
-												makeSpace={({ base, dir }) => {
+												makeSpace={({ base, dir, inverse }) => {
 													cast('make_space', {
 														base,
-														dir
+														dir,
+														inverse
 													});
 												}}
 											/>
@@ -2536,7 +2563,11 @@
 									el
 								)}
 								{@const elSemantic = view(
-									['semantic_tag', L.defaults(''), L.reread(R.compose(R.last, R.split('.')))],
+									[
+										'semantic_tag',
+										L.defaults(''),
+										L.reread(R.ifElse(R.is(String), R.compose(R.last, R.split('.')), R.always('-')))
+									],
 									el
 								)}
 								{@const selected = view(
@@ -2837,7 +2868,9 @@
 							ondragstart={(evt) => {
 								const d = {
 									content: {
-										shape_id: '3B66E69A-057A-40B9-A1A0-9DB44EF5CE42'
+										semantic_tag: 'CH.ifa.draw.figures.EllipseFigure',
+										shape_id: '3B66E69A-057A-40B9-A1A0-9DB44EF5CE42',
+										socket_schema_id: '2C5DE751-2FB8-48DE-99B6-D99648EBDFFC'
 									},
 									mimeType: 'application/json+renewex-layer',
 									alignX: 0.5,
@@ -2876,7 +2909,9 @@
 							ondragstart={(evt) => {
 								const d = {
 									content: {
-										shape_id: null
+										semantic_tag: 'CH.ifa.draw.figures.RectangleFigure',
+										shape_id: '2DD432FE-CC8A-4259-8A84-63F75AF0ECE0',
+										socket_schema_id: '4FDF577B-DB81-462E-971E-FA842F0ABA1E'
 									},
 									mimeType: 'application/json+renewex-layer',
 									alignX: 0.5,
