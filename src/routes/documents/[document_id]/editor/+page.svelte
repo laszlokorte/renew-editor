@@ -311,6 +311,14 @@
 				}),
 				combine({ d: doc, sl: selectedLayers })
 			)}
+			{@const singleSelectedHyperinkedId = read(
+				L.reread((l) => l && l.hyperlink),
+				singleSelectedLayer
+			)}
+			{@const singleSelectedIsBoxOrEdge = read(
+				L.reread((x) => x == 'box' || x == 'edge'),
+				singleSelectedLayerType
+			)}
 
 			<Modal bind:visible={showRename.value} closeLabel="Cancel">
 				{@const drawingKinds = [
@@ -526,6 +534,18 @@
 						<li class="menu-bar-item" tabindex="-1">
 							Selection
 							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										disabled={!singleSelectedHyperinkedId.value}
+										onclick={(evt) => {
+											evt.preventDefault();
+											const id = singleSelectedHyperinkedId.value;
+											selectedLayers.value = [id];
+											cast('select', id);
+										}}>Select Linked</button
+									>
+								</li>
 								{#each [{ label: 'Parent', rel: 'parent' }, { label: 'First Sibling', rel: 'sibling_first' }, { label: 'Last Sibling', rel: 'sibling_last' }, { label: 'Sibling Below', rel: 'sibling_prev' }, { label: 'Sibling Above', rel: 'sibling_next' }, { label: 'First Child', rel: 'child_first' }, { label: 'Last Child', rel: 'child_last' }] as { label, rel }}
 									<li class="menu-bar-menu-item">
 										<button
@@ -2633,6 +2653,7 @@
 							{#each layersInOrder.value as { index, id, depth, hidden, isLast, parents } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 								{@const elId = view('id', el)}
+								{@const hyperlink = view('hyperlink', el)}
 								{@const visible = view(['hidden', L.complement], el)}
 								{@const elType = view(
 									L.reread((el) => {
@@ -2794,7 +2815,10 @@
 										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center; box-sizing: border-box;"
 									>
 										<div style="white-space: nowrap;">
-											<span>{elType.value || 'group'}</span>
+											<span>{elType.value || 'group'} </span>
+											<span
+												>{#if hyperlink.value}🔗{/if}</span
+											>
 											<span>{elSemantic.value}</span>
 										</div>
 										<small
@@ -2858,6 +2882,19 @@
 								{/if}
 							{/each}
 						</div>
+						{#if singleSelectedHyperinkedId.value}
+							<div>
+								Linked:<br />
+								<u
+									style="cursor: pointer"
+									onclick={() => {
+										const id = singleSelectedHyperinkedId.value;
+										selectedLayers.value = [id];
+										cast('select', id);
+									}}>{singleSelectedHyperinkedId.value}</u
+								>
+							</div>
+						{/if}
 						<label>
 							Interface: <select
 								disabled={!singleSelectedLayer.value}
@@ -3073,7 +3110,7 @@
 						</div>
 
 						<div
-							draggable={singleSelectedLayer.value}
+							draggable={singleSelectedIsBoxOrEdge.value}
 							ondragstart={(evt) => {
 								const d = {
 									content: {
@@ -3109,8 +3146,8 @@
 							}}
 						>
 							<svg
-								class:droppable={singleSelectedLayer.value}
-								style:opacity={singleSelectedLayer.value ? 1 : 0.5}
+								class:droppable={singleSelectedIsBoxOrEdge.value}
+								style:opacity={singleSelectedIsBoxOrEdge.value ? 1 : 0.5}
 								viewBox="-4 -4 40 40"
 								width="32"
 							>
