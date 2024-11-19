@@ -16,6 +16,7 @@
 	import { numberSvgFormat } from '$lib/svg/formatter';
 	import AppBar from '../../../AppBar.svelte';
 
+	import Modal from '$lib/components/modal/Modal.svelte';
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
 	import CameraScroller from '$lib/components/viewport/CameraScroller.svelte';
 	import CanvasDropper from '$lib/components/dragdrop/CanvasDropper.svelte';
@@ -64,6 +65,7 @@
 	const showOtherSelections = atom(true);
 	const showDebug = atom(true);
 	const showGrid = atom(false);
+	const showRename = atom(false);
 	const lockRotation = atom(false);
 	const backoffValue = atom(undefined);
 	const pointerOffset = atom({ x: 0, y: 0 });
@@ -309,6 +311,77 @@
 				}),
 				combine({ d: doc, sl: selectedLayers })
 			)}
+
+			<Modal bind:visible={showRename.value} closeLabel="Cancel">
+				{@const drawingKinds = [
+					'CH.ifa.draw.standard.StandardDrawing',
+					'de.renew.hierarchicalworkflownets.gui.HNViewDrawing',
+					'de.renew.gui.CPNDrawing',
+					'de.renew.sdnet.gui.SDNDrawing',
+					'de.renew.diagram.drawing.DiagramDrawing'
+				]}
+				{@const transientKind = atom(doc.value.kind)}
+				{@const predefinedKind = view(
+					[
+						L.lens(
+							(v) => (drawingKinds.indexOf(v) > -1 ? v : undefined),
+							(n, o) => n
+						),
+						L.defaults('')
+					],
+					transientKind
+				)}
+				{@const transientName = atom(doc.value.name)}
+				<form
+					onsubmit={(evt) => {
+						evt.preventDefault();
+
+						const data = new FormData(evt.currentTarget);
+
+						dispatch('set_meta', Object.fromEntries(data)).then(() => {
+							showRename.value = false;
+						});
+					}}
+					method="post"
+					accept-charset="utf-8"
+				>
+					<h2>Rename Document</h2>
+					<dl
+						style="display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 1ex; max-width: 50vw"
+					>
+						<dt>Document Name</dt>
+						<dd>
+							<input
+								class="form-field"
+								style="width: 100%; box-sizing: border-box;"
+								type="text"
+								name="name"
+								value={transientName.value}
+							/>
+						</dd>
+						<dt>Document Kind</dt>
+						<dd style="display: grid; gap: 1ex; grid-template-columns: 1fr 3fr;">
+							<select name="kind" class="form-field" bind:value={predefinedKind.value}>
+								<option value="">Other</option>
+								{#each drawingKinds as dk}
+									<option value={dk}>{dk}</option>
+								{/each}
+							</select>
+							<input
+								name="kind"
+								class="form-field"
+								style="width: 100%; box-sizing: border-box;"
+								class:hidden={predefinedKind.value.length > 0}
+								type="text"
+								bind:value={transientKind.value}
+							/>
+						</dd>
+						<dt></dt>
+						<dd><button type="submit" class="form-button">Save</button></dd>
+					</dl>
+				</form>
+			</Modal>
+
 			<header class="header">
 				<div class="header-titel">
 					<a href="{base}/documents" title="Back" class="nav-link">Back</a>
@@ -330,7 +403,12 @@
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Rename</button>
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											showRename.value = true;
+										}}>Rename</button
+									>
 								</li>
 								<li class="menu-bar-menu-item">
 									<button
@@ -3499,5 +3577,28 @@
 
 	.tool-radio {
 		display: none;
+	}
+
+	.hidden {
+		display: none;
+	}
+
+	.form-button {
+		background: black;
+		color: #fff;
+		padding: 1ex;
+		border: none;
+		cursor: pointer;
+	}
+
+	.form-button:hover {
+		background: #222;
+	}
+
+	.form-field {
+		box-sizing: border-box;
+		padding: 1ex;
+		font: inherit;
+		min-width: 5em;
 	}
 </style>

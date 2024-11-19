@@ -36,7 +36,9 @@
 			<button type="reset" class="modal-close" onclick={onClose}>{closeLabel}</button>
 		</div>
 		<div class="modal-body">
-			{@render children()}
+			{#if visible}
+				{@render children()}
+			{/if}
 		</div>
 	</div>
 </div>
@@ -52,7 +54,7 @@
 		bottom: 0;
 		left: 0;
 		right: 0;
-		z-index: 100;
+		z-index: 99000;
 	}
 
 	.modal-outside {
@@ -74,7 +76,6 @@
 		justify-self: center;
 
 		min-width: 50%;
-		min-height: 50%;
 		margin: 2em;
 
 		align-content: stretch;
