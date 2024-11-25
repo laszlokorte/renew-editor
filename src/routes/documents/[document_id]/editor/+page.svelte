@@ -2983,7 +2983,7 @@
 							ondragstart={(evt) => {
 								const d = {
 									content: {
-										semantic_tag: 'CH.ifa.draw.figures.EllipseFigure',
+										semantic_tag: 'de.renew.gui.PlaceFigure',
 										shape_id: '3B66E69A-057A-40B9-A1A0-9DB44EF5CE42',
 										socket_schema_id: '2C5DE751-2FB8-48DE-99B6-D99648EBDFFC'
 									},
@@ -3024,7 +3024,7 @@
 							ondragstart={(evt) => {
 								const d = {
 									content: {
-										semantic_tag: 'CH.ifa.draw.figures.RectangleFigure',
+										semantic_tag: 'de.renew.gui.TransitionFigure',
 										shape_id: '2DD432FE-CC8A-4259-8A84-63F75AF0ECE0',
 										socket_schema_id: '4FDF577B-DB81-462E-971E-FA842F0ABA1E'
 									},
@@ -3074,7 +3074,8 @@
 							ondragstart={(evt) => {
 								const d = {
 									content: {
-										body: 'Text'
+										body: 'Text',
+										semantic_tag: 'CH.ifa.draw.figures.TextFigure'
 									},
 									mimeType: 'application/json+renewex-layer',
 									alignX: 0.5,
@@ -3114,8 +3115,9 @@
 							ondragstart={(evt) => {
 								const d = {
 									content: {
-										body: 'Text',
-										hyperlink: singleSelectedLayer.value.id
+										body: '[]',
+										hyperlink: singleSelectedLayer.value.id,
+										semantic_tag: 'de.renew.gui.CPNTextFigure'
 									},
 									mimeType: 'application/json+renewex-layer',
 									alignX: 0.5,
