@@ -49,7 +49,7 @@
 	} from '$lib/components/camera/lenses';
 	import Navigator from '$lib/components/camera/Navigator.svelte';
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
-	import { stopPropagation } from 'svelte/legacy';
+	import { preventDefault, stopPropagation } from 'svelte/legacy';
 
 	const { data } = $props();
 
@@ -806,6 +806,7 @@
 							<SVGViewport
 								{camera}
 								onclick={(evt) => {
+									evt.preventDefault();
 									if (backoffValue.value === undefined) {
 										selectedLayers.value = [];
 										cast('select', null);
@@ -860,6 +861,7 @@
 																	selectedLayers.value = [el.value?.id];
 
 																	if (el.value?.id) {
+																		evt.preventDefault();
 																		cast('select', el.value?.id);
 																	}
 																}}
@@ -898,6 +900,7 @@
 																		evt.stopPropagation();
 																		selectedLayers.value = [el.value?.id];
 																		if (el.value?.id) {
+																			evt.preventDefault();
 																			cast('select', el.value?.id);
 																		}
 																	}}
@@ -920,6 +923,7 @@
 																	evt.stopPropagation();
 																	selectedLayers.value = [el.value?.id];
 																	if (el.value?.id) {
+																		evt.preventDefault();
 																		cast('select', el.value?.id);
 																	}
 																}}
@@ -1302,6 +1306,124 @@
 														el
 													)}
 													{#if el.value?.edge}
+														{#each waypointProposals.value as wp_proposal, wi (wp_proposal.id_before)}
+															{@const pos = view(
+																[
+																	L.lens(
+																		(list) => {
+																			const i =
+																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) +
+																				1;
+																			if (list[i] && !list[i].id) {
+																				return list[i];
+																			} else {
+																				return undefined;
+																			}
+																		},
+																		(n, list) => {
+																			const i =
+																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) +
+																				1;
+																			if (list[i] && !list[i].id) {
+																				if (n === undefined || R.equals(wp_proposal, n)) {
+																					return [...list.slice(0, i), ...list.slice(i + 1)];
+																				} else {
+																					return [...list.slice(0, i), n, ...list.slice(i + 1)];
+																				}
+																			} else {
+																				if (n === undefined) {
+																					return list;
+																				} else {
+																					return [...list.slice(0, i), n, ...list.slice(i)];
+																				}
+																			}
+																		}
+																	),
+																	L.removable('x', 'y'),
+																	L.props('x', 'y')
+																],
+																waypoints
+															)}
+															<g
+																onclick={(evt) => {
+																	evt.stopPropagation();
+																	backoffValue.value = undefined;
+																}}
+																onkeydown={(evt) => {
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		if (!backoffValue.value) {
+																			return;
+																		}
+																		evt.stopPropagation();
+																		evt.currentTarget.releasePointerCapture(evt.pointerId);
+																		waypoints.value = localProp.reset;
+																	}
+																}}
+																role="button"
+																tabindex="-1"
+																onpointerdown={(evt) => {
+																	if (evt.isPrimary) {
+																		evt.preventDefault();
+																		waypoints.value = localProp.reset;
+																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		backoffValue.value = wp_proposal;
+																		pointerOffset.value = Geo.diff2d(
+																			wp_proposal,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+
+																		pos.value = Geo.translate(
+																			pointerOffset.value,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																	}
+																}}
+																onpointermove={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		pos.value = Geo.translate(
+																			pointerOffset.value,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																	}
+																}}
+																onpointerup={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		cast('create_waypoint', {
+																			layer_id: el.value.id,
+																			after_waypoint_id: wp_proposal.id_before,
+																			position: pos.value
+																		});
+																	}
+																}}
+															>
+																<circle
+																	fill="none"
+																	cursor="move"
+																	stroke="none"
+																	r={12 * cameraScale.value}
+																	cx={wp_proposal.x}
+																	cy={wp_proposal.y}
+																	pointer-events="all"
+																/>
+																<circle
+																	fill="white"
+																	cursor="move"
+																	stroke="#7af"
+																	stroke-width="2"
+																	pointer-events="none"
+																	vector-effect="non-scaling-stroke"
+																	r={4 * cameraScale.value}
+																	cx={wp_proposal.x}
+																	cy={wp_proposal.y}
+																/></g
+															>
+														{/each}
 														{#each persistentWaypoints.value as wp, wi (wp.id)}
 															{@const pos = view(
 																[
@@ -1311,15 +1433,7 @@
 																],
 																waypoints
 															)}
-															<circle
-																fill="white"
-																cursor="move"
-																stroke="#7af"
-																stroke-width="2"
-																vector-effect="non-scaling-stroke"
-																r={6 * cameraScale.value}
-																cx={wp.x}
-																cy={wp.y}
+															<g
 																onclick={(evt) => {
 																	backoffValue.value = undefined;
 																	evt.stopPropagation();
@@ -1335,6 +1449,7 @@
 																}}
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary) {
+																		evt.preventDefault();
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
 																		waypoints.value = localProp.reset;
@@ -1383,111 +1498,28 @@
 																}}
 																role="button"
 																tabindex="-1"
-															/>
-														{/each}
-														{#each waypointProposals.value as wp_proposal, wi (wp_proposal.id_before)}
-															{@const pos = view(
-																[
-																	L.lens(
-																		(list) => {
-																			const i =
-																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) +
-																				1;
-																			if (list[i] && !list[i].id) {
-																				return list[i];
-																			} else {
-																				return undefined;
-																			}
-																		},
-																		(n, list) => {
-																			const i =
-																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) +
-																				1;
-																			if (list[i] && !list[i].id) {
-																				if (n === undefined || R.equals(wp_proposal, n)) {
-																					return [...list.slice(0, i), ...list.slice(i + 1)];
-																				} else {
-																					return [...list.slice(0, i), n, ...list.slice(i + 1)];
-																				}
-																			} else {
-																				if (n === undefined) {
-																					return list;
-																				} else {
-																					return [...list.slice(0, i), n, ...list.slice(i)];
-																				}
-																			}
-																		}
-																	),
-																	L.removable('x', 'y'),
-																	L.props('x', 'y')
-																],
-																waypoints
-															)}
-															<circle
-																fill="white"
-																cursor="move"
-																stroke="#7af"
-																stroke-width="2"
-																vector-effect="non-scaling-stroke"
-																r={4 * cameraScale.value}
-																cx={wp_proposal.x}
-																cy={wp_proposal.y}
-																onclick={(evt) => {
-																	evt.stopPropagation();
-																	backoffValue.value = undefined;
-																}}
-																onkeydown={(evt) => {
-																	if (evt.key === 'Escape' || evt.key === 'Esc') {
-																		if (!backoffValue.value) {
-																			return;
-																		}
-																		evt.stopPropagation();
-																		evt.currentTarget.releasePointerCapture(evt.pointerId);
-																		waypoints.value = localProp.reset;
-																	}
-																}}
-																role="button"
-																tabindex="-1"
-																onpointerdown={(evt) => {
-																	if (evt.isPrimary) {
-																		waypoints.value = localProp.reset;
-																		evt.currentTarget.setPointerCapture(evt.pointerId);
-																		backoffValue.value = wp_proposal;
-																		pointerOffset.value = Geo.diff2d(
-																			wp_proposal,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-
-																		pos.value = Geo.translate(
-																			pointerOffset.value,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-																	}
-																}}
-																onpointermove={(evt) => {
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		pos.value = Geo.translate(
-																			pointerOffset.value,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-																	}
-																}}
-																onpointerup={(evt) => {
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		cast('create_waypoint', {
-																			layer_id: el.value.id,
-																			after_waypoint_id: wp_proposal.id_before,
-																			position: pos.value
-																		});
-																	}
-																}}
-															/>
+															>
+																<circle
+																	fill="none"
+																	cursor="move"
+																	stroke="none"
+																	r={12 * cameraScale.value}
+																	cx={wp.x}
+																	cy={wp.y}
+																	pointer-events="all"
+																/>
+																<circle
+																	fill="white"
+																	cursor="move"
+																	stroke="#7af"
+																	stroke-width="2"
+																	vector-effect="non-scaling-stroke"
+																	r={6 * cameraScale.value}
+																	cx={wp.x}
+																	cy={wp.y}
+																	pointer-events="none"
+																/></g
+															>
 														{/each}
 
 														{@const source_pos = view(
@@ -1498,20 +1530,13 @@
 															['edge', L.pick({ x: 'target_x', y: 'target_y' })],
 															el
 														)}
-														<circle
-															fill="white"
-															cursor="move"
-															stroke="#7af"
-															stroke-width="2"
-															vector-effect="non-scaling-stroke"
-															r={6 * cameraScale.value}
-															cx={el.value?.edge?.source_x}
-															cy={el.value?.edge?.source_y}
+														<g
 															onclick={(evt) => {
 																evt.stopPropagation();
 															}}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary) {
+																	evt.preventDefault();
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = source_pos.value;
 																	pointerOffset.value = Geo.diff2d(
@@ -1540,12 +1565,14 @@
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
-																	cast('update_edge_position', {
+																	dispatch('update_edge_position', {
 																		layer_id: el.value.id,
 																		value: {
 																			source_x: newPos.x,
 																			source_y: newPos.y
 																		}
+																	}).then(({ source_x: x, source_y: y }) => {
+																		source_pos.value = { x, y };
 																	});
 																}
 															}}
@@ -1561,22 +1588,34 @@
 															}}
 															role="button"
 															tabindex="-1"
-														/>
-
-														<circle
-															fill="white"
-															stroke="#7af"
-															cursor="move"
-															stroke-width="2"
-															vector-effect="non-scaling-stroke"
-															r={6 * cameraScale.value}
-															cx={el.value?.edge?.target_x}
-															cy={el.value?.edge?.target_y}
+														>
+															<circle
+																fill="none"
+																cursor="move"
+																stroke="none"
+																pointer-events="all"
+																r={12 * cameraScale.value}
+																cx={el.value?.edge?.source_x}
+																cy={el.value?.edge?.source_y}
+															/><circle
+																fill="white"
+																cursor="move"
+																pointer-events="none"
+																stroke="#7af"
+																stroke-width="2"
+																vector-effect="non-scaling-stroke"
+																r={6 * cameraScale.value}
+																cx={el.value?.edge?.source_x}
+																cy={el.value?.edge?.source_y}
+															/></g
+														>
+														<g
 															onclick={(evt) => {
 																evt.stopPropagation();
 															}}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary) {
+																	evt.preventDefault();
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = target_pos.value;
 																	pointerOffset.value = Geo.diff2d(
@@ -1605,12 +1644,14 @@
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
-																	cast('update_edge_position', {
+																	dispatch('update_edge_position', {
 																		layer_id: el.value.id,
 																		value: {
 																			target_x: newPos.x,
 																			target_y: newPos.y
 																		}
+																	}).then(({ target_x: x, target_y: y }) => {
+																		target_pos.value = { x, y };
 																	});
 																}
 															}}
@@ -1626,7 +1667,27 @@
 															}}
 															role="button"
 															tabindex="-1"
-														/>
+														>
+															<circle
+																fill="none"
+																stroke="none"
+																cursor="move"
+																pointer-events="all"
+																r={12 * cameraScale.value}
+																cx={el.value?.edge?.target_x}
+																cy={el.value?.edge?.target_y}
+															/><circle
+																fill="white"
+																stroke="#7af"
+																cursor="move"
+																stroke-width="2"
+																pointer-events="none"
+																vector-effect="non-scaling-stroke"
+																r={6 * cameraScale.value}
+																cx={el.value?.edge?.target_x}
+																cy={el.value?.edge?.target_y}
+															/></g
+														>
 													{/if}
 
 													{@const corners = {
@@ -1775,6 +1836,7 @@
 														class="draggable"
 														onpointerdown={(evt) => {
 															if (evt.isPrimary) {
+																evt.preventDefault();
 																evt.currentTarget.setPointerCapture(evt.pointerId);
 																backoffValue.value = boxPos.value;
 																pointerOffset.value = Geo.diff2d(
@@ -1842,20 +1904,10 @@
 														{@const pos = view(L.cond([R.prop('box'), ['box', lens]]), el)}
 														{@const posVal = pos.value}
 														{#if posVal}
-															<circle
-																fill="white"
-																stroke="#7af"
-																cursor="move"
-																vector-effect="non-scaling-stroke"
-																stroke-width="2"
-																transform="translate({dy * cameraScale.value * 6},{dx *
-																	cameraScale.value *
-																	6})"
-																r={cameraScale.value * 6}
-																cx={posVal.x}
-																cy={posVal.y}
+															<g
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary) {
+																		evt.preventDefault();
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
 																		pointerOffset.value = Geo.diff2d(
@@ -1908,7 +1960,32 @@
 																}}
 																role="button"
 																tabindex="-1"
-															/>
+																transform="translate({dy * cameraScale.value * 6},{dx *
+																	cameraScale.value *
+																	6})"
+															>
+																<circle
+																	fill="none"
+																	stroke="none"
+																	cursor="move"
+																	pointer-events="all"
+																	vector-effect="non-scaling-stroke"
+																	r={cameraScale.value * 12}
+																	cx={posVal.x}
+																	cy={posVal.y}
+																/>
+																<circle
+																	fill="white"
+																	stroke="#7af"
+																	cursor="move"
+																	pointer-events="none"
+																	vector-effect="non-scaling-stroke"
+																	stroke-width="2"
+																	r={cameraScale.value * 6}
+																	cx={posVal.x}
+																	cy={posVal.y}
+																/>
+															</g>
 														{/if}
 													{/each}
 												{/each}
@@ -3698,5 +3775,8 @@
 		padding: 1ex;
 		font: inherit;
 		min-width: 5em;
+	}
+	[role='button'] {
+		outline: none;
 	}
 </style>
