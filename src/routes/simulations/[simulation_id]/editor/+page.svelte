@@ -1,38 +1,139 @@
 <script>
+	import * as L from 'partial.lenses';
+	import * as R from 'ramda';
 	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
 	import AppBar from '../../../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
+	import { atom, view, viewCombined } from '$lib/reactivity/atom.svelte';
+	import { choice } from 'partial.lenses';
+	import { propEq } from 'ramda';
 
 	const { data } = $props();
 
 	const { _ } = $derived(data.commands);
+
+	const currentInstance = atom(null);
 </script>
 
 <div class="full-page">
 	<AppBar authState={data.authState} />
 
 	<LiveResource socket={data.live_socket} resource={data.simulation}>
-		{#snippet children(simulation, _presence, { dispatch })}
+		{#snippet children(simulation, presence, { dispatch })}
+			{@const nets = view(['shadow_net_system', 'content', 'nets'], simulation)}
+			{@const net_instances = view('net_instances', simulation)}
+			{@const current_net = viewCombined(
+				L.choose(({ currentInstance }) => [
+					'net_instances',
+					L.find(R.propEq(currentInstance, 'id')),
+					'shadow_net_id'
+				]),
+				{ net_instances, currentInstance }
+			)}
 			<header class="header">
 				<div class="header-titel">
 					<a href="{base}/simulations" title="Back" class="nav-link">Back</a>
 
 					<h2>Simulation: {simulation.value.name}</h2>
 				</div>
+
+				<menu class="header-menu">
+					<ol class="menu-bar">
+						<li class="menu-bar-item" tabindex="-1">
+							File
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											alert('the document is saved automatically');
+										}}>Save</button
+									>
+								</li>
+							</ul>
+						</li>
+					</ol>
+				</menu>
+
+				<ul class="presence-list">
+					<!--<li class="presence-list-total">{presence.length}</li>-->
+					{#each presence.value as p (p.data.username)}
+						<li>
+							<svg viewBox="-4 -4 40 40" width="32">
+								<title>{p.data.username} ({p.count})</title>
+								<circle fill={p.data.color} cx="16" cy="16" r="16" stroke="#fff" stroke-width="2" />
+								<text x="16" y="22" text-anchor="middle" font-size="20" fill="#fff"
+									>{p.data.username.substr(0, 1)}</text
+								>
+							</svg>
+						</li>
+					{/each}
+				</ul>
 			</header>
-			<pre style="max-width: 100%; white-space: pre-wrap;">{JSON.stringify(
-					simulation,
-					null,
-					'  '
-				)}</pre>
+			<div class="overlay">
+				<div class="topbar">
+					<div class="toolbar">
+						Net Instance:
+						<select bind:value={currentInstance.value}>
+							<option value={null}>---</option>
+
+							{#each nets.value as nt}
+								{@const this_instances = view(
+									L.filter(R.propEq(nt.id, 'shadow_net_id')),
+									net_instances
+								)}
+								<optgroup label={nt.name}>
+									{#each this_instances.value as ni}
+										<option value={ni.id}>{ni.label}</option>
+									{/each}
+								</optgroup>
+							{/each}
+						</select>
+					</div>
+				</div>
+
+				<div class="body"></div>
+
+				<div class="sidebar right">
+					<div class="toolbar vertical">
+						<details>
+							<summary>Debug Simulation </summary>
+							<textarea>{JSON.stringify(simulation, null, '  ')}</textarea>
+						</details>
+
+						<details>
+							<summary>Debug SNS </summary>
+
+							{#await data.shadow_net_system then sns}
+								{@const currentDoc = view(
+									(id) => R.find((n) => n.id === id, sns.nets)?.document,
+									current_net
+								)}
+								<textarea> {JSON.stringify(currentDoc.value, null, '  ')}</textarea>
+							{/await}
+						</details>
+					</div>
+				</div>
+
+				<div class="sidebar left">
+					<div class="toolbar vertical">
+						Time: {simulation.value.timestep}
+
+						<button type="button">Step</button>
+					</div>
+				</div>
+			</div>
 		{/snippet}
 	</LiveResource>
 </div>
 
 <style>
+	textarea {
+		width: 100%;
+	}
 	.full-page {
 		position: absolute;
 		inset: 0;
@@ -184,6 +285,20 @@
 		-webkit-highlight: none;
 	}
 
+	.overlay {
+		z-index: 100;
+		display: grid;
+		grid-template-columns:
+			[body-start] 0.5ex [top-start left-start] auto [left-end] 1fr[right-start] max(20vw)
+			[right-end top-end] 1em [body-end];
+		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start] 1fr auto [left-end right-end] 1em [body-end];
+		gap: 0.5em;
+		overflow: hidden;
+		width: 100vw;
+
+		contain: strict;
+	}
+
 	.topbar {
 		grid-area: top;
 		align-self: start;
@@ -304,5 +419,33 @@
 		background-color: #23875d;
 		background-image: linear-gradient(#23875d, #23875d);
 		color: #fff;
+	}
+
+	.presence-list {
+		display: grid;
+		grid-auto-flow: column;
+		grid-auto-columns: 1.5ex;
+		list-style: none;
+		padding: 1ex;
+		margin: 0 2em 0 0;
+		align-self: center;
+		margin-left: auto;
+		position: relative;
+		cursor: default;
+		grid-area: right;
+		align-self: end;
+	}
+
+	.presence-list-total {
+		position: absolute;
+		right: -0.75em;
+		top: 0;
+		bottom: 0.5ex;
+		text-align: center;
+		flex: flex;
+		align-items: center;
+		align-content: center;
+		color: #fff;
+		font-weight: bold;
 	}
 </style>

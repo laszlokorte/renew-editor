@@ -40,6 +40,9 @@ export async function load({params, fetch}) {
 						socket_schemas: api.loadJson(j.links.socket_schemas.href).then(socket_schemas => {
 							return new Map(socket_schemas.socket_schemas.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
+						shadow_net_system: api.loadJson(j.content.shadow_net_system.href).then(sns => {
+							return sns.content
+						}),
 					}
 				})
 			} else {
