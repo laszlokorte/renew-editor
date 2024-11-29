@@ -12,7 +12,10 @@
 
 	<p>Welcome to the Renew Web Editor</p>
 
-	<a href="{base}/documents" class="action">View Documents</a>
+	<div>
+		<a href="{base}/documents" class="action">View Documents</a>
+		<a href="{base}/simulations" class="action">View Simulations</a>
+	</div>
 </section>
 
 <style>

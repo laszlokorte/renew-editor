@@ -25,6 +25,13 @@
 		</h2></a
 	>
 
+	<div
+		style="margin-right: auto;padding: 0 1em; display: flex; gap: 1ex; margin-left: 2em; border-left: 1px solid #555;"
+	>
+		<a href="{base}/documents" class="nav-button" title="Documents Overview">Documents</a>
+		<a href="{base}/simulations" class="nav-button" title="Simulations Overview">Simulations</a>
+	</div>
+
 	<div>
 		{#if errors.value.length}
 			<div class="error">
@@ -59,6 +66,16 @@
 		gap: 1ex;
 		padding: 0.5ex;
 		margin: 0;
+	}
+
+	@media (hover: hover) {
+		.nav-button:hover {
+			background: #aaa3;
+		}
+	}
+
+	.nav-button {
+		padding: 1ex 1em;
 	}
 
 	a {
