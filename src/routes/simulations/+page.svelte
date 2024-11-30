@@ -37,7 +37,7 @@
 						<li class="list-item">
 							<a
 								class="list-link"
-								href="{base}/simulations/{sim.id}/editor"
+								href="{base}/simulations/{sim.id}/observer"
 								title="Simulation #{sim.id}">{sim.id}</a
 							>
 							<div class="list-actions">

@@ -22,7 +22,7 @@
 	<AppBar authState={data.authState} />
 
 	<LiveResource socket={data.live_socket} resource={data.simulation}>
-		{#snippet children(simulation, presence, { dispatch })}
+		{#snippet children(simulation, presence, { dispatch, cast })}
 			{@const nets = view(['shadow_net_system', 'content', 'nets'], simulation)}
 			{@const net_instances = view('net_instances', simulation)}
 			{@const current_net = viewCombined(
@@ -122,7 +122,23 @@
 					<div class="toolbar vertical">
 						Time: {simulation.value.timestep}
 
-						<button type="button">Step</button>
+						<button type="button" onclick={(evt) => {
+							evt.preventDefault()
+
+							cast('init')
+						}}>init</button>
+
+						<button type="button" onclick={(evt) => {
+							evt.preventDefault()
+
+							cast('terminate')
+						}}>terminate</button>
+
+						<button type="button" onclick={(evt) => {
+							evt.preventDefault()
+
+							cast('step')
+						}}>Step</button>
 					</div>
 				</div>
 			</div>

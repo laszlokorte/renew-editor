@@ -36,6 +36,8 @@
 	import Symbol from './Symbol.svelte';
 	import TextElement from './TextElement.svelte';
 
+	import * as E from '$lib/dom/events';
+
 	import * as L from 'partial.lenses';
 	import * as R from 'ramda';
 	import Minimap from '$lib/components/editor/overlays/minimap/Minimap.svelte';
@@ -906,6 +908,7 @@
 
 												{#if (deep_bounding)}
 												<rect stroke="#0af" cursor="move" stroke-dasharray="{cameraScale.value * 2} {cameraScale.value * 2}" stroke-width={cameraScale.value * 2} x={deep_bounding.minX} y={deep_bounding.minY} width={deep_bounding.maxX - deep_bounding.minX} height={deep_bounding.maxY - deep_bounding.minY} fill="#0af1"
+												role='button'
 												onclick={evt => {
 													evt.stopPropagation()
 												}}/>
@@ -1435,7 +1438,7 @@
 																role="button"
 																tabindex="-1"
 																onpointerdown={(evt) => {
-																	if (evt.isPrimary) {
+																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		waypoints.value = localProp.reset;
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
@@ -1521,7 +1524,7 @@
 																	});
 																}}
 																onpointerdown={(evt) => {
-																	if (evt.isPrimary) {
+																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
@@ -1608,7 +1611,7 @@
 																evt.stopPropagation();
 															}}
 															onpointerdown={(evt) => {
-																if (evt.isPrimary) {
+																if (evt.isPrimary && E.isLeftButton(evt)) {
 																	evt.preventDefault();
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = source_pos.value;
@@ -1687,7 +1690,7 @@
 																evt.stopPropagation();
 															}}
 															onpointerdown={(evt) => {
-																if (evt.isPrimary) {
+																if (evt.isPrimary && E.isLeftButton(evt)) {
 																	evt.preventDefault();
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = target_pos.value;
@@ -1908,7 +1911,7 @@
 														fill="none"
 														class="draggable"
 														onpointerdown={(evt) => {
-															if (evt.isPrimary) {
+															if (evt.isPrimary && E.isLeftButton(evt)) {
 																evt.preventDefault();
 																evt.currentTarget.setPointerCapture(evt.pointerId);
 																backoffValue.value = boxPos.value;
@@ -1979,7 +1982,7 @@
 														{#if posVal}
 															<g
 																onpointerdown={(evt) => {
-																	if (evt.isPrimary) {
+																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
@@ -3776,6 +3779,7 @@
 		stroke-linecap: round;
 		stroke-linejoin: round;
 		paint-order: stroke;
+		outline: none;
 	}
 
 	.draggable {
@@ -3851,5 +3855,9 @@
 	}
 	[role='button'] {
 		outline: none;
+	}
+
+	g {
+		-webkit-tap-highlight-color: transparent;
 	}
 </style>
