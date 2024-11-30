@@ -4,18 +4,197 @@
 	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
 	import AppBar from '../../../AppBar.svelte';
-	import Modal from '$lib/components/modal/Modal.svelte';
+	import { numberSvgFormat } from '$lib/svg/formatter';
+
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
-	import { atom, view, viewCombined } from '$lib/reactivity/atom.svelte';
+	import { atom, view, viewCombined, combine, read, call } from '$lib/reactivity/atom.svelte';
 	import { choice } from 'partial.lenses';
 	import { propEq } from 'ramda';
+
+	import Modal from '$lib/components/modal/Modal.svelte';
+	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
+	import CameraScroller from '$lib/components/viewport/CameraScroller.svelte';
+
+	import {
+		frameBoxLens,
+		panMovementLens,
+		rotateMovementLens,
+		zoomMovementLens
+	} from '$lib/components/camera/lenses';
+	import Navigator from '$lib/components/camera/Navigator.svelte';
+	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
 
 	const { data } = $props();
 
 	const { _ } = $derived(data.commands);
 
 	const currentInstance = atom(null);
+
+	const activeTool = atom('select');
+
+	const cameraSettings = atom({
+		plane: {
+			autosize: true,
+			x: window.innerWidth * 0.8,
+			y: window.innerHeight * 0.8
+		},
+		frame: {
+			aspect: 'meet',
+			alignX: 'Mid',
+			alignY: 'Mid',
+			autoPadding: true,
+			size: {
+				x: 100,
+				y: 100
+			}
+		}
+	});
+
+	const cameraFocus = atom({ x: 0, y: 0, z: 0, w: 0 });
+
+	const camera = view(
+		[
+			L.pick({
+				focus: 'focus',
+				frame: ['settings', 'frame'],
+				plane: ['settings', 'plane']
+			})
+		],
+		combine({ focus: cameraFocus, settings: cameraSettings })
+	);
+
+	const boxPathLens = L.reread(
+		({ minX, minY, width, height }) =>
+			`M${numberSvgFormat.format(minX)},${numberSvgFormat.format(minY)}h${numberSvgFormat.format(width)}v${numberSvgFormat.format(height)}h${numberSvgFormat.format(-width)}z`
+	);
+	const frameBoxObject = read(frameBoxLens, camera);
+	const frameBoxPath = read([frameBoxLens, 'screenSpaceAligned', boxPathLens], camera);
+
+	const cameraRotationTransformLens = L.reread(
+		(c) => `rotate(${c.focus.w}, ${c.focus.x}, ${c.focus.y})`
+	);
+
+	const cameraRotationInverseTransformLens = L.reread(
+		(c) => `rotate(${-c.focus.w}, ${c.focus.x}, ${c.focus.y})`
+	);
+
+	const cameraScaleLens = L.reread((c) => Math.exp(-c.focus.z));
+	const cameraScaleTransformLens = [cameraScaleLens, L.reread((s) => `scale(${s})`)];
+
+	const scaleTransform = read(cameraScaleTransformLens, camera);
+	const cameraScale = read(cameraScaleLens, camera);
+	const rotationTransform = read(cameraRotationTransformLens, camera);
+	const rotationInverseTransform = read(cameraRotationInverseTransformLens, camera);
+
+	const cameraRotation = view('w', cameraFocus);
+	const cameraZoom = view('z', cameraFocus);
+	const lockRotation = atom(false);
+
+
+	const edgePath = {
+		linear: function (edge, wps) {
+			const waypoints = wps.map(({ x, y }) => `L ${x} ${y}`).join(' ');
+
+			return `M ${edge.source_x} ${edge.source_y} ${waypoints} L ${edge.target_x} ${edge.target_y}`;
+		},
+		autobezier: function (edge, wps) {
+			switch (wps.length) {
+				case 0:
+					return `M ${edge.source_x} ${edge.source_y} L ${edge.target_x} ${edge.target_y}`;
+				case 1:
+					return `M ${edge.source_x} ${edge.source_y}  Q ${wps[0].x} ${wps[0].y} ${edge.target_x} ${edge.target_y}`;
+				default:
+					const points = [{ x: edge.source_x, y: edge.source_y }, ...wps];
+					let path = '';
+					for (let i = 0; i < wps.length; i++) {
+						const x1 = points[i].x;
+						const y1 = points[i].y;
+						const x2 = points[i + 1].x;
+						const y2 = points[i + 1].y;
+						path += `Q ${x1} ${y1} ${(x2 + x1) / 2} ${(y2 + y1) / 2}`;
+					}
+					const waypoints = [{ x: edge.source_x, y: edge.source_y }, ...wps];
+
+					return `M ${edge.source_x} ${edge.source_y} ${path} T ${edge.target_x} ${edge.target_y}`;
+			}
+		}
+	};
+
+	function walkLayer(doc, parent, parents, hidden) {
+		return doc.layers.items
+			.map((l, index) => ({ l, index }))
+			.filter(({ l }) => l.parent_id === parent)
+			.flatMap(({ l, index }) => {
+				const children = walkLayer(doc, l.id, [l.id, ...parents], l.hidden || hidden).map((x, i, a) => ({
+					...x,
+					isLast: i + 1 === a.length
+				}))
+
+				const own_bounding = L.get([L.cond(
+									[R.prop("box"), ['box', L.pick({
+										minX: 'position_x',
+										minY: 'position_y',
+										maxX: [L.props('position_x', 'width'), L.foldTraversalLens(L.sum, L.values)],
+										maxY: [L.props('position_y', 'height'), L.foldTraversalLens(L.sum, L.values)],
+									})]],
+									[R.prop('text'), ['text', L.pick({
+										minX: 'position_x',
+										minY: 'position_y',
+										maxX: 'position_x',
+										maxY: 'position_y',
+									})]],
+									[R.prop("edge"), ['edge', L.pick({
+										minX: L.foldTraversalLens(L.minimum, L.branch({
+										source_x: L.identity,
+										target_x: L.identity,
+										waypoints: [L.elems, 'x']
+									})),
+										minY: L.foldTraversalLens(L.minimum, L.branch({
+										source_y: L.identity,
+										target_y: L.identity,
+										waypoints: [L.elems, 'y']
+									})),
+										maxX: L.foldTraversalLens(L.maximum, L.branch({
+										source_x: L.identity,
+										target_x: L.identity,
+										waypoints: [L.elems, 'x']
+									})),
+										maxY: L.foldTraversalLens(L.maximum, L.branch({
+										source_y: L.identity,
+										target_y: L.identity,
+										waypoints: [L.elems, 'y']
+									})),
+									})]],
+								)], l)
+
+				const deep_bounding = children.reduce(({minX: AccminX,
+					minY: AccminY,
+					maxX: AccmaxX,
+					maxY: AccmaxY}, {deep_bounding: {minX,
+					minY,
+					maxX,
+					maxY}}) => ({
+						minX: Math.min(minX, AccminX),
+						minY: Math.min(minY, AccminY),
+						maxX: Math.max(maxX, AccmaxX),
+						maxY: Math.max(maxY, AccmaxY),
+					}), own_bounding)
+
+				return [
+					{ id: l.id, index, depth: parents.length, parents, hidden: l.hidden || hidden, has_children: children.length > 0, own_bounding, deep_bounding},
+					...children
+				]
+			});
+	}
+
+	function walkDocument(doc) {
+		return [...walkLayer(doc, null, [], false)];
+	}
+
+	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
+
+	let cameraScroller = atom(undefined);
 </script>
 
 <div class="full-page">
@@ -26,13 +205,18 @@
 			{@const nets = view(['shadow_net_system', 'content', 'nets'], simulation)}
 			{@const net_instances = view('net_instances', simulation)}
 			{@const current_net = viewCombined(
-				L.choose(({ currentInstance }) => [
+				L.choices(
+					L.choose(({ currentInstance }) => [
 					'net_instances',
 					L.find(R.propEq(currentInstance, 'id')),
 					'shadow_net_id'
 				]),
+					['net_instances', 0, 'shadow_net_id']
+				),
 				{ net_instances, currentInstance }
 			)}
+
+
 			<header class="header">
 				<div class="header-titel">
 					<a href="{base}/simulations" title="Back" class="nav-link">Back</a>
@@ -92,16 +276,249 @@
 								</optgroup>
 							{/each}
 						</select>
+
+						{currentInstance.value}
 					</div>
 				</div>
 
-				<div class="body"></div>
+				<div class="body">
+					{#await data.shadow_net_system then sns}
+						{@const doc = view(
+							(id) => R.find((n) => n.id === id, sns.nets)?.document,
+							current_net
+						)}
+
+
+							{@const layersInOrder = view(L.reread(walkDocument), doc)}
+							{@const extension = view(
+								[
+									'viewbox',
+									L.pick({
+										minX: 'x',
+										minY: 'y',
+										maxX: L.reread(({ x, width }) => x + width),
+										maxY: L.reread(({ y, height }) => y + height)
+									})
+								],
+								doc
+							)}
+
+
+					{#if doc.value}
+
+					<CameraScroller bind:this={cameraScroller.value} {camera} {extension}>
+							<SVGViewport
+								{camera}
+							>
+								<Navigator
+									{camera}
+									{lockRotation}
+									{frameBoxPath}
+								>
+									{#snippet children(liveLenses, navigationActions)}
+										<rect x="0" y="0" width="100" height="100"></rect>
+										<rect
+											transform={rotationTransform.value}
+											fill="#fff"
+											stroke="#eee"
+											stroke-width="5"
+											{...current_net.value.viewbox}
+										/>
+
+
+										<g transform={rotationTransform.value}>
+											<g id="full-document-{current_net.value.id}">
+												{#each layersInOrder.value as { index, id, depth, hidden } (id)}
+													{#if !hidden}
+														{@const el = view(
+															['layers', 'items', L.find((el) => el.id == id)],
+															current_net
+														)}
+
+
+														{#if el.value?.box}
+															<g
+																role="button"
+																tabindex="-1"
+																fill={el.value?.style?.background_color ?? '#70DB93'}
+																stroke={el.value?.style?.border_color ?? 'black'}
+																stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
+																stroke-width={el.value?.style?.border_width ?? '1'}
+																opacity={el.value?.style?.opacity ?? '1'}
+															>
+																<Symbol
+																	symbols={data.symbols}
+																	symbolId={el.value?.box.shape}
+																	background_url={el.value?.style?.background_url}
+																	box={{
+																		x: el.value?.box.position_x,
+																		y: el.value?.box.position_y,
+																		width: el.value?.box.width,
+																		height: el.value?.box.height
+																	}}
+																/>
+															</g>
+														{/if}
+														{#if el.value?.text}
+															{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
+															{#key el.id}
+																<g
+																	role="button"
+																	tabindex="-1"
+																>
+																	<TextElement bbox={thisbbox} el={el.value} />
+																</g>
+															{/key}
+														{/if}
+														{#if el.value?.edge}
+															<g
+																role="button"
+																tabindex="-1"
+																opacity={el.value?.style?.opacity ?? '1'}
+																stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
+																stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
+																stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+																stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
+															>
+																<path
+																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
+																	)}
+																	pointer-events="stroke"
+																	fill="none"
+																	stroke="none"
+																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+																		10 * cameraScale.value}
+																/>
+																<path
+																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
+																	)}
+																	stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
+																	fill="none"
+																/>
+
+																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+																	{@const source_angle = edgeAngle['source'](
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
+																	)}
+																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+
+																	<g
+																		fill={el.value?.style?.background_color ?? 'black'}
+																		transform="rotate({source_angle} {el.value?.edge.source_x} {el
+																			.value?.edge.source_y})"
+																	>
+																		<Symbol
+																			symbols={data.symbols}
+																			symbolId={el.value?.edge?.style?.source_tip_symbol_shape_id}
+																			box={{
+																				x: el.value?.edge.source_x - size,
+																				y: el.value?.edge.source_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			}}
+																		/>
+																	</g>
+																{/if}
+
+																{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+																	{@const target_angle = edgeAngle['target'](
+																		el.value?.edge,
+																		L.get(localProp('waypoints'), el.value?.edge)
+																	)}
+																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																	<g
+																		fill={el.value?.style?.background_color ?? 'black'}
+																		transform="rotate({target_angle} {el.value?.edge.target_x} {el
+																			.value?.edge.target_y})"
+																	>
+																		<Symbol
+																			symbols={data.symbols}
+																			symbolId={el.value?.edge?.style?.target_tip_symbol_shape_id}
+																			box={{
+																				x: el.value?.edge.target_x - size,
+																				y: el.value?.edge.target_y - size,
+																				width: 2 * size,
+																				height: 2 * size
+																			}}
+																		/>
+																	</g>
+																{/if}
+															</g>
+														{/if}
+													{/if}
+												{/each}
+											</g>
+										</g>
+
+
+
+										{#if activeTool.value === 'magnifier'}
+											<Magnifier
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												cameraRotationLens={liveLenses.cameraRotationIso}
+												{cameraRotation}
+												onZoomDelta={navigationActions.zoomDelta}
+												onZoomFrame={navigationActions.zoomFrame}
+												{cameraScale}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'paner'}
+											<Paner
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onPan={navigationActions.panMove}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'rotator'}
+											<Rotator
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onRotate={navigationActions.rotate}
+												{rotationTransform}
+												{cameraScale}
+											/>
+										{/if}
+
+										{#if activeTool.value === 'zoomer'}
+											<Zoomer
+												{frameBoxPath}
+												clientToCanvas={liveLenses.clientToCanvas}
+												onZoom={navigationActions.zoomDelta}
+												{rotationTransform}
+												{cameraScale}
+											/>
+										{/if}
+
+
+										<MountTrigger
+											onMount={() => {
+												call((c) => {
+													c && c.resetCamera();
+												}, cameraScroller);
+											}}
+										/>
+									{/snippet}
+								</Navigator>
+							</SVGViewport>
+						</CameraScroller>
+					{/if}
+					{/await}
+
+				</div>
 
 				<div class="sidebar right">
 					<div class="toolbar vertical">
 						<details>
 							<summary>Debug Simulation </summary>
-							<textarea>{JSON.stringify(simulation, null, '  ')}</textarea>
+							<textarea>{JSON.stringify(simulation.value, null, '  ')}</textarea>
 						</details>
 
 						<details>

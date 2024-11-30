@@ -51,7 +51,6 @@
 	} from '$lib/components/camera/lenses';
 	import Navigator from '$lib/components/camera/Navigator.svelte';
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
-	import { preventDefault, stopPropagation } from 'svelte/legacy';
 
 	const { data } = $props();
 
