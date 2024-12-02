@@ -409,7 +409,34 @@
 							>
 								{#if simulation.value.running}
 									{#if simulation.value.timestep > 0}
-										Select a Net Instance{:else}
+										{#if current_instance.value}
+											<p>No Visual Net Data available, falling back to text output:</p>
+
+											<LiveResource socket={data.live_socket} resource={current_instance.value}>
+												{#snippet children(instance, _presence, {})}
+													{@const places = view(
+														['tokens', L.reread(R.groupBy(R.prop('place_id'))), L.valueOr({})],
+														instance
+													)}
+
+													<dl>
+														{#each Object.entries(places.value) as [name, tokens]}
+															<dt>{name}</dt>
+															<dd>
+																<ul>
+																	{#each tokens as t}
+																		<li>{t.value}</li>
+																	{/each}
+																</ul>
+															</dd>
+														{/each}
+													</dl>
+												{/snippet}
+											</LiveResource>
+										{:else}
+											Select a Net Instance
+										{/if}
+									{:else}
 										Starting...{/if}
 								{:else}
 									<div style="display: flex; flex-direction: column;">
