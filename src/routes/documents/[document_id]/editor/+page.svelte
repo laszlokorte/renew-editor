@@ -652,16 +652,10 @@
 							Simulate
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Start</button>
+									<button class="menu-bar-item-button">Show Simulations</button>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Pause</button>
-								</li>
-								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Step</button>
-								</li>
-								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Stop</button>
+									<button class="menu-bar-item-button">New Simulation</button>
 								</li>
 							</ul>
 						</li>
@@ -677,11 +671,14 @@
 							Help
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Reference</button>
+									<a
+										class="menu-bar-item-button"
+										href="https://tgipm.informatik.uni-hamburg.de/confluence/x/BwAdJQ">Confluence</a
+									>
 								</li>
 								<li class="menu-bar-menu-item">
 									<a class="menu-bar-item-button" target="_blank" href="http://www.renew.de"
-										>Website</a
+										>renew.de</a
 									>
 								</li>
 							</ul>

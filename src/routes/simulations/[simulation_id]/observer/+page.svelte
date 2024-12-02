@@ -8,7 +8,15 @@
 
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
-	import { atom, view, viewCombined, combine, read, call } from '$lib/reactivity/atom.svelte';
+	import {
+		atom,
+		view,
+		viewCombined,
+		combine,
+		read,
+		call,
+		readCombined
+	} from '$lib/reactivity/atom.svelte';
 	import { choice } from 'partial.lenses';
 	import { propEq } from 'ramda';
 
@@ -30,6 +38,7 @@
 	} from '$lib/components/camera/lenses';
 	import Navigator from '$lib/components/camera/Navigator.svelte';
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
+	import { preventDefault } from 'svelte/legacy';
 
 	const { data } = $props();
 
@@ -162,11 +171,41 @@
 			<div class="overlay">
 				<div class="topbar">
 					<div class="toolbar">
-						Current Instance:
-						{currentInstance.value}
+						{#if simulation.value.running}
+							<button
+								class="tool-button"
+								type="button"
+								onclick={(evt) => {
+									evt.preventDefault();
 
-						Current NEt:
-						{current_net_id.value}
+									cast('terminate');
+								}}>terminate</button
+							>
+
+							{#if simulation.value.timestep > 0}
+								<button
+									class="tool-button"
+									type="button"
+									onclick={(evt) => {
+										evt.preventDefault();
+
+										cast('step');
+									}}>Step</button
+								>
+							{:else}
+								Starting...
+							{/if}
+						{:else}
+							<button
+								class="tool-button"
+								type="button"
+								onclick={(evt) => {
+									evt.preventDefault();
+
+									cast('init');
+								}}>init</button
+							>
+						{/if}
 					</div>
 				</div>
 
@@ -192,8 +231,7 @@
 									minY: 0,
 									maxX: 0,
 									maxY: 0
-								}),
-								L.log()
+								})
 							],
 							doc
 						)}
@@ -244,12 +282,24 @@
 																</g>
 															{/if}
 															{#if el.value?.text}
-																{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
-																{#key el.id}
-																	<g opacity="0.2" role="button" tabindex="-1">
-																		<TextElement bbox={thisbbox} el={el.value} />
-																	</g>
-																{/key}
+																{@const isInitialMark = readCombined(
+																	L.choose(({ doc, el }) => [
+																		'el',
+																		'hyperlink',
+																		L.reread((hl) => R.find(R.propEq(hl, 'id'), doc.layers.items)),
+																		'semantic_tag',
+																		L.reread(R.equals('de.renew.gui.PlaceFigure'))
+																	]),
+																	{ doc, el }
+																)}
+																{#if !isInitialMark.value}
+																	{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
+																	{#key el.id}
+																		<g role="button" tabindex="-1">
+																			<TextElement bbox={thisbbox} el={el.value} />
+																		</g>
+																	{/key}
+																{/if}
 															{/if}
 															{#if el.value?.edge}
 																<g
@@ -378,24 +428,88 @@
 											{/if}
 											<LiveResource socket={data.live_socket} resource={current_instance.value}>
 												{#snippet children(instance, _presence, {})}
-													{@const tokens = read('tokens', instance)}
-													{#each tokens.value as token}
+													{@const places = view(
+														[
+															'tokens',
+															L.reread(R.groupBy(R.prop('place_id'))),
+															L.valueOr({}),
+															L.partsOf(L.entries)
+														],
+														instance
+													)}
+													{@const firings = read('firings', instance)}
+													{#each firings.value as fir (fir.id)}
 														{@const pos = view(
 															[
 																'layers',
 																'items',
-																L.find((el) => el.id == token.place_id),
+																L.find((el) => el.id == fir.transition_id),
 																[
 																	'box',
 																	L.pick({
 																		x: 'position_x',
-																		y: 'position_y'
+																		y: 'position_y',
+																		width: 'width',
+																		height: 'height'
 																	})
 																]
 															],
 															doc
 														)}
-														<text {...pos.value}>{token.value}</text>
+														<rect
+															{...pos.value}
+															fill="white"
+															fill-opacity="0.3"
+															stroke="lime"
+															stroke-width="8"
+															class="transition-fade-out"
+														></rect>
+													{/each}
+
+													{#each places.value as [place_id, tokens] (place_id)}
+														{@const pos = view(
+															[
+																'layers',
+																'items',
+																L.find((el) => el.id == place_id),
+																[
+																	'box',
+																	L.reread(({ position_x, position_y, width, height }) => ({
+																		x: position_x + width / 2,
+																		y: position_y + height / 2
+																	}))
+																]
+															],
+															doc
+														)}
+														<text {...pos.value} text-anchor="middle">
+															{#each tokens as token, ti (token.id)}
+																{#if ti > 0}
+																	<tspan>; </tspan>
+																{/if}
+
+																{#if R.match(/^\w+\[\d+\]$/, token.value).length}
+																	<tspan
+																		cursor="pointer"
+																		text-decoration="underline"
+																		onclick={(evt) => {
+																			evt.preventDefault();
+
+																			currentInstance.value = L.get(
+																				[
+																					'net_instances',
+																					L.find(R.propEq(token.value, 'label')),
+																					'id'
+																				],
+																				simulation.value
+																			);
+																		}}>{token.value}</tspan
+																	>
+																{:else}
+																	<tspan>{token.value}</tspan>
+																{/if}
+															{/each}
+														</text>
 													{/each}
 												{/snippet}
 											</LiveResource>
@@ -405,36 +519,83 @@
 							</CameraScroller>
 						{:else}
 							<div
-								style="align-self: stretch; justify-self: stretch; display: grid; align-content: center; justify-content: center; font-size: 2em;"
+								style="background: #ddeeee; align-self: stretch; justify-self: stretch; display: grid; align-content: stretch; justify-content: stretch; font-size: 1.2em;align-items: center; justify-items: center;"
 							>
 								{#if simulation.value.running}
 									{#if simulation.value.timestep > 0}
 										{#if current_instance.value}
-											<p>No Visual Net Data available, falling back to text output:</p>
+											<div
+												style="background: #fff; padding: 1em; align-self: start; margin-top: 7em; border: 2px solid #aaa"
+											>
+												<em>No visual Net Data available, falling back to text output:</em>
 
-											<LiveResource socket={data.live_socket} resource={current_instance.value}>
-												{#snippet children(instance, _presence, {})}
-													{@const places = view(
-														['tokens', L.reread(R.groupBy(R.prop('place_id'))), L.valueOr({})],
-														instance
-													)}
+												<LiveResource socket={data.live_socket} resource={current_instance.value}>
+													{#snippet children(instance, _presence, {})}
+														{@const places = view(
+															[
+																'tokens',
+																L.reread(R.groupBy(R.prop('place_id'))),
+																L.valueOr({}),
+																L.partsOf(L.entries)
+															],
+															instance
+														)}
 
-													<dl>
-														{#each Object.entries(places.value) as [name, tokens]}
-															<dt>{name}</dt>
-															<dd>
-																<ul>
-																	{#each tokens as t}
-																		<li>{t.value}</li>
-																	{/each}
-																</ul>
-															</dd>
-														{/each}
-													</dl>
-												{/snippet}
-											</LiveResource>
+														{@const placeCount = view('length', places)}
+
+														{#if placeCount.value}
+															<dl
+																style="display: grid; grid-template-columns: auto 1fr; gap: 1ex 1em"
+															>
+																{#each places.value as [name, tokens]}
+																	<dt style="font-weight: bold;">{name}:</dt>
+																	<dd style="margin: 0; padding: 0;">
+																		<ul
+																			style="margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 1ex"
+																		>
+																			{#each tokens as t}
+																				{#if R.match(/^\w+\[\d+\]$/, t.value).length}
+																					<li>
+																						<u
+																							style="cursor: pointer;"
+																							onclick={(evt) => {
+																								evt.preventDefault();
+
+																								currentInstance.value = L.get(
+																									[
+																										'net_instances',
+																										L.find(R.propEq(t.value, 'label')),
+																										'id'
+																									],
+																									simulation.value
+																								);
+																							}}>{t.value}</u
+																						>;
+																					</li>
+																				{:else}
+																					<li>{t.value};</li>
+																				{/if}
+																			{/each}
+																		</ul>
+																	</dd>
+																{/each}
+															</dl>
+														{:else}
+															<div style="margin-top: 1em; font-weight: bold;">
+																No tokens in this Net instance
+															</div>
+														{/if}
+													{/snippet}
+												</LiveResource>
+											</div>
 										{:else}
 											Select a Net Instance
+
+											<MountTrigger
+												onMount={() => {
+													currentInstance.value = L.get([0, 'id'], net_instances.value);
+												}}
+											/>
 										{/if}
 									{:else}
 										Starting...{/if}
@@ -443,6 +604,7 @@
 										Simulation is not running
 										<button
 											type="button"
+											class="tool-button"
 											onclick={(evt) => {
 												evt.preventDefault();
 
@@ -460,8 +622,6 @@
 					<div class="toolbar vertical">
 						Net Instances:
 						<select bind:value={currentInstance.value} size="10">
-							<option value={null}>---</option>
-
 							{#each nets.value as nt}
 								{@const this_instances = view(
 									L.filter(R.pathEq(nt.id, ['links', 'shadow_net', 'id'])),
@@ -498,39 +658,6 @@
 				<div class="sidebar left">
 					<div class="toolbar vertical">
 						Time: {simulation.value.timestep}
-
-						{#if simulation.value.running}
-							<button
-								type="button"
-								onclick={(evt) => {
-									evt.preventDefault();
-
-									cast('terminate');
-								}}>terminate</button
-							>
-
-							{#if simulation.value.timestep > 0}
-								<button
-									type="button"
-									onclick={(evt) => {
-										evt.preventDefault();
-
-										cast('step');
-									}}>Step</button
-								>
-							{:else}
-								Starting...
-							{/if}
-						{:else}
-							<button
-								type="button"
-								onclick={(evt) => {
-									evt.preventDefault();
-
-									cast('init');
-								}}>init</button
-							>
-						{/if}
 					</div>
 				</div>
 			</div>
@@ -697,7 +824,7 @@
 		z-index: 100;
 		display: grid;
 		grid-template-columns:
-			[body-start] 0.5ex [top-start left-start] auto [left-end] 1fr[right-start] max(20vw)
+			[body-start] 0.5ex [top-start left-start] auto [left-end] 1fr[right-start] max(30vw)
 			[right-end top-end] 1em [body-end];
 		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start] 1fr auto [left-end right-end] 1em [body-end];
 		gap: 0.5em;
@@ -772,12 +899,6 @@
 		justify-self: stretch;
 	}
 
-	@media (max-width: 40em) {
-		.sidebar.right {
-			display: none;
-		}
-	}
-
 	a {
 		color: inherit;
 	}
@@ -821,6 +942,7 @@
 
 	option {
 		font: inherit;
+		font-weight: normal;
 	}
 
 	select option:checked {
@@ -855,5 +977,35 @@
 		align-content: center;
 		color: #fff;
 		font-weight: bold;
+	}
+	.tool-button {
+		background: #333;
+		color: #fff;
+		border: none;
+		padding: 1ex;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.tool-button:active {
+		background: #000;
+	}
+
+	.transition-fade-out {
+		animation-name: transition-fade-out;
+		animation-duration: 0.5s;
+		animation-timing-function: ease-out;
+		animation-fill-mode: forwards;
+		opacity: 1;
+	}
+
+	@keyframes transition-fade-out {
+		from {
+			opacity: 1;
+		}
+
+		to {
+			opacity: 0;
+		}
 	}
 </style>

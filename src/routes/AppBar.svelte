@@ -76,6 +76,9 @@
 
 	.nav-button {
 		padding: 1ex 1em;
+		max-width: 10vw;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	a {

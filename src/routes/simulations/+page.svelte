@@ -27,7 +27,7 @@
 
 	<div class="scrollable">
 		<div class="title">
-			<strong>Name</strong>
+			<strong>Id</strong>
 		</div>
 
 		<LiveResource socket={data.live_socket} resource={data.simulations}>
@@ -41,7 +41,12 @@
 								title="Simulation #{sim.id}">{sim.id}</a
 							>
 							<div class="list-actions">
-								Time: {sim.content.timestep}
+								<div>
+									Main Net: {sim.label}
+								</div>
+								<div>
+									Current Timestep: {sim.content.timestep}
+								</div>
 							</div>
 						</li>
 					{/each}
@@ -251,7 +256,7 @@
 		display: grid;
 		justify-content: stretch;
 		gap: 0.5ex;
-		grid-template-columns: 1fr auto;
+		grid-template-columns: 1fr 3fr;
 		align-items: center;
 		align-content: stretch;
 	}
@@ -284,6 +289,7 @@
 		grid-column: 2 / span 1;
 		grid-row: 1;
 		padding: 1ex;
+		padding-right: 4em;
 		user-select: none;
 		touch-action: pan-x pan-y;
 		-webkit-user-select: none;
