@@ -26,6 +26,14 @@ function createCommands(fetchFn, doc) {
 				})
 		},
 
+		simulateDocument() {
+			return api
+				.simulateDocument(doc.id)
+				.then((r) => {
+					return goto(`${base}/simulations/${r.id}/observer`)
+				})
+		},
+
 		uploadSvg(svg) {
 			return api.uploadSvg(doc.id, svg)
 		}

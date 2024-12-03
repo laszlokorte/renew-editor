@@ -8,12 +8,82 @@
 
 	const { data } = $props();
 
-	const { _ } = $derived(data.commands);
+	const { createSimulation } = $derived(data.commands);
+
+	let createFormVisible = $state(false);
+	let importing = $state(false);
+	let importingDocuments = $state([]);
+
+	function showCreateForm(evt) {
+		evt.preventDefault();
+
+		createFormVisible = true;
+	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="full-page">
 	<AppBar authState={data.authState} />
+
+	<Modal bind:visible={createFormVisible} canClose={!importing} closeLabel="Cancel">
+		<form
+			disabled={importing}
+			class="upload-form"
+			onsubmit={(evt) => {
+				evt.preventDefault();
+				const formData = new FormData(evt.currentTarget);
+				const document_ids = formData.getAll('document_ids');
+				importing = true;
+				createSimulation(document_ids, formData.get('main_net_name'))
+					.catch(() => {
+						alert('error');
+					})
+					.then(() => {
+						importing = false;
+					});
+			}}
+		>
+			<h3>Create Simulation</h3>
+
+			{#if importing}
+				<p>Compiling...</p>
+			{:else}
+				{#await data.documents}
+					Loading...
+				{:then docs}
+					<label>
+						Net Documents<br />
+						<select
+							bind:value={importingDocuments}
+							multiple
+							name="document_ids"
+							required
+							size="10"
+							style="width: 20em"
+						>
+							{#each docs.content.items as doc (doc.id)}
+								<option value={doc.id}>{doc.name}</option>
+							{/each}
+						</select>
+					</label>
+
+					<label>
+						Net Documents<br />
+						<select name="main_net_name" required>
+							{#each docs.content.items as doc (doc.id)}
+								{#if importingDocuments.indexOf(doc.id) > -1}
+									<option value={doc.name}>{doc.name}</option>
+								{/if}
+							{/each}
+						</select>
+					</label>
+				{/await}
+				<p>
+					<button type="submit">Create</button>
+				</p>
+			{/if}
+		</form>
+	</Modal>
 
 	<header>
 		<div>
@@ -22,7 +92,11 @@
 			<h2>Simulations</h2>
 		</div>
 
-		<div class="button-group"></div>
+		<div class="button-group">
+			<form onsubmit={showCreateForm}>
+				<button type="submit">New Simulation&hellip;</button>
+			</form>
+		</div>
 	</header>
 
 	<div class="scrollable">

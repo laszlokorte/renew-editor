@@ -160,6 +160,13 @@
 		});
 	}
 
+	function simulateThisDocument(evt) {
+		evt.preventDefault();
+		data.commands.simulateDocument().catch((e) => {
+			update((e) => [...e, e.message], errors);
+		});
+	}
+
 	function causeError(e) {
 		update((e) => [...e, 'Some Error'], errors);
 	}
@@ -655,7 +662,9 @@
 									<button class="menu-bar-item-button">Show Simulations</button>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">New Simulation</button>
+									<button class="menu-bar-item-button" onclick={simulateThisDocument}
+										>New Simulation</button
+									>
 								</li>
 							</ul>
 						</li>
@@ -771,7 +780,7 @@
 									{lockRotation}
 									{frameBoxPath}
 								>
-									{#snippet children(liveLenses, navigationActions)}
+									{#snippet children(liveLenses, navigationf)}
 										<rect
 											transform={rotationTransform.value}
 											fill="#fff"

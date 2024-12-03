@@ -1,8 +1,11 @@
 <script>
-	let { visible = $bindable(false), closeLabel = 'Close', children } = $props();
+	let { visible = $bindable(false), canClose = true, closeLabel = 'Close', children } = $props();
 
 	function onClose(evt) {
 		evt.preventDefault();
+		if (!canClose) {
+			return;
+		}
 		visible = false;
 	}
 
@@ -10,6 +13,9 @@
 		if (evt.key === 'Escape' && visible) {
 			evt.preventDefault();
 			evt.stopPropagation();
+			if (!canClose) {
+				return;
+			}
 			visible = false;
 		}
 	}
@@ -33,7 +39,9 @@
 	></div>
 	<div class="modal-content">
 		<div class="modal-head">
-			<button type="reset" class="modal-close" onclick={onClose}>{closeLabel}</button>
+			<button disabled={!canClose} type="reset" class="modal-close" onclick={onClose}
+				>{closeLabel}</button
+			>
 		</div>
 		<div class="modal-body">
 			{#if visible}
@@ -107,5 +115,10 @@
 		padding: 0;
 		margin: 0;
 		cursor: pointer;
+	}
+
+	.modal-close:disabled {
+		cursor: default;
+		opacity: 0.2;
 	}
 </style>
