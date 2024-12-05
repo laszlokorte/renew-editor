@@ -780,7 +780,7 @@
 									{lockRotation}
 									{frameBoxPath}
 								>
-									{#snippet children(liveLenses, navigationf)}
+									{#snippet children(liveLenses, navigationActions)}
 										<rect
 											transform={rotationTransform.value}
 											fill="#fff"
