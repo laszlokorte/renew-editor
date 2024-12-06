@@ -160,11 +160,19 @@
 		});
 	}
 
+	let startingSimulation = $state(false);
 	function simulateThisDocument(evt) {
 		evt.preventDefault();
-		data.commands.simulateDocument().catch((e) => {
-			update((e) => [...e, e.message], errors);
-		});
+		startingSimulation = true;
+		data.commands
+			.simulateDocument()
+			.catch((e) => {
+				console.error(e);
+				update((errs) => [...errs, e.message], errors);
+			})
+			.then(() => {
+				startingSimulation = false;
+			});
 	}
 
 	function causeError(e) {
@@ -389,12 +397,15 @@
 										style="color: #aa0000">Delete</button
 									>
 								</li>
+								<!--
+
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<button class="menu-bar-item-button" onclick={causeError} style="color: #aa0000"
 										>Cause Error</button
 									>
 								</li>
+								-->
 							</ul>
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
@@ -657,25 +668,35 @@
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
 							Simulate
-							<ul class="menu-bar-menu">
+							<ul class="menu-bar-menu" class:open={startingSimulation}>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Show Simulations</button>
+									<a class="menu-bar-item-button" href="{base}/simulations" target="_blank"
+										>Show Simulations</a
+									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button" onclick={simulateThisDocument}
-										>New Simulation</button
+									<button
+										disabled={startingSimulation}
+										class="menu-bar-item-button"
+										onclick={simulateThisDocument}
 									>
+										{#if startingSimulation}
+											Compiling…
+										{:else}
+											New Simulation
+										{/if}
+									</button>
 								</li>
 							</ul>
 						</li>
-						<li class="menu-bar-item" tabindex="-1">
+						<!-- <li class="menu-bar-item" tabindex="-1">
 							Share
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
 									<button class="menu-bar-item-button">Share Link</button>
 								</li>
 							</ul>
-						</li>
+						</li> -->
 						<li class="menu-bar-item" tabindex="-1">
 							Help
 							<ul class="menu-bar-menu">
@@ -2659,8 +2680,9 @@
 								use:bindValue={view(['style', 'border_width', L.valueOr('0')], singleSelectedLayer)}
 							/>
 						{/snippet}
-						<div style="display: flex; gap: 1ex; align-items: center;">
-							Selected:
+						<div
+							style="display: flex; gap: 1ex; align-items: center; white-space: wrap; padding: 0 1ex;"
+						>
 							{#if singleSelectedLayerType.value}
 								{@render {
 									text: textProps,
@@ -2671,7 +2693,7 @@
 							{:else if selectedLayersType.value.length > 1}
 								{selectedLayersType.value.length} layers
 							{:else}
-								none
+								Nothing Selected
 							{/if}
 						</div>
 					</div>
@@ -3353,6 +3375,10 @@
 	}
 
 	.menu-bar:focus-within .menu-bar-item:hover > .menu-bar-menu {
+		display: flex;
+	}
+
+	.menu-bar-menu.open {
 		display: flex;
 	}
 

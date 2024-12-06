@@ -192,6 +192,26 @@
 										cast('step');
 									}}>Step</button
 								>
+
+								<button
+									class="tool-button"
+									type="button"
+									onclick={(evt) => {
+										evt.preventDefault();
+
+										cast('play');
+									}}>play</button
+								>
+
+								<button
+									class="tool-button"
+									type="button"
+									onclick={(evt) => {
+										evt.preventDefault();
+
+										cast('pause');
+									}}>pause</button
+								>
 							{:else}
 								Starting...
 							{/if}

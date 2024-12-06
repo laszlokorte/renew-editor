@@ -30,7 +30,9 @@ function createCommands(fetchFn, doc) {
 			return api
 				.simulateDocument(doc.id)
 				.then((r) => {
-					return goto(`${base}/simulations/${r.id}/observer`)
+					window.open(`${base}/simulations/${r.id}/observer`)
+					
+					return r 
 				})
 		},
 

@@ -4,6 +4,7 @@
 	import AppBar from '../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
+	import { atom } from '$lib/reactivity/atom.svelte';
 	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
 
 	const { data } = $props();
@@ -13,6 +14,7 @@
 	let createFormVisible = $state(false);
 	let importing = $state(false);
 	let importingDocuments = $state([]);
+	let importError = atom(undefined);
 
 	function showCreateForm(evt) {
 		evt.preventDefault();
@@ -31,12 +33,16 @@
 			class="upload-form"
 			onsubmit={(evt) => {
 				evt.preventDefault();
+				if (importing) {
+					return;
+				}
 				const formData = new FormData(evt.currentTarget);
 				const document_ids = formData.getAll('document_ids');
 				importing = true;
+				importError.value = false;
 				createSimulation(document_ids, formData.get('main_net_name'))
-					.catch(() => {
-						alert('error');
+					.catch((e) => {
+						importError.value = e.message;
 					})
 					.then(() => {
 						importing = false;
@@ -44,44 +50,53 @@
 			}}
 		>
 			<h3>Create Simulation</h3>
-
-			{#if importing}
-				<p>Compiling...</p>
-			{:else}
+			{#if importError.value}
+				<p style="color: #a00">{importError.value}</p>
+			{/if}
+			<div>
+				{#if importing}
+					<p>Compiling...</p>
+				{/if}
 				{#await data.documents}
 					Loading...
 				{:then docs}
-					<label>
-						Net Documents<br />
-						<select
-							bind:value={importingDocuments}
-							multiple
-							name="document_ids"
-							required
-							size="10"
-							style="width: 20em"
-						>
-							{#each docs.content.items as doc (doc.id)}
-								<option value={doc.id}>{doc.name}</option>
-							{/each}
-						</select>
-					</label>
+					<p>
+						<label>
+							Net Documents:<br />
+							(Select the Documents to compose into a shadow net system.)<br />
+							<select
+								bind:value={importingDocuments}
+								multiple
+								name="document_ids"
+								required
+								size="10"
+								style="width: 100%; box-sizing: border-box;"
+							>
+								{#each docs.content.items as doc (doc.id)}
+									<option value={doc.id}>{doc.name}</option>
+								{/each}
+							</select>
+						</label>
+					</p>
 
-					<label>
-						Net Documents<br />
-						<select name="main_net_name" required>
-							{#each docs.content.items as doc (doc.id)}
-								{#if importingDocuments.indexOf(doc.id) > -1}
-									<option value={doc.name}>{doc.name}</option>
-								{/if}
-							{/each}
-						</select>
-					</label>
+					<p>
+						<label>
+							Main Name<br />
+							(The net to initialize the simulation with)<br />
+							<select style="min-width: 10em;" name="main_net_name" required>
+								{#each docs.content.items as doc (doc.id)}
+									{#if importingDocuments.indexOf(doc.id) > -1}
+										<option value={doc.name}>{doc.name}</option>
+									{/if}
+								{/each}
+							</select>
+						</label>
+					</p>
 				{/await}
 				<p>
-					<button type="submit">Create</button>
+					<button type="submit" style="opacity: 1; background: #009;">Create</button>
 				</p>
-			{/if}
+			</div>
 		</form>
 	</Modal>
 
@@ -105,7 +120,7 @@
 		</div>
 
 		<LiveResource socket={data.live_socket} resource={data.simulations}>
-			{#snippet children(simulations, _presence, { dispatch })}
+			{#snippet children(simulations, _presence, { dispatch, cast })}
 				<ul>
 					{#each simulations.value.items as sim (sim.id)}
 						<li class="list-item">
@@ -114,13 +129,42 @@
 								href="{base}/simulations/{sim.id}/observer"
 								title="Simulation #{sim.id}">{sim.id}</a
 							>
-							<div class="list-actions">
+							<div class="list-details">
 								<div>
 									Main Net: {sim.label}
 								</div>
 								<div>
 									Current Timestep: {sim.content.timestep}
 								</div>
+							</div>
+							<div class="list-actions">
+								{#if sim.content.running}
+									<button
+										type="button"
+										class="action-export"
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('stop', { id: sim.id });
+										}}>Stop</button
+									>
+								{:else}
+									<button
+										type="button"
+										class="action-confirm"
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('start', { id: sim.id });
+										}}>Start</button
+									>
+								{/if}
+								<button
+									type="button"
+									class="action-delete"
+									onclick={(evt) => {
+										evt.preventDefault();
+										cast('delete', { id: sim.id });
+									}}>Delete</button
+								>
 							</div>
 						</li>
 					{/each}
@@ -330,13 +374,13 @@
 		display: grid;
 		justify-content: stretch;
 		gap: 0.5ex;
-		grid-template-columns: 1fr 3fr;
-		align-items: center;
+		grid-template-columns: 1fr auto auto;
+		align-items: stretch;
 		align-content: stretch;
 	}
 
 	.list-link {
-		grid-column: 1 / span 2;
+		grid-column: 1 / span 3;
 		grid-row: 1;
 		touch-action: pan-x pan-y;
 	}
@@ -359,11 +403,28 @@
 		margin-right: -1.5ex;
 	}
 
-	.list-actions {
+	.list-details {
 		grid-column: 2 / span 1;
 		grid-row: 1;
 		padding: 1ex;
-		padding-right: 4em;
+		padding-right: 1em;
+		user-select: none;
+		touch-action: pan-x pan-y;
+		-webkit-user-select: none;
+
+		-webkit-touch-callout: none;
+		-webkit-user-callout: none;
+		-webkit-user-select: none;
+		-webkit-user-drag: none;
+		-webkit-user-modify: none;
+		-webkit-highlight: none;
+	}
+
+	.list-actions {
+		grid-column: 3 / span 1;
+		grid-row: 1;
+		padding: 1ex;
+		padding-right: 1em;
 		user-select: none;
 		touch-action: pan-x pan-y;
 		-webkit-user-select: none;
@@ -396,6 +457,16 @@
 		.list-actions {
 			grid-column: 1 / span 2;
 			grid-row: 2 / span 1;
+		}
+
+		.list-details {
+			grid-column: 3 / span 1;
+			grid-row: 2 / span 1;
+		}
+
+		.list-link {
+			grid-column: 1 / span 3;
+			grid-row: 1 / span 1;
 		}
 	}
 	.action-delete {
@@ -440,10 +511,6 @@
 		}
 	}
 
-	.action-rename {
-		background: transparent;
-		color: #333;
-	}
 	@media (pointer: fine) {
 		.action-export:not(:disabled):hover {
 			background: #333;
