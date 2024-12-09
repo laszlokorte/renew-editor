@@ -79,7 +79,8 @@ function walkLayer(doc, parent, parents, hidden) {
 									)
 								})
 							]
-						]
+						],
+						[L.reread(R.always({ minX:  Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }))]
 					)
 				],
 				l

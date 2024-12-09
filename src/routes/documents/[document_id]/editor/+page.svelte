@@ -152,6 +152,11 @@
 	let errors = atom([]);
 
 	let selectedLayers = atom([]);
+	let groupDrag = atom(undefined);
+	let groupDragDelta = view(
+		[L.reread(({ bx, by, cx, cy }) => ({ x: cx - bx, y: cy - by })), L.valueOr({ x: 0, y: 0 })],
+		groupDrag
+	);
 
 	function deleteThisDocument(evt) {
 		evt.preventDefault();
@@ -478,6 +483,25 @@
 									</li>
 								{/each}
 
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										disabled={!singleSelectedLayer.value}
+										onclick={(evt) => {
+											evt.preventDefault();
+
+											dispatch('create_layer', {
+												child_layer_id: singleSelectedLayer.value.id
+											}).then(({ id }) => {
+												if (id) {
+													selectedLayers.value = [id];
+													cast('select', id);
+												}
+											});
+										}}>Wrap in Group</button
+									>
+								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<button
@@ -824,18 +848,74 @@
 
 												{#if deep_bounding}
 													<rect
+														tabindex="-1"
 														stroke="#0af"
 														cursor="move"
 														stroke-dasharray="{cameraScale.value * 2} {cameraScale.value * 2}"
 														stroke-width={cameraScale.value * 2}
-														x={deep_bounding.minX}
-														y={deep_bounding.minY}
-														width={deep_bounding.maxX - deep_bounding.minX}
-														height={deep_bounding.maxY - deep_bounding.minY}
-														fill="#0af1"
+														x={deep_bounding.minX - 3 * cameraScale.value + groupDragDelta.value.x}
+														y={deep_bounding.minY - 3 * cameraScale.value + groupDragDelta.value.y}
+														width={deep_bounding.maxX - deep_bounding.minX + 6 * cameraScale.value}
+														height={deep_bounding.maxY - deep_bounding.minY + 6 * cameraScale.value}
+														fill="none"
+														pointer-events="all"
 														role="button"
+														data-layer-id={id}
 														onclick={(evt) => {
 															evt.stopPropagation();
+														}}
+														onpointerdown={(evt) => {
+															if (evt.isPrimary && E.isLeftButton(evt)) {
+																evt.currentTarget.setPointerCapture(evt.pointerId);
+
+																const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+
+																groupDrag.value = {
+																	pointerId: evt.pointerId,
+																	bx: world.x,
+																	by: world.y,
+																	cx: world.x,
+																	cy: world.y
+																};
+															}
+														}}
+														onpointermove={(evt) => {
+															if (
+																evt.isPrimary &&
+																evt.currentTarget.hasPointerCapture(evt.pointerId)
+															) {
+																const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+
+																update(
+																	L.set(L.props('cx', 'cy'), { cx: world.x, cy: world.y }),
+																	groupDrag
+																);
+															}
+														}}
+														onpointerup={(evt) => {
+															if (
+																evt.isPrimary &&
+																evt.currentTarget.hasPointerCapture(evt.pointerId)
+															) {
+																const layer_id = evt.currentTarget.getAttribute('data-layer-id');
+																const delta = groupDragDelta.value;
+																dispatch('move_layer_relative', {
+																	layer_id,
+																	dx: delta.x,
+																	dy: delta.y
+																})
+																	.catch(() => {})
+																	.then(() => {
+																		groupDrag.value = undefined;
+																	});
+															}
+														}}
+														onkeydown={(evt) => {
+															if (evt.key === 'Escape' || evt.key === 'Esc') {
+																evt.stopPropagation();
+																evt.currentTarget.releasePointerCapture(groupDrag.value.pointerId);
+																groupDrag.value = undefined;
+															}
 														}}
 													/>
 												{/if}
@@ -1274,6 +1354,40 @@
 										</g>
 
 										{#if activeTool.value === 'select'}
+											<g transform={rotationTransform.value} opacity="0.7">
+												{#each selectedLayers.value as id (id)}
+													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+
+													{@const deep_bounding = view(
+														[L.find((el) => el.id == id && el.has_children), 'deep_bounding'],
+														layersInOrder
+													).value}
+
+													{#if deep_bounding}
+														<rect
+															stroke="#0af"
+															cursor="move"
+															stroke-dasharray="{cameraScale.value * 2} {cameraScale.value * 2}"
+															stroke-width={cameraScale.value * 2}
+															x={deep_bounding.minX -
+																3 * cameraScale.value +
+																groupDragDelta.value.x}
+															y={deep_bounding.minY -
+																3 * cameraScale.value +
+																groupDragDelta.value.y}
+															width={deep_bounding.maxX -
+																deep_bounding.minX +
+																6 * cameraScale.value}
+															height={deep_bounding.maxY -
+																deep_bounding.minY +
+																6 * cameraScale.value}
+															fill="#0af5"
+															pointer-events="none"
+														/>
+													{/if}
+												{/each}
+											</g>
+
 											<g transform={rotationTransform.value}>
 												<!-- svelte-ignore a11y_no_static_element_interactions -->
 												{#each selectedLayers.value as id (id)}
