@@ -1387,7 +1387,8 @@
 													{/if}
 												{/each}
 											</g>
-
+										{/if}
+										{#if activeTool.value === 'select' || activeTool.value === 'edge'}
 											<g transform={rotationTransform.value}>
 												<!-- svelte-ignore a11y_no_static_element_interactions -->
 												{#each selectedLayers.value as id (id)}
@@ -1802,7 +1803,14 @@
 															/></g
 														>
 													{/if}
-
+												{/each}
+											</g>
+										{/if}
+										{#if activeTool.value === 'select'}
+											<g transform={rotationTransform.value}>
+												<!-- svelte-ignore a11y_no_static_element_interactions -->
+												{#each selectedLayers.value as id (id)}
+													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 													{@const corners = {
 														topLeft: {
 															dx: -1,

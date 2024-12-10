@@ -15,6 +15,7 @@
 		combine,
 		read,
 		call,
+		update,
 		readCombined
 	} from '$lib/reactivity/atom.svelte';
 	import { choice } from 'partial.lenses';
@@ -46,6 +47,7 @@
 
 	const currentInstance = atom(null);
 	const textBounds = atom({});
+	const expandedPlaces = atom({});
 
 	const activeTool = atom('select');
 
@@ -185,6 +187,7 @@
 							{#if simulation.value.timestep > 0}
 								<button
 									class="tool-button"
+									disabled={simulation.value.is_playing}
 									type="button"
 									onclick={(evt) => {
 										evt.preventDefault();
@@ -195,6 +198,7 @@
 
 								<button
 									class="tool-button"
+									disabled={simulation.value.is_playing !== false}
 									type="button"
 									onclick={(evt) => {
 										evt.preventDefault();
@@ -205,6 +209,7 @@
 
 								<button
 									class="tool-button"
+									disabled={simulation.value.is_playing !== true}
 									type="button"
 									onclick={(evt) => {
 										evt.preventDefault();
@@ -279,6 +284,7 @@
 															)}
 
 															{#if el.value?.box}
+																{@const expanded = view([id, L.defaults(false)], expandedPlaces)}
 																<g
 																	role="button"
 																	tabindex="-1"
@@ -287,6 +293,16 @@
 																	stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
 																	stroke-width={el.value?.style?.border_width ?? '1'}
 																	opacity={el.value?.style?.opacity ?? '1'}
+																	onclick={(evt) => {
+																		evt.preventDefault();
+																		update((x) => !x, expanded);
+																	}}
+																	onkeydown={(evt) => {
+																		if (evt.key === 'Space') {
+																			evt.preventDefault();
+																			update((x) => !x, expanded);
+																		}
+																	}}
 																>
 																	<Symbol
 																		symbols={data.symbols}
@@ -502,33 +518,47 @@
 															],
 															doc
 														)}
-														<text {...pos.value} text-anchor="middle">
-															{#each tokens as token, ti (token.id)}
-																{#if ti > 0}
-																	<tspan>; </tspan>
-																{/if}
+														{@const expanded = view([place_id, L.defaults(false)], expandedPlaces)}
+														<text
+															{...pos.value}
+															text-anchor="middle"
+															class="place-tokens"
+															onclick={(evt) => {
+																evt.preventDefault();
+																update((x) => !x, expanded);
+															}}
+															class:tokenCount={!expanded.value}
+														>
+															{#if expanded.value}
+																{#each tokens as token, ti (token.id)}
+																	{#if ti > 0}
+																		<tspan>; </tspan>
+																	{/if}
 
-																{#if R.match(/^\w+\[\d+\]$/, token.value).length}
-																	<tspan
-																		cursor="pointer"
-																		text-decoration="underline"
-																		onclick={(evt) => {
-																			evt.preventDefault();
+																	{#if R.match(/^\w+\[\d+\]$/, token.value).length}
+																		<tspan
+																			cursor="pointer"
+																			text-decoration="underline"
+																			onclick={(evt) => {
+																				evt.preventDefault();
 
-																			currentInstance.value = L.get(
-																				[
-																					'net_instances',
-																					L.find(R.propEq(token.value, 'label')),
-																					'id'
-																				],
-																				simulation.value
-																			);
-																		}}>{token.value}</tspan
-																	>
-																{:else}
-																	<tspan>{token.value}</tspan>
-																{/if}
-															{/each}
+																				currentInstance.value = L.get(
+																					[
+																						'net_instances',
+																						L.find(R.propEq(token.value, 'label')),
+																						'id'
+																					],
+																					simulation.value
+																				);
+																			}}>{token.value}</tspan
+																		>
+																	{:else}
+																		<tspan>{token.value}</tspan>
+																	{/if}
+																{/each}
+															{:else}
+																{tokens.length || 0}
+															{/if}
 														</text>
 													{/each}
 												{/snippet}
@@ -686,6 +716,15 @@
 </div>
 
 <style>
+	.tokenCount {
+		font-weight: bold;
+		font-size: 2em;
+	}
+
+	.place-tokens {
+		dominant-baseline: middle;
+	}
+
 	textarea {
 		width: 100%;
 	}
@@ -1009,6 +1048,10 @@
 
 	.tool-button:active {
 		background: #000;
+	}
+	.tool-button:disabled {
+		cursor: default;
+		background: gray;
 	}
 
 	.transition-fade-out {
