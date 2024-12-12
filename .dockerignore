@@ -1,0 +1,8 @@
+.svelte-kit
+.build
+dev
+node_modules
+publish.sh
+README.md
+deployment_config
+!deployment_config/nginx.conf
