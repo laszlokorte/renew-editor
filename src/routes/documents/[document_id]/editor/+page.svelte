@@ -82,7 +82,6 @@
 		{ name: 'Zoom', id: 'zoomer' },
 		{ name: 'Rotate', id: 'rotator' },
 		{ name: 'Pen', id: 'pen' },
-		{ name: 'Annotate', id: 'annotate' },
 		{ name: 'Edge', id: 'edge' },
 		{ name: 'Polygon', id: 'polygon' },
 		{ name: 'Spacer', id: 'spacer' }
@@ -1477,7 +1476,6 @@
 																tabindex="-1"
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
-																		evt.preventDefault();
 																		waypoints.value = localProp.reset;
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = wp_proposal;
@@ -1563,7 +1561,6 @@
 																}}
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
-																		evt.preventDefault();
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
 																		waypoints.value = localProp.reset;
@@ -1650,7 +1647,6 @@
 															}}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary && E.isLeftButton(evt)) {
-																	evt.preventDefault();
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = source_pos.value;
 																	pointerOffset.value = Geo.diff2d(
@@ -1729,7 +1725,6 @@
 															}}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary && E.isLeftButton(evt)) {
-																	evt.preventDefault();
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = target_pos.value;
 																	pointerOffset.value = Geo.diff2d(
@@ -1957,7 +1952,6 @@
 														class="draggable"
 														onpointerdown={(evt) => {
 															if (evt.isPrimary && E.isLeftButton(evt)) {
-																evt.preventDefault();
 																evt.currentTarget.setPointerCapture(evt.pointerId);
 																backoffValue.value = boxPos.value;
 																pointerOffset.value = Geo.diff2d(
@@ -2028,7 +2022,6 @@
 															<g
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
-																		evt.preventDefault();
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
 																		pointerOffset.value = Geo.diff2d(
@@ -2126,34 +2119,71 @@
 
 																		if (iid) {
 																			const socket_schema = s.get(iid);
-																			return socket_schema.sockets.map((sock) => ({
-																				id: {
-																					socket: sock.id,
-																					layer: id
-																				},
-																				x: buildCoord(
-																					{
-																						x: el.box.position_x,
-																						y: el.box.position_y,
-																						width: el.box.width,
-																						height: el.box.height
-																					},
-																					'x',
-																					false,
-																					sock.x
-																				),
-																				y: buildCoord(
-																					{
-																						x: el.box.position_x,
-																						y: el.box.position_y,
-																						width: el.box.width,
-																						height: el.box.height
-																					},
-																					'y',
-																					false,
-																					sock.y
-																				)
-																			}));
+																			return socket_schema.sockets
+																				.map((sock) => {
+																					if (el.box) {
+																						return {
+																							id: {
+																								socket: sock.id,
+																								layer: id
+																							},
+																							x: buildCoord(
+																								{
+																									x: el.box.position_x,
+																									y: el.box.position_y,
+																									width: el.box.width,
+																									height: el.box.height
+																								},
+																								'x',
+																								false,
+																								sock.x
+																							),
+																							y: buildCoord(
+																								{
+																									x: el.box.position_x,
+																									y: el.box.position_y,
+																									width: el.box.width,
+																									height: el.box.height
+																								},
+																								'y',
+																								false,
+																								sock.y
+																							)
+																						};
+																					} else if (el.text?.hint) {
+																						return {
+																							id: {
+																								socket: sock.id,
+																								layer: id
+																							},
+																							x: buildCoord(
+																								{
+																									x: el.text.hint.x,
+																									y: el.text.hint.y,
+																									width: el.text.hint.width,
+																									height: el.text.hint.height
+																								},
+																								'x',
+																								false,
+																								sock.x
+																							),
+																							y: buildCoord(
+																								{
+																									x: el.text.hint.x,
+																									y: el.text.hint.y,
+																									width: el.text.hint.width,
+																									height: el.text.hint.height
+																								},
+																								'y',
+																								false,
+																								sock.y
+																							)
+																						};
+																					} else {
+																						return null;
+																					}
+																				})
+																				.filter(R.identity);
 																		} else {
 																			return [];
 																		}
