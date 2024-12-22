@@ -12,7 +12,7 @@
 </script>
 
 {#if auth.isAuthenticated}
-	<a href="{base}/auth">{auth.value.email.substr(0, 10)}...</a>
+	<a href="{base}/auth">{auth.value.email}</a>
 	<!--<LogoutForm auth={auth} onSuccess={onLogout} />-->
 {:else}
 	<a href="{base}/auth">Login</a>
@@ -25,5 +25,8 @@
 		padding: 1ex;
 		display: inline-block;
 		background: black;
+		max-width: 10vw;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 </style>

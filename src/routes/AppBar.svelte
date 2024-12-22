@@ -28,8 +28,10 @@
 	<div
 		style="margin-right: auto;padding: 0 1em; display: flex; gap: 1ex; margin-left: 2em; border-left: 1px solid #555;"
 	>
+		{#if authState.isAuthenticated}
 		<a href="{base}/documents" class="nav-button" title="Documents Overview">Documents</a>
 		<a href="{base}/simulations" class="nav-button" title="Simulations Overview">Simulations</a>
+		{/if}
 	</div>
 
 	<div>

@@ -462,6 +462,7 @@
 													{cameraScale}
 												/>
 											{/if}
+											<g transform={rotationTransform.value}>
 											<LiveResource socket={data.live_socket} resource={current_instance.value}>
 												{#snippet children(instance, _presence, {})}
 													{@const places = view(
@@ -563,6 +564,7 @@
 													{/each}
 												{/snippet}
 											</LiveResource>
+										</g>
 										{/snippet}
 									</Navigator>
 								</SVGViewport>

@@ -3590,6 +3590,18 @@
 		contain: strict;
 	}
 
+	:global(body) {
+		user-select: none;
+		-webkit-user-select: none;
+
+		-webkit-touch-callout: none;
+		-webkit-user-callout: none;
+		-webkit-user-select: none;
+		-webkit-user-drag: none;
+		-webkit-user-modify: none;
+		-webkit-highlight: none;
+	}
+
 	.body {
 		grid-area: body;
 		place-self: stretch;
