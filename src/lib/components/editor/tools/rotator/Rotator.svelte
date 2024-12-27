@@ -125,7 +125,7 @@
 				Math.atan2(newPos.y - piv.y, newPos.x - piv.x) -
 				Math.atan2(rotationRef.value.y - piv.y, rotationRef.value.x - piv.x);
 
-			if (onRotate) {
+			if (!isNaN(dw) && onRotate) {
 				onRotate({
 					dw: (dw * 180) / Math.PI,
 					px: piv.x,
