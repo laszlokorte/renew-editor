@@ -30,9 +30,15 @@ export async function load({fetch}) {
 			commands: createCommands(api, fetch),
 			documents: docApi.listDocuments()
 		})).catch((e) => {
-			return error(503, {
-				message: 'Service Unavailable'
-			});
+			if(e.error == "http") {
+				return error(e.status, {
+					message: e.original.errors.detail
+				});
+			} else {
+				return error(503, {
+					message: 'Service Unavailable'
+				});
+			}
 		})
 	} else {
 		return redirect(307, `${base}/auth`)

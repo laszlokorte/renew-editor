@@ -75,6 +75,19 @@
 	const gridDistance = atom(32);
 	const gridDistanceExp = view(logLens(2), gridDistance);
 
+	function throttle(mainFunction, delay) {
+		let timerFlag = null;
+
+		return (...args) => {
+			if (timerFlag === null) {
+				mainFunction(...args);
+				timerFlag = setTimeout(() => {
+					timerFlag = null;
+				}, delay);
+			}
+		};
+	}
+
 	const tools = [
 		{ name: 'Select', id: 'select' },
 		{ name: 'Magnifier', id: 'magnifier' },
@@ -219,6 +232,7 @@
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}
+			{@const moveCursor = throttle((pos) => cast('cursor', pos), 20)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
 			{@const extension = view(
 				[
@@ -806,6 +820,9 @@
 										backoffValue.value = undefined;
 									}
 								}}
+								ontouchend={(evt) => {
+									evt.preventDefault();
+								}}
 								onkeydown={(evt) => {
 									if (evt.key == 'Escape') {
 										selectedLayers.value = [];
@@ -815,10 +832,10 @@
 							>
 								<Navigator
 									onworldcursor={(pos) => {
-										cast('cursor', pos);
+										moveCursor(pos);
 									}}
 									onpointerout={(pos) => {
-										cast('cursor', null);
+										moveCursor(null);
 									}}
 									{camera}
 									{lockRotation}
@@ -865,6 +882,8 @@
 														}}
 														onpointerdown={(evt) => {
 															if (evt.isPrimary && E.isLeftButton(evt)) {
+																evt.preventDefault();
+																evt.currentTarget.focus();
 																evt.currentTarget.setPointerCapture(evt.pointerId);
 
 																const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
@@ -1476,6 +1495,8 @@
 																tabindex="-1"
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
+																		evt.preventDefault();
+																		evt.currentTarget.focus();
 																		waypoints.value = localProp.reset;
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = wp_proposal;
@@ -1561,6 +1582,8 @@
 																}}
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
+																		evt.preventDefault();
+																		evt.currentTarget.focus();
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
 																		waypoints.value = localProp.reset;
@@ -1647,6 +1670,8 @@
 															}}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary && E.isLeftButton(evt)) {
+																	evt.preventDefault();
+																	evt.currentTarget.focus();
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = source_pos.value;
 																	pointerOffset.value = Geo.diff2d(
@@ -1725,6 +1750,8 @@
 															}}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary && E.isLeftButton(evt)) {
+																	evt.preventDefault();
+																	evt.currentTarget.focus();
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = target_pos.value;
 																	pointerOffset.value = Geo.diff2d(
@@ -1952,6 +1979,8 @@
 														class="draggable"
 														onpointerdown={(evt) => {
 															if (evt.isPrimary && E.isLeftButton(evt)) {
+																evt.preventDefault();
+																evt.currentTarget.focus();
 																evt.currentTarget.setPointerCapture(evt.pointerId);
 																backoffValue.value = boxPos.value;
 																pointerOffset.value = Geo.diff2d(
@@ -2022,6 +2051,8 @@
 															<g
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
+																		evt.preventDefault();
+																		evt.currentTarget.focus();
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
 																		pointerOffset.value = Geo.diff2d(

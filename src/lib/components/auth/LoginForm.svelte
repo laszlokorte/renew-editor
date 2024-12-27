@@ -5,6 +5,7 @@
 	const { auth, onSuccess } = $props();
 
 	const knownApis = [
+		{ label: 'PetriStation', url: 'https://api.petristation.net/api' },
 		{ label: 'RenewCollab', url: 'https://renewcollab.laszlokorte.de/api' },
 		{ label: 'LocalDev', url: 'http://localhost:4000/api' }
 	];

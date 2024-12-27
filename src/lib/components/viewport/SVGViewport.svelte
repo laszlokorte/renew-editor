@@ -3,7 +3,7 @@
 	import { view, atom, update, combine, read } from '$lib/reactivity/atom.svelte';
 	import { numberSvgFormat } from '$lib/svg/formatter';
 
-	const { camera, children, onclick, onkeydown, onpointermove } = $props();
+	const { camera, children, onclick, onkeydown, onpointermove, ondblclick } = $props();
 
 	let svgElement = atom(undefined);
 	let svgPoint = read(
@@ -27,6 +27,7 @@
 	tabindex="-1"
 	preserveAspectRatio="xMidYMin slice"
 	{onclick}
+	{ondblclick}
 	{onkeydown}
 	{onpointermove}
 	viewBox={viewBox.value}
