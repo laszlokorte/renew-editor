@@ -2310,10 +2310,11 @@
 												clientToCanvas={liveLenses.clientToCanvas}
 												{rotationTransform}
 												{cameraScale}
-												onDraw={(points) => {
+												onDraw={(points, closed) => {
 													dispatch('create_layer', {
 														base_layer_id: L.get('id', singleSelectedLayer.value),
-														points
+														points,
+														cyclic: !!closed
 													}).then((l) => {
 														selectedLayers.value = [l.id];
 														cast('select', l.id);
@@ -2381,6 +2382,7 @@
 						<hr />
 
 						{#snippet edgeProps()}
+							{@const isCyclic = view(['edge', 'cyclic', L.valueOr(false)], singleSelectedLayer)}
 							<input
 								type="number"
 								class="number-spinner"
@@ -2547,6 +2549,22 @@
 								<option value="square">Square</option>
 								<option value="round">Round</option>
 							</select>
+							<label style="white-space: nowrap;">
+								<input
+									type="checkbox"
+									bind:checked={isCyclic.value}
+									onchange={(evt) => {
+										console.log('x');
+										cast('change_edge_attributes', {
+											layer_id: singleSelectedLayer.value.id,
+											attrs: {
+												cyclic: evt.currentTarget.checked
+											}
+										});
+									}}
+								/>
+								Cyclic
+							</label>
 						{/snippet}
 						{#snippet boxProps()}
 							<select
@@ -3619,18 +3637,6 @@
 		width: 100vw;
 
 		contain: strict;
-	}
-
-	:global(body) {
-		user-select: none;
-		-webkit-user-select: none;
-
-		-webkit-touch-callout: none;
-		-webkit-user-callout: none;
-		-webkit-user-select: none;
-		-webkit-user-drag: none;
-		-webkit-user-modify: none;
-		-webkit-highlight: none;
 	}
 
 	.body {

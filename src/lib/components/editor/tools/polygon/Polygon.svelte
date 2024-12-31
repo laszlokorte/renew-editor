@@ -139,7 +139,7 @@
 		if (dragging.value) {
 			dragging.value = false;
 		} else if (pathCanFinish.value) {
-			onDraw(path.value);
+			onDraw(path.value, false);
 			path.value = [];
 		}
 	}}
@@ -252,14 +252,12 @@
 
 		if (draftSnappedFinish.value) {
 			finishDraft.value = pathHead.value;
-			currentPath.value = pathHead.value;
-			onDraw(path.value);
+			onDraw(path.value, false);
 			path.value = [];
 		} else if (draftSnappedClose.value) {
 			if (pathCanClose.value) {
 				closeDraft.value = pathRoot.value;
-				currentPath.value = pathRoot.value;
-				onDraw(path.value);
+				onDraw(path.value, true);
 				path.value = [];
 			}
 		} else if (draftSnappedPop.value) {

@@ -105,12 +105,33 @@
 	);
 
 	const guidePath = read(
-		L.getter((b) =>
+		L.reread((b) =>
 			b && b.start && b.end
 				? `M${numberSvgFormat.format(b.start.x)},${numberSvgFormat.format(b.start.y)}L${numberSvgFormat.format(b.end.x)},${numberSvgFormat.format(b.end.y)}`
 				: ''
 		),
 		guide
+	);
+
+	const direction = read(
+		L.reread((b) => {
+			if (b && b.start && b.end) {
+				return { dx: b.end.x - b.start.x, dy: b.end.y - b.start.y };
+			} else {
+				return { dx: 0, dy: 0 };
+			}
+		}),
+		guide
+	);
+
+	const arrowTip = read(
+		L.reread(({ dx, dy }) => {
+			const l = Math.hypot(dx, dy) || 1;
+			const nx = dx / l;
+			const ny = dy / l;
+			return `l${numberSvgFormat.format(100 * ny)},${numberSvgFormat.format(100 * -nx)}l${numberSvgFormat.format(100 * (nx - ny))},${numberSvgFormat.format(100 * (ny + nx))}l${numberSvgFormat.format(100 * (-nx - ny))},${numberSvgFormat.format(100 * (-ny + nx))}l${numberSvgFormat.format(100 * ny)},${numberSvgFormat.format(100 * -nx)}`;
+		}),
+		direction
 	);
 
 	const newGuideEdgePointsA = readCombined(
@@ -122,29 +143,9 @@
 		}
 	);
 
-	const newGuideEdgePointsB = readCombined(
-		[L.reread(R.compose(R.apply(Geo.rayInsideQuad), R.props(['angle', 'dist', 'quad'])))],
-		{
-			angle: guideAngle,
-			dist: endDistance,
-			quad: read('worldSpace', frameBoxObject)
-		}
-	);
-
-	const newGuideRayPath = readCombined(
-		L.reread(
-			({ s: { a: sa, b: sb }, t: { a: ta, b: tb } }) =>
-				`M${sa.x},${sa.y}L${sb.x},${sb.y}L${tb.x},${tb.y} L${ta.x},${ta.y} z`
-		),
-		{ s: newGuideEdgePointsA, t: newGuideEdgePointsB }
-	);
-
-	const newGuideRayPathEdge = readCombined(
-		L.reread(
-			({ s: { a: sa, b: sb }, t: { a: ta, b: tb } }) =>
-				`M${sa.x},${sa.y}L${sb.x},${sb.y}M${ta.x},${ta.y} L${tb.x},${tb.y} z`
-		),
-		{ s: newGuideEdgePointsA, t: newGuideEdgePointsB }
+	const newGuideRayPathEdge = read(
+		L.reread(({ a: sa, b: sb }) => `M${sa.x},${sa.y}L${sb.x},${sb.y}`),
+		newGuideEdgePointsA
 	);
 
 	export const canCancel = read(R.identity, isActive);
@@ -178,6 +179,12 @@
 			return;
 		}
 		inversed.value = evt.altKey || evt.shiftKey;
+	}}
+	oncontextmenu={(evt) => {
+		if (isActive.value) {
+			evt.preventDefault();
+			isActive.value = false;
+		}
 	}}
 	onpointerdown={(evt) => {
 		if (!evt.isPrimary) {
@@ -258,16 +265,15 @@
 		<path
 			fill="none"
 			stroke="black"
-			d={newGuideRayPath.value}
-			class="spacer-area"
+			d={newGuideRayPathEdge.value}
+			class="spacer-edge"
 			class:inversed={inversed.value}
 			pointer-events="none"
 		/>
 		<path
+			d={guidePath.value + arrowTip.value}
 			fill="none"
-			stroke="black"
-			d={newGuideRayPathEdge.value}
-			class="spacer-edge"
+			class="spacer-arrow"
 			class:inversed={inversed.value}
 			pointer-events="none"
 		/>
@@ -305,6 +311,17 @@
 		vector-effect: non-scaling-stroke;
 	}
 	.spacer-edge.inversed {
+		stroke: indianred;
+	}
+
+	.spacer-arrow {
+		stroke: mediumaquamarine;
+		stroke-opacity: 0.3;
+		stroke-width: 4px;
+		vector-effect: non-scaling-stroke;
+	}
+
+	.spacer-arrow.inversed {
 		stroke: indianred;
 	}
 

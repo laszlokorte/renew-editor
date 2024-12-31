@@ -33,6 +33,11 @@
 		evt.preventDefault();
 		isActive.value = false;
 	}}
+	onmousedown={(evt) => {
+		if (evt.button === 1 && isActive.value) {
+			evt.preventDefault();
+		}
+	}}
 	onpointerdown={(evt) => {
 		if (!evt.isPrimary || !E.isLeftButton(evt)) {
 			return;

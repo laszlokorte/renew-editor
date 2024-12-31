@@ -16,7 +16,8 @@
 			L.rewrite(({ pivot }) => ({ pivot, ref: pivot })),
 			L.removable('pivot'),
 			'pivot',
-			L.removable('x', 'y')
+			L.removable('x', 'y'),
+			L.props('x', 'y')
 		],
 		rotation
 	);
@@ -24,7 +25,7 @@
 		L.lens(R.compose(R.not, R.isNil), (b, o) => (b ? o : undefined)),
 		rotationPivot
 	);
-	const rotationRef = view('ref', rotation);
+	const rotationRef = view(['ref', L.removable('x', 'y'), L.props('x', 'y')], rotation);
 
 	const rotationRadius = view(
 		[
@@ -37,7 +38,7 @@
 					const dx = ref.x - pivot.x;
 					const dy = ref.y - pivot.y;
 
-					const oldRadius = Math.hypot(dx, dy);
+					const oldRadius = Math.hypot(dx, dy) || 1;
 
 					return {
 						pivot,
@@ -98,6 +99,11 @@
 		evt.preventDefault();
 		isActive.value = false;
 	}}
+	onmousedown={(evt) => {
+		if (evt.button === 1 && isActive.value) {
+			evt.preventDefault();
+		}
+	}}
 	onpointerdown={(evt) => {
 		if (!evt.isPrimary || !E.isLeftButton(evt)) {
 			isActive.value = false;
@@ -125,13 +131,12 @@
 				Math.atan2(newPos.y - piv.y, newPos.x - piv.x) -
 				Math.atan2(rotationRef.value.y - piv.y, rotationRef.value.x - piv.x);
 
-			if (!isNaN(dw) && onRotate) {
-				onRotate({
-					dw: (dw * 180) / Math.PI,
-					px: piv.x,
-					py: piv.y
-				});
-			}
+			onRotate({
+				dw: (dw * 180) / Math.PI,
+				px: piv.x,
+				py: piv.y
+			});
+
 			rotationRadius.value = distance;
 		} else {
 			rotationRef.value = newPos;
