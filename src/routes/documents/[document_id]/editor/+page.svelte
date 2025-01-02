@@ -1421,8 +1421,8 @@
 																	localProp('waypoints'),
 																	L.reread(
 																		R.pipe(
-																			R.prepend({ x: e.source_x, y: e.source_y, id: 'source' }),
-																			R.append({ x: e.target_x, y: e.target_y, id: 'target' }),
+																			R.prepend({ x: e.source_x, y: e.source_y, id: '__source' }),
+																			R.append({ x: e.target_x, y: e.target_y, id: '__target' }),
 																			R.aperture(2),
 																			R.map(([a, b]) => ({
 																				id_before: a.id,
@@ -1529,7 +1529,10 @@
 																	) {
 																		cast('create_waypoint', {
 																			layer_id: el.value.id,
-																			after_waypoint_id: wp_proposal.id_before,
+																			after_waypoint_id:
+																				wp_proposal.id_before.substr(0, 2) == '__'
+																					? null
+																					: wp_proposal.id_before,
 																			position: pos.value
 																		});
 																	}
