@@ -71,17 +71,23 @@ export async function load({params, fetch}) {
 						semantic_tags: api.loadJson(j.links.semantic_tags.href).then(semantic_tags => {
 							return semantic_tags.semantic_tags
 						}),
+						primitives: api.loadJson(j.links.primitives.href).then(primitives => {
+							return primitives.groups
+						}),
+						blueprints: api.loadJson(j.links.blueprints.href).then(blueprints => {
+							return new Map(blueprints.blueprints.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
+						}),
 					}
 				})
 			} else {
 				return r.json().catch(e => {
-					throw error(r.status, {message: "Unknown Errror", details: e});
+					throw error(r.status || 420, {message: "Unknown Errror", details: e});
 				}).then((e)  => {
-					throw error(r.status, {message: e.message, details: e});
+					throw error(r.status || 420, {message: e.message, details: e});
 				})
 			}
 		}).catch((e) => {
-			return error(e.status, {
+			return error(e.status || 420, {
 				message: e?.body?.message ?? e.message
 			});
 		})

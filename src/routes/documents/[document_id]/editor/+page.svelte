@@ -65,6 +65,7 @@
 	const textBounds = atom({});
 	const showMinimap = atom(true);
 	const showCursors = atom(true);
+	const selectedBlueprint = atom(undefined);
 	const showOtherSelections = atom(true);
 	const showDebug = atom(true);
 	const showGrid = atom(false);
@@ -748,6 +749,13 @@
 										>renew.de</a
 									>
 								</li>
+								<li class="menu-bar-menu-item">
+									<a
+										class="menu-bar-item-button"
+										target="_blank"
+										href="https://www.petristation.net/">petristation.net</a
+									>
+								</li>
 							</ul>
 						</li>
 					</ol>
@@ -879,13 +887,14 @@
 														data-layer-id={id}
 														onclick={(evt) => {
 															evt.stopPropagation();
+															backoffValue.value = undefined;
 														}}
 														onpointerdown={(evt) => {
 															if (evt.isPrimary && E.isLeftButton(evt)) {
 																evt.preventDefault();
 																evt.currentTarget.focus();
 																evt.currentTarget.setPointerCapture(evt.pointerId);
-
+																backoffValue.value = true;
 																const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
 
 																groupDrag.value = {
@@ -954,11 +963,13 @@
 																role="button"
 																onclick={(evt) => {
 																	evt.stopPropagation();
-																	selectedLayers.value = [el.value?.id];
+																	if (groupDrag.value === undefined) {
+																		selectedLayers.value = [el.value?.id];
 
-																	if (el.value?.id) {
-																		evt.preventDefault();
-																		cast('select', el.value?.id);
+																		if (el.value?.id) {
+																			evt.preventDefault();
+																			cast('select', el.value?.id);
+																		}
 																	}
 																}}
 																tabindex="-1"
@@ -994,10 +1005,12 @@
 																	role="button"
 																	onclick={(evt) => {
 																		evt.stopPropagation();
-																		selectedLayers.value = [el.value?.id];
-																		if (el.value?.id) {
-																			evt.preventDefault();
-																			cast('select', el.value?.id);
+																		if (groupDrag.value === undefined) {
+																			selectedLayers.value = [el.value?.id];
+																			if (el.value?.id) {
+																				evt.preventDefault();
+																				cast('select', el.value?.id);
+																			}
 																		}
 																	}}
 																	tabindex="-1"
@@ -1017,10 +1030,12 @@
 																role="button"
 																onclick={(evt) => {
 																	evt.stopPropagation();
-																	selectedLayers.value = [el.value?.id];
-																	if (el.value?.id) {
-																		evt.preventDefault();
-																		cast('select', el.value?.id);
+																	if (groupDrag.value === undefined) {
+																		selectedLayers.value = [el.value?.id];
+																		if (el.value?.id) {
+																			evt.preventDefault();
+																			cast('select', el.value?.id);
+																		}
 																	}
 																}}
 																tabindex="-1"
@@ -3257,198 +3272,99 @@
 				<div class="sidebar left">
 					<div class="toolbar vertical">
 						<small>Create</small>
+						{#await data.primitives}
+							-
+						{:then groups}
+							{#each groups as g}
+								<hr />
+								{#each g.items as item}
+									<div
+										role="application"
+										draggable={!item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value}
+										ondragstart={(evt) => {
+											const d = {
+												...item.data,
+												content: {
+													...item.data.content,
+													hyperlink: item.data.content.hyperlink
+														? singleSelectedLayer.value.id
+														: undefined
+												}
+											};
+
+											evt.stopPropagation();
+											evt.dataTransfer.effectAllowed = 'copy';
+											evt.currentTarget.setAttribute('aria-grabbed', 'true');
+											const positionInfo = evt.currentTarget.getBoundingClientRect();
+											evt.dataTransfer.setDragImage(
+												evt.currentTarget,
+												positionInfo.width * d.alignX,
+												positionInfo.height * d.alignY
+											);
+											const data = d.dynamicContent
+												? d.dynamicContent(properties.value)
+												: d.content;
+											evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+
+											// Work-around for
+											// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+											evt.dataTransfer.setData(
+												'text/plain',
+												JSON.stringify({
+													mime: d.mimeType,
+													data: data
+												})
+											);
+										}}
+									>
+										<svg
+											class:droppable={!item.data.content.hyperlink ||
+												singleSelectedIsBoxOrEdge.value}
+											style:opacity={!item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value
+												? 1
+												: 0.5}
+											viewBox="-4 -4 40 40"
+											width="32"
+										>
+											{@html item.icon}
+										</svg>
+									</div>
+								{/each}
+							{/each}
+						{:catch e}
+							error
+						{/await}
+
 						<hr />
-						<div
-							role="application"
-							draggable={true}
-							ondragstart={(evt) => {
-								const d = {
-									content: {
-										semantic_tag: 'de.renew.gui.PlaceFigure',
-										shape_id: '3B66E69A-057A-40B9-A1A0-9DB44EF5CE42',
-										socket_schema_id: '2C5DE751-2FB8-48DE-99B6-D99648EBDFFC'
-									},
-									mimeType: 'application/json+renewex-layer',
-									alignX: 0.5,
-									alignY: 0.5
-								};
-
-								evt.stopPropagation();
-								evt.dataTransfer.effectAllowed = 'copy';
-								evt.currentTarget.setAttribute('aria-grabbed', 'true');
-								const positionInfo = evt.currentTarget.getBoundingClientRect();
-								evt.dataTransfer.setDragImage(
-									evt.currentTarget,
-									positionInfo.width * d.alignX,
-									positionInfo.height * d.alignY
-								);
-								const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
-								evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
-
-								// Work-around for
-								// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-								evt.dataTransfer.setData(
-									'text/plain',
-									JSON.stringify({
-										mime: d.mimeType,
-										data: data
-									})
-								);
-							}}
-						>
-							<svg class="droppable" viewBox="-4 -4 40 40" width="32">
-								<circle fill="#24d188" cx="16" cy="16" r="16" stroke="#047138" stroke-width="2" />
-							</svg>
-						</div>
-						<div
-							draggable={true}
-							ondragstart={(evt) => {
-								const d = {
-									content: {
-										semantic_tag: 'de.renew.gui.TransitionFigure',
-										shape_id: '2DD432FE-CC8A-4259-8A84-63F75AF0ECE0',
-										socket_schema_id: '4FDF577B-DB81-462E-971E-FA842F0ABA1E'
-									},
-									mimeType: 'application/json+renewex-layer',
-									alignX: 0.5,
-									alignY: 0.5
-								};
-
-								evt.stopPropagation();
-								evt.dataTransfer.effectAllowed = 'copy';
-								evt.currentTarget.setAttribute('aria-grabbed', 'true');
-								const positionInfo = evt.currentTarget.getBoundingClientRect();
-								evt.dataTransfer.setDragImage(
-									evt.currentTarget,
-									positionInfo.width * d.alignX,
-									positionInfo.height * d.alignY
-								);
-								const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
-								evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
-
-								// Work-around for
-								// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-								evt.dataTransfer.setData(
-									'text/plain',
-									JSON.stringify({
-										mime: d.mimeType,
-										data: data
-									})
-								);
-							}}
-						>
-							<svg class="droppable" viewBox="-4 -4 40 40" width="32">
-								<rect
-									fill="#24d188"
-									x="1"
-									y="1"
-									width="30"
-									height="30"
-									stroke="#047138"
-									stroke-width="2"
-								/>
-							</svg>
-						</div>
-						<hr />
-						<div
-							draggable={true}
-							ondragstart={(evt) => {
-								const d = {
-									content: {
-										body: 'Text',
-										semantic_tag: 'CH.ifa.draw.figures.TextFigure'
-									},
-									mimeType: 'application/json+renewex-layer',
-									alignX: 0.5,
-									alignY: 0.5
-								};
-
-								evt.stopPropagation();
-								evt.dataTransfer.effectAllowed = 'copy';
-								evt.currentTarget.setAttribute('aria-grabbed', 'true');
-								const positionInfo = evt.currentTarget.getBoundingClientRect();
-								evt.dataTransfer.setDragImage(
-									evt.currentTarget,
-									positionInfo.width * d.alignX,
-									positionInfo.height * d.alignY
-								);
-								const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
-								evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
-
-								// Work-around for
-								// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-								evt.dataTransfer.setData(
-									'text/plain',
-									JSON.stringify({
-										mime: d.mimeType,
-										data: data
-									})
-								);
-							}}
-						>
-							<svg class="droppable" viewBox="-4 -4 40 40" width="32">
-								<text text-anchor="middle" font-size="40" x="16" y="30" font-family="serif">T</text>
-							</svg>
-						</div>
-
-						<div
-							draggable={singleSelectedIsBoxOrEdge.value}
-							ondragstart={(evt) => {
-								const d = {
-									content: {
-										body: '[]',
-										hyperlink: singleSelectedLayer.value.id,
-										semantic_tag: 'de.renew.gui.CPNTextFigure'
-									},
-									mimeType: 'application/json+renewex-layer',
-									alignX: 0.5,
-									alignY: 0.5
-								};
-
-								evt.stopPropagation();
-								evt.dataTransfer.effectAllowed = 'copy';
-								evt.currentTarget.setAttribute('aria-grabbed', 'true');
-								const positionInfo = evt.currentTarget.getBoundingClientRect();
-								evt.dataTransfer.setDragImage(
-									evt.currentTarget,
-									positionInfo.width * d.alignX,
-									positionInfo.height * d.alignY
-								);
-								const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
-								evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
-
-								// Work-around for
-								// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-								evt.dataTransfer.setData(
-									'text/plain',
-									JSON.stringify({
-										mime: d.mimeType,
-										data: data
-									})
-								);
-							}}
-						>
-							<svg
-								class:droppable={singleSelectedIsBoxOrEdge.value}
-								style:opacity={singleSelectedIsBoxOrEdge.value ? 1 : 0.5}
-								viewBox="-4 -4 40 40"
-								width="32"
+						<div>
+							<label style="text-align: center; display: block;">
+								{#await data.blueprints}
+									-
+								{:then bp}
+									<select
+										bind:value={selectedBlueprint.value}
+										style="width: 3em; max-width: 100%; height: 3em"
+									>
+										<option value={null}></option>
+										{#each bp.entries() as [id, s]}
+											<option value={id}>{s.name}</option>
+										{/each}
+									</select>
+								{:catch e}
+									error
+								{/await}
+							</label>
+							<button
+								style="width: 100%; height: 2em"
+								type="button"
+								disabled={!selectedBlueprint.value}
+								onclick={(evt) => {
+									evt.preventDefault();
+									dispatch('insert_document', { document_id: selectedBlueprint.value }).then(() => {
+										selectedBlueprint.value = null;
+									});
+								}}>INS</button
 							>
-								<text text-anchor="middle" font-size="30" x="16" y="30" font-family="serif">A</text>
-								<rect
-									x="1"
-									y="3"
-									width="9"
-									height="14"
-									fill="none"
-									rx="5"
-									ry="5"
-									stroke="#555"
-									stroke-width="2"
-								/>
-
-								<rect x="3" y="9" width="5" height="14" fill="#555" rx="3" ry="3" stroke="none" />
-							</svg>
 						</div>
 					</div>
 					<div
