@@ -91,10 +91,47 @@
 
 	const tools = [
 		{ name: 'Select', id: 'select' },
-		{ name: 'Magnifier', id: 'magnifier' },
-		{ name: 'Pan', id: 'paner' },
-		{ name: 'Zoom', id: 'zoomer' },
-		{ name: 'Rotate', id: 'rotator' },
+		{
+			name: 'Magnifier',
+			id: 'magnifier',
+			reset: (cameraScroller, cameraFocus) => {
+				cameraScroller.resetCamera();
+			}
+		},
+		{
+			name: 'Pan',
+			id: 'paner',
+			reset: (cameraScroller, cameraFocus, extension) => {
+				update(
+					() => ({
+						x: (extension.maxX + extension.minX) / 2,
+						y: (extension.maxY + extension.minY) / 2
+					}),
+					view(L.props('x', 'y'), cameraFocus)
+				);
+			}
+		},
+		{
+			name: 'Zoom',
+			id: 'zoomer',
+			reset: (cameraScroller, cameraFocus) => {
+				cameraScroller.resetCamera();
+			}
+		},
+		{
+			name: 'Rotate',
+			id: 'rotator',
+			reset: (cameraScroller, cameraFocus, extension) => {
+				update(
+					() => ({
+						x: (extension.maxX + extension.minX) / 2,
+						y: (extension.maxY + extension.minY) / 2,
+						w: 0
+					}),
+					view(L.props('x', 'y', 'w'), cameraFocus)
+				);
+			}
+		},
 		{ name: 'Pen', id: 'pen' },
 		{ name: 'Edge', id: 'edge' },
 		{ name: 'Polygon', id: 'polygon' },
@@ -782,14 +819,21 @@
 					<CanvasDropper
 						{camera}
 						onDrop={(mime, content, pos) => {
-							dispatch('create_layer', {
-								base_layer_id: L.get('id', singleSelectedLayer.value),
-								pos,
-								...content
-							}).then((l) => {
-								selectedLayers.value = [l.id];
-								cast('select', l.id);
-							});
+							if (mime === 'application/json+renewex-layer') {
+								dispatch('create_layer', {
+									base_layer_id: L.get('id', singleSelectedLayer.value),
+									pos,
+									...content
+								}).then((l) => {
+									selectedLayers.value = [l.id];
+									cast('select', l.id);
+								});
+							} else if (mime === 'application/json+renewex-blueprint') {
+								dispatch('insert_document', {
+									document_id: content.blueprint_id,
+									position: pos
+								});
+							}
 						}}
 						onDropFile={(file, pos) => {
 							const reader = new FileReader();
@@ -1421,7 +1465,7 @@
 												{/each}
 											</g>
 										{/if}
-										{#if activeTool.value === 'select' || activeTool.value === 'edge'}
+										{#if activeTool.value === 'select' || activeTool.value === 'edge' || activeTool.value === 'polygon'}
 											<g transform={rotationTransform.value}>
 												<!-- svelte-ignore a11y_no_static_element_interactions -->
 												{#each selectedLayers.value as id (id)}
@@ -2387,7 +2431,13 @@
 				<div class="topbar">
 					<div class="toolbar">
 						{#each tools as tool (tool.id)}
-							<label class="tool-selector" class:active={activeTool.value === tool.id}
+							<label
+								class="tool-selector"
+								class:active={activeTool.value === tool.id}
+								ondblclick={(evt) => {
+									evt.preventDefault();
+									tool.reset?.(cameraScroller.value, cameraFocus, extension.value);
+								}}
 								>{tool.name}
 								<input
 									class="tool-radio"
@@ -3336,35 +3386,81 @@
 						{/await}
 
 						<hr />
-						<div>
+						<div
+							style="background: #eee; padding: 4px; display: flex; flex-direction: column; gap: 4px"
+						>
 							<label style="text-align: center; display: block;">
 								{#await data.blueprints}
 									-
 								{:then bp}
-									<select
-										bind:value={selectedBlueprint.value}
-										style="width: 3em; max-width: 100%; height: 3em"
+									<div
+										style="display: grid; align-content: center; justify-content: center; grid-template-columns: max-content;  grid-template-rows: max-content; align-items: stretch; justify-items: stretch; width: 2em;"
 									>
-										<option value={null}></option>
-										{#each bp.entries() as [id, s]}
-											<option value={id}>{s.name}</option>
-										{/each}
-									</select>
+										<div
+											style="grid-area: 1 / 1 / span 1 / span 1; align-self: center; width: 100%; overflow: hidden"
+										>
+											INS<br />
+											<div
+												style="width: 2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+											>
+												{bp.get(selectedBlueprint.value)?.name ?? '-'}
+											</div>
+										</div>
+										<select
+											bind:value={selectedBlueprint.value}
+											style="width: 3em; max-width: 100%; height: 3em; opacity: 0;grid-area: 1 / 1 / span 1 / span 1;"
+										>
+											<option value={null}></option>
+											{#each bp.entries() as [id, s]}
+												<option value={id}>{s.name}</option>
+											{/each}
+										</select>
+									</div>
 								{:catch e}
 									error
 								{/await}
 							</label>
-							<button
-								style="width: 100%; height: 2em"
-								type="button"
-								disabled={!selectedBlueprint.value}
-								onclick={(evt) => {
-									evt.preventDefault();
-									dispatch('insert_document', { document_id: selectedBlueprint.value }).then(() => {
-										selectedBlueprint.value = null;
-									});
-								}}>INS</button
+							<div
+								style="width: 100%; padding: 1ex; background: #333; color: #fff; box-sizing: border-box; text-align: center;"
+								role="application"
+								style:cursor={!!selectedBlueprint.value ? 'move' : 'default'}
+								style:opacity={!!selectedBlueprint.value ? '1' : 0.5}
+								draggable={!!selectedBlueprint.value}
+								ondragstart={(evt) => {
+									const d = {
+										content: {
+											blueprint_id: selectedBlueprint.value
+										},
+										mimeType: 'application/json+renewex-blueprint',
+										alignX: 0.5,
+										alignY: 0.5
+									};
+
+									evt.stopPropagation();
+									evt.dataTransfer.effectAllowed = 'copy';
+									evt.currentTarget.setAttribute('aria-grabbed', 'true');
+									const positionInfo = evt.currentTarget.getBoundingClientRect();
+									evt.dataTransfer.setDragImage(
+										evt.currentTarget,
+										positionInfo.width * d.alignX,
+										positionInfo.height * d.alignY
+									);
+									const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
+									evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+
+									// Work-around for
+									// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+									evt.dataTransfer.setData(
+										'text/plain',
+										JSON.stringify({
+											mime: d.mimeType,
+											data: data
+										})
+									);
+								}}
 							>
+								☰
+							</div>
 						</div>
 					</div>
 					<div
