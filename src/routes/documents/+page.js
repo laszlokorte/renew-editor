@@ -4,6 +4,7 @@ import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
 import documentApi from '$lib/api/documents.js'
 import LiveState from '$lib/api/livestate';
+import {downloadFile} from '$lib/io/download';
 
 export const ssr = false;
 
@@ -35,19 +36,6 @@ function createCommands(api, fetchFn) {
 			return api.importDocuments(files)
 		}
 	}
-}
-
-function downloadFile(blob, name = "file.pdf") {
-  const href = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement("a"), {
-    href,
-    style: "display:none",
-    download: name,
-  });
-  document.body.appendChild(a);
-  a.click();
-  URL.revokeObjectURL(href);
-  a.remove();
 }
 
 export async function load({fetch}) {

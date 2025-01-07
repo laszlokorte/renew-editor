@@ -105,7 +105,7 @@
 	ondragleave={onDragLeave}
 	ondrop={onDrop}
 >
-	<AppBar authState={data.authState} />
+	<AppBar authState={data.authState} connectionState={data.connectionState} />
 
 	<Modal bind:visible={uploadFormVisible} closeLabel="Cancel">
 		<h2>Upload Renew File</h2>
@@ -240,7 +240,7 @@
 											class="action-export"
 											onclick={() => {
 												downloadFile(d.links.export.href, d.name);
-											}}>Export</button
+											}}>Export .rnw</button
 										>
 										<button
 											class="action-duplicate"
@@ -275,7 +275,7 @@
 										class="action-export"
 										onclick={() => {
 											downloadFile(d.links.export.href, d.name);
-										}}>Export</button
+										}}>Export .rnw</button
 									>
 									<button
 										class="action-duplicate"

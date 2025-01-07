@@ -8,20 +8,23 @@
 
 	const appTitle = env.APP_NAME;
 
-	const { authState, errors = atom([]) } = $props();
+	const { authState, errors = atom([]), connectionState = atom(undefined) } = $props();
 
 	function discardError() {
 		update((e) => e.slice(1), errors);
 	}
 </script>
 
-<div
-	style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 1ex 1em; background: #222; color: #fff; user-select: none;"
->
+<div class="app-bar" class:offline={connectionState.value === false}>
 	<a href="{base}/"
 		><h2 class="app-name">
-			<img src="{base}/favicon.svg" alt="Renew" class="icon" />
-			{appTitle}
+			<img style="grid-row: 1; grid-column: 1;" src="{base}/favicon.svg" alt="Renew" class="icon" />
+
+			<span style="grid-row: 1; grid-column: 2;">{appTitle}</span>
+
+			{#if connectionState.value === false}
+				<span class="offline-indicator">Offline</span>
+			{/if}
 		</h2></a
 	>
 
@@ -29,8 +32,8 @@
 		style="margin-right: auto;padding: 0 1em; display: flex; gap: 1ex; margin-left: 2em; border-left: 1px solid #555;"
 	>
 		{#if authState.isAuthenticated}
-		<a href="{base}/documents" class="nav-button" title="Documents Overview">Documents</a>
-		<a href="{base}/simulations" class="nav-button" title="Simulations Overview">Simulations</a>
+			<a href="{base}/documents" class="nav-button" title="Documents Overview">Documents</a>
+			<a href="{base}/simulations" class="nav-button" title="Simulations Overview">Simulations</a>
 		{/if}
 	</div>
 
@@ -62,12 +65,34 @@
 		height: 1.5em;
 	}
 
-	.app-name {
+	.app-bar {
 		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1ex 1em;
+		background: #222;
+		color: #fff;
+		user-select: none;
+	}
+
+	.app-name {
+		display: grid;
+		grid-template-columns: auto auto;
 		align-items: center;
 		gap: 1ex;
 		padding: 0.5ex;
 		margin: 0;
+	}
+
+	.offline-indicator {
+		text-align: center;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		font-weight: bold;
+		grid-column: 2 / span 1;
+		grid-row: 1;
+		background: #700;
 	}
 
 	@media (hover: hover) {
@@ -109,5 +134,9 @@
 		padding: 0;
 		margin: 0;
 		font-size: smaller;
+	}
+
+	.offline {
+		background: #770000;
 	}
 </style>

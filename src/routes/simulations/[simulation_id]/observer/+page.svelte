@@ -115,7 +115,7 @@
 </script>
 
 <div class="full-page">
-	<AppBar authState={data.authState} />
+	<AppBar authState={data.authState} connectionState={data.connectionState} />
 
 	<LiveResource socket={data.live_socket} resource={data.simulation}>
 		{#snippet children(simulation, presence, { dispatch, cast })}
@@ -463,108 +463,111 @@
 												/>
 											{/if}
 											<g transform={rotationTransform.value}>
-											<LiveResource socket={data.live_socket} resource={current_instance.value}>
-												{#snippet children(instance, _presence, {})}
-													{@const places = view(
-														[
-															'tokens',
-															L.reread(R.groupBy(R.prop('place_id'))),
-															L.valueOr({}),
-															L.partsOf(L.entries)
-														],
-														instance
-													)}
-													{@const firings = read('firings', instance)}
-													{#each firings.value as fir (fir.id)}
-														{@const pos = view(
+												<LiveResource socket={data.live_socket} resource={current_instance.value}>
+													{#snippet children(instance, _presence, {})}
+														{@const places = view(
 															[
-																'layers',
-																'items',
-																L.find((el) => el.id == fir.transition_id),
-																[
-																	'box',
-																	L.pick({
-																		x: 'position_x',
-																		y: 'position_y',
-																		width: 'width',
-																		height: 'height'
-																	})
-																]
+																'tokens',
+																L.reread(R.groupBy(R.prop('place_id'))),
+																L.valueOr({}),
+																L.partsOf(L.entries)
 															],
-															doc
+															instance
 														)}
-														<rect
-															{...pos.value}
-															fill="white"
-															fill-opacity="0.3"
-															stroke="lime"
-															stroke-width="8"
-															class="transition-fade-out"
-														></rect>
-													{/each}
-
-													{#each places.value as [place_id, tokens] (place_id)}
-														{@const pos = view(
-															[
-																'layers',
-																'items',
-																L.find((el) => el.id == place_id),
+														{@const firings = read('firings', instance)}
+														{#each firings.value as fir (fir.id)}
+															{@const pos = view(
 																[
-																	'box',
-																	L.reread(({ position_x, position_y, width, height }) => ({
-																		x: position_x + width / 2,
-																		y: position_y + height / 2
-																	}))
-																]
-															],
-															doc
-														)}
-														{@const expanded = view([place_id, L.defaults(false)], expandedPlaces)}
-														<text
-															{...pos.value}
-															text-anchor="middle"
-															class="place-tokens"
-															onclick={(evt) => {
-																evt.preventDefault();
-																update((x) => !x, expanded);
-															}}
-															class:tokenCount={!expanded.value}
-														>
-															{#if expanded.value}
-																{#each tokens as token, ti (token.id)}
-																	{#if ti > 0}
-																		<tspan>; </tspan>
-																	{/if}
+																	'layers',
+																	'items',
+																	L.find((el) => el.id == fir.transition_id),
+																	[
+																		'box',
+																		L.pick({
+																			x: 'position_x',
+																			y: 'position_y',
+																			width: 'width',
+																			height: 'height'
+																		})
+																	]
+																],
+																doc
+															)}
+															<rect
+																{...pos.value}
+																fill="white"
+																fill-opacity="0.3"
+																stroke="lime"
+																stroke-width="8"
+																class="transition-fade-out"
+															></rect>
+														{/each}
 
-																	{#if R.match(/^\w+\[\d+\]$/, token.value).length}
-																		<tspan
-																			cursor="pointer"
-																			text-decoration="underline"
-																			onclick={(evt) => {
-																				evt.preventDefault();
+														{#each places.value as [place_id, tokens] (place_id)}
+															{@const pos = view(
+																[
+																	'layers',
+																	'items',
+																	L.find((el) => el.id == place_id),
+																	[
+																		'box',
+																		L.reread(({ position_x, position_y, width, height }) => ({
+																			x: position_x + width / 2,
+																			y: position_y + height / 2
+																		}))
+																	]
+																],
+																doc
+															)}
+															{@const expanded = view(
+																[place_id, L.defaults(false)],
+																expandedPlaces
+															)}
+															<text
+																{...pos.value}
+																text-anchor="middle"
+																class="place-tokens"
+																onclick={(evt) => {
+																	evt.preventDefault();
+																	update((x) => !x, expanded);
+																}}
+																class:tokenCount={!expanded.value}
+															>
+																{#if expanded.value}
+																	{#each tokens as token, ti (token.id)}
+																		{#if ti > 0}
+																			<tspan>; </tspan>
+																		{/if}
 
-																				currentInstance.value = L.get(
-																					[
-																						'net_instances',
-																						L.find(R.propEq(token.value, 'label')),
-																						'id'
-																					],
-																					simulation.value
-																				);
-																			}}>{token.value}</tspan
-																		>
-																	{:else}
-																		<tspan>{token.value}</tspan>
-																	{/if}
-																{/each}
-															{:else}
-																{tokens.length || 0}
-															{/if}
-														</text>
-													{/each}
-												{/snippet}
-											</LiveResource>
-										</g>
+																		{#if R.match(/^\w+\[\d+\]$/, token.value).length}
+																			<tspan
+																				cursor="pointer"
+																				text-decoration="underline"
+																				onclick={(evt) => {
+																					evt.preventDefault();
+
+																					currentInstance.value = L.get(
+																						[
+																							'net_instances',
+																							L.find(R.propEq(token.value, 'label')),
+																							'id'
+																						],
+																						simulation.value
+																					);
+																				}}>{token.value}</tspan
+																			>
+																		{:else}
+																			<tspan>{token.value}</tspan>
+																		{/if}
+																	{/each}
+																{:else}
+																	{tokens.length || 0}
+																{/if}
+															</text>
+														{/each}
+													{/snippet}
+												</LiveResource>
+											</g>
 										{/snippet}
 									</Navigator>
 								</SVGViewport>

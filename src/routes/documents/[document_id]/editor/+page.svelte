@@ -266,7 +266,7 @@
 </script>
 
 <div class="full-page">
-	<AppBar authState={data.authState} {errors} />
+	<AppBar authState={data.authState} {errors} connectionState={data.connectionState} />
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}
@@ -440,10 +440,28 @@
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Download</button>
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											data.commands.downloadJson();
+										}}>Download JSON</button
+									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button">Download as...</button>
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											data.commands.downloadStruct();
+										}}>Download Struct</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											data.commands.exportRenew();
+										}}>Export .rnw</button
+									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
@@ -884,7 +902,9 @@
 							>
 								<Navigator
 									onworldcursor={(pos) => {
-										moveCursor(pos);
+										if (showCursors.value) {
+											moveCursor(pos);
+										}
 									}}
 									onpointerout={(pos) => {
 										moveCursor(null);
@@ -1465,7 +1485,7 @@
 												{/each}
 											</g>
 										{/if}
-										{#if activeTool.value === 'select' || activeTool.value === 'edge' || activeTool.value === 'polygon'}
+										{#if activeTool.value === 'select' || activeTool.value === 'edge'}
 											<g transform={rotationTransform.value}>
 												<!-- svelte-ignore a11y_no_static_element_interactions -->
 												{#each selectedLayers.value as id (id)}

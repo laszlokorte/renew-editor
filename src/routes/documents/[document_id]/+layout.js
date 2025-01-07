@@ -3,6 +3,7 @@ import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
 import documentApi from '$lib/api/documents.js'
+import {downloadFile} from '$lib/io/download';
 
 export const ssr = false;
 
@@ -36,6 +37,39 @@ function createCommands(fetchFn, doc) {
 				})
 		},
 
+		downloadJson(svg) {
+			return new Promise(r => r(doc.links.download_json.href))
+			.then((url) => api.loadUrl(url))
+			.then(r => {
+				return r.blob().then((d) => {
+					downloadFile(d, `${doc.content.name}.json`)
+				})
+			}).catch(e => {
+				alert(e.message)
+			})
+		},
+		downloadStruct(svg) {
+			return new Promise(r => r(doc.links.download_struct.href))
+			.then((url) => api.loadUrl(url))
+			.then(r => {
+				return r.blob().then((d) => {
+					downloadFile(d, `${doc.content.name}.iex`)
+				})
+			}).catch(e => {
+				alert(e.message)
+			})
+		},
+		exportRenew(svg) {
+			return new Promise(r => r(doc.links.export.href))
+			.then((url) => api.loadUrl(url))
+			.then(r => {
+				return r.blob().then((d) => {
+					downloadFile(d, `${doc.content.name}.rnw`)
+				})
+			}).catch(e => {
+				alert(e.message)
+			})
+		},
 		uploadSvg(svg) {
 			return api.uploadSvg(doc.id, svg)
 		}

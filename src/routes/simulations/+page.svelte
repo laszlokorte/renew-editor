@@ -25,7 +25,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="full-page">
-	<AppBar authState={data.authState} />
+	<AppBar authState={data.authState} connectionState={data.connectionState} />
 
 	<Modal bind:visible={createFormVisible} canClose={!importing} closeLabel="Cancel">
 		<form
