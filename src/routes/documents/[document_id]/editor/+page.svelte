@@ -906,8 +906,8 @@
 											moveCursor(pos);
 										}
 									}}
-									onpointerout={(pos) => {
-										moveCursor(null);
+									onpointerleave={(evt) => {
+										cast('cursor', null);
 									}}
 									{camera}
 									{lockRotation}

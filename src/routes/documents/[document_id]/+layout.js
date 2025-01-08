@@ -115,7 +115,7 @@ export async function load({params, fetch}) {
 				})
 			} else {
 				return r.json().catch(e => {
-					throw error(r.status || 420, {message: "Unknown Errror", details: e});
+					throw error(r.status || 420, {message: "Unknown Error", details: e});
 				}).then((e)  => {
 					throw error(r.status || 420, {message: e.message, details: e});
 				})

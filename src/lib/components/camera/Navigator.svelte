@@ -20,7 +20,7 @@
 		children,
 		errorHandler,
 		onworldcursor,
-		onpointerout,
+		onpointerleave,
 		lockRotation
 	} = $props();
 
@@ -91,7 +91,7 @@
 <g
 	bind:this={thisElement.value}
 	{onpointermove}
-	{onpointerout}
+	{onpointerleave}
 	use:bindEvents={{ zoomDelta, rotationDelta, panScreenDelta, eventToWorld }}
 >
 	<path d={frameBoxPath.value} stroke="none" fill="#ffffff00" pointer-events="all" />
