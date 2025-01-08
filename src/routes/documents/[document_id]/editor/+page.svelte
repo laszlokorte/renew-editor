@@ -1654,13 +1654,15 @@
 																	evt.stopPropagation();
 																}}
 																ondblclick={(evt) => {
-																	pos.value = undefined;
 																	evt.stopPropagation();
 
-																	cast('delete_waypoint', {
-																		layer_id: el.value.id,
-																		waypoint_id: wp.id
-																	});
+																	if (document.activeElement === evt.currentTarget) {
+																		pos.value = undefined;
+																		cast('delete_waypoint', {
+																			layer_id: el.value.id,
+																			waypoint_id: wp.id
+																		});
+																	}
 																}}
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
@@ -1695,11 +1697,18 @@
 																			pointerOffset.value,
 																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																		);
-																		cast('update_waypoint_position', {
-																			layer_id: el.value.id,
-																			waypoint_id: wp.id,
-																			value: newPos
-																		});
+																		if (
+																			backoffValue.value.x != newPos.x ||
+																			backoffValue.value.y != newPos.y
+																		) {
+																			evt.preventDefault();
+																			cast('update_waypoint_position', {
+																				layer_id: el.value.id,
+																				waypoint_id: wp.id,
+																				value: newPos
+																			});
+																			evt.currentTarget.blur();
+																		}
 																	}
 																}}
 																onkeydown={(evt) => {
@@ -2642,7 +2651,6 @@
 									type="checkbox"
 									bind:checked={isCyclic.value}
 									onchange={(evt) => {
-										console.log('x');
 										cast('change_edge_attributes', {
 											layer_id: singleSelectedLayer.value.id,
 											attrs: {
@@ -3106,6 +3114,7 @@
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div
 										draggable="true"
+										style:touch-action="none"
 										ondragstart={(evt) => {
 											const p = evt.currentTarget.parentNode;
 											const rect = p.getBoundingClientRect();
@@ -3346,140 +3355,144 @@
 							-
 						{:then groups}
 							{#each groups as g}
-								<hr />
-								{#each g.items as item}
-									<div
-										role="application"
-										draggable={!item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value}
-										ondragstart={(evt) => {
-											const d = {
-												...item.data,
-												content: {
-													...item.data.content,
-													hyperlink: item.data.content.hyperlink
-														? singleSelectedLayer.value.id
-														: undefined
-												}
-											};
+								<div style="border-top: 1px solid gray;  padding-top: 1ex">
+									{#each g.items as item}
+										<div
+											role="application"
+											draggable={!item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value}
+											style:touch-action="none"
+											ondragstart={(evt) => {
+												const d = {
+													...item.data,
+													content: {
+														...item.data.content,
+														hyperlink: item.data.content.hyperlink
+															? singleSelectedLayer.value.id
+															: undefined
+													}
+												};
 
-											evt.stopPropagation();
-											evt.dataTransfer.effectAllowed = 'copy';
-											evt.currentTarget.setAttribute('aria-grabbed', 'true');
-											const positionInfo = evt.currentTarget.getBoundingClientRect();
-											evt.dataTransfer.setDragImage(
-												evt.currentTarget,
-												positionInfo.width * d.alignX,
-												positionInfo.height * d.alignY
-											);
-											const data = d.dynamicContent
-												? d.dynamicContent(properties.value)
-												: d.content;
-											evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+												evt.stopPropagation();
+												evt.dataTransfer.effectAllowed = 'copy';
+												evt.currentTarget.setAttribute('aria-grabbed', 'true');
+												const positionInfo = evt.currentTarget.getBoundingClientRect();
+												evt.dataTransfer.setDragImage(
+													evt.currentTarget,
+													positionInfo.width * d.alignX,
+													positionInfo.height * d.alignY
+												);
+												const data = d.dynamicContent
+													? d.dynamicContent(properties.value)
+													: d.content;
+												evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
 
-											// Work-around for
-											// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-											evt.dataTransfer.setData(
-												'text/plain',
-												JSON.stringify({
-													mime: d.mimeType,
-													data: data
-												})
-											);
-										}}
-									>
-										<svg
-											class:droppable={!item.data.content.hyperlink ||
-												singleSelectedIsBoxOrEdge.value}
-											style:opacity={!item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value
-												? 1
-												: 0.5}
-											viewBox="-4 -4 40 40"
-											width="32"
+												// Work-around for
+												// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+												evt.dataTransfer.setData(
+													'text/plain',
+													JSON.stringify({
+														mime: d.mimeType,
+														data: data
+													})
+												);
+											}}
 										>
-											{@html item.icon}
-										</svg>
-									</div>
-								{/each}
+											<svg
+												class:droppable={!item.data.content.hyperlink ||
+													singleSelectedIsBoxOrEdge.value}
+												style:opacity={!item.data.content.hyperlink ||
+												singleSelectedIsBoxOrEdge.value
+													? 1
+													: 0.5}
+												viewBox="-4 -4 40 40"
+												width="32"
+											>
+												{@html item.icon}
+											</svg>
+										</div>
+									{/each}
+								</div>
 							{/each}
 						{:catch e}
 							error
 						{/await}
-
-						<hr />
-						<div
-							style="background: #eee; padding: 4px; display: flex; flex-direction: column; gap: 4px"
-						>
-							<label style="text-align: center; display: block;">
-								{#await data.blueprints}
-									-
-								{:then bp}
-									<div
-										style="display: grid; align-content: center; justify-content: center; grid-template-columns: max-content;  grid-template-rows: max-content; align-items: stretch; justify-items: stretch; width: 2em;"
-									>
-										<div
-											style="grid-area: 1 / 1 / span 1 / span 1; align-self: center; width: 100%; overflow: hidden"
-										>
-											INS<br />
-											<div
-												style="width: 2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-											>
-												{bp.get(selectedBlueprint.value)?.name ?? '-'}
-											</div>
-										</div>
-										<select
-											bind:value={selectedBlueprint.value}
-											style="width: 3em; max-width: 100%; height: 3em; opacity: 0;grid-area: 1 / 1 / span 1 / span 1;"
-										>
-											<option value={null}></option>
-											{#each bp.entries() as [id, s]}
-												<option value={id}>{s.name}</option>
-											{/each}
-										</select>
-									</div>
-								{:catch e}
-									error
-								{/await}
-							</label>
+						<div style="border-top: 1px solid gray; padding-top: 1ex">
 							<div
-								style="width: 100%; padding: 1ex; background: #333; color: #fff; box-sizing: border-box; text-align: center;"
-								role="application"
-								style:cursor={!!selectedBlueprint.value ? 'move' : 'default'}
-								style:opacity={!!selectedBlueprint.value ? '1' : 0.5}
-								draggable={!!selectedBlueprint.value}
-								ondragstart={(evt) => {
-									const d = {
-										content: {
-											blueprint_id: selectedBlueprint.value
-										},
-										mimeType: 'application/json+renewex-blueprint',
-										alignX: 0.5,
-										alignY: 0.5
-									};
-
-									evt.stopPropagation();
-									evt.dataTransfer.effectAllowed = 'copy';
-									evt.currentTarget.setAttribute('aria-grabbed', 'true');
-									const positionInfo = evt.currentTarget.getBoundingClientRect();
-									evt.dataTransfer.setDragImage(
-										evt.currentTarget,
-										positionInfo.width * d.alignX,
-										positionInfo.height * d.alignY
-									);
-									const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
-									evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
-
-									// Work-around for
-									// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-									evt.dataTransfer.setData(
-										'text/plain',
-										JSON.stringify({
-											mime: d.mimeType,
-											data: data
-										})
-									);
-								}}
+								style="background: #eee; padding: 4px; display: flex; flex-direction: column; gap: 4px;"
 							>
-								☰
+								<label style="text-align: center; display: block;">
+									{#await data.blueprints}
+										-
+									{:then bp}
+										<div
+											style="display: grid; align-content: center; justify-content: center; grid-template-columns: max-content;  grid-template-rows: max-content; align-items: stretch; justify-items: stretch; width: 2em;"
+										>
+											<div
+												style="grid-area: 1 / 1 / span 1 / span 1; align-self: center; width: 100%; overflow: hidden"
+											>
+												INS<br />
+												<div
+													style="width: 2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+												>
+													{bp.get(selectedBlueprint.value)?.name ?? '-'}
+												</div>
+											</div>
+											<select
+												bind:value={selectedBlueprint.value}
+												style="width: 3em; max-width: 100%; height: 3em; opacity: 0;grid-area: 1 / 1 / span 1 / span 1;"
+											>
+												<option value={null}></option>
+												{#each bp.entries() as [id, s]}
+													<option value={id}>{s.name}</option>
+												{/each}
+											</select>
+										</div>
+									{:catch e}
+										error
+									{/await}
+								</label>
+								<div
+									style="width: 100%; padding: 1ex; background: #333; color: #fff; box-sizing: border-box; text-align: center;"
+									role="application"
+									style:cursor={!!selectedBlueprint.value ? 'move' : 'default'}
+									style:opacity={!!selectedBlueprint.value ? '1' : 0.5}
+									draggable={!!selectedBlueprint.value}
+									style:touch-action="none"
+									ondragstart={(evt) => {
+										const d = {
+											content: {
+												blueprint_id: selectedBlueprint.value
+											},
+											mimeType: 'application/json+renewex-blueprint',
+											alignX: 0.5,
+											alignY: 0.5
+										};
+
+										evt.stopPropagation();
+										evt.dataTransfer.effectAllowed = 'copy';
+										evt.currentTarget.setAttribute('aria-grabbed', 'true');
+										const positionInfo = evt.currentTarget.getBoundingClientRect();
+										evt.dataTransfer.setDragImage(
+											evt.currentTarget,
+											positionInfo.width * d.alignX,
+											positionInfo.height * d.alignY
+										);
+										const data = d.dynamicContent ? d.dynamicContent(properties.value) : d.content;
+										evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+
+										// Work-around for
+										// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+										evt.dataTransfer.setData(
+											'text/plain',
+											JSON.stringify({
+												mime: d.mimeType,
+												data: data
+											})
+										);
+									}}
+								>
+									☰
+								</div>
 							</div>
 						</div>
 					</div>
@@ -3644,8 +3657,13 @@
 		background: #eee;
 	}
 
+	.menu-bar-item-button:not(:disabled):active {
+		background: #e0e0e0;
+	}
+
 	.menu-bar-item-button:disabled {
 		opacity: 0.3;
+		cursor: default;
 	}
 
 	.menu-bar-item-danger {

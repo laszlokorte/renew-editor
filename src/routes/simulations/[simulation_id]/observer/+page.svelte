@@ -675,20 +675,26 @@
 
 				<div class="sidebar right">
 					<div class="toolbar vertical">
-						Net Instances:
-						<select bind:value={currentInstance.value} size="10">
-							{#each nets.value as nt}
-								{@const this_instances = view(
-									L.filter(R.pathEq(nt.id, ['links', 'shadow_net', 'id'])),
-									net_instances
-								)}
-								<optgroup label={nt.name}>
-									{#each this_instances.value as ni}
-										<option value={ni.id}>{ni.label}</option>
-									{/each}
-								</optgroup>
-							{/each}
-						</select>
+						<label>
+							Net Instances:
+							<select
+								bind:value={currentInstance.value}
+								size="10"
+								style="height: 12em; width: 100%;"
+							>
+								{#each nets.value as nt}
+									{@const this_instances = view(
+										L.filter(R.pathEq(nt.id, ['links', 'shadow_net', 'id'])),
+										net_instances
+									)}
+									<optgroup label={nt.name}>
+										{#each this_instances.value as ni}
+											<option value={ni.id}>{ni.label}</option>
+										{/each}
+									</optgroup>
+								{/each}
+							</select>
+						</label>
 					</div>
 					<div class="toolbar vertical">
 						<details>
@@ -850,8 +856,13 @@
 		background: #eee;
 	}
 
+	.menu-bar-item-button:not(:disabled):active {
+		background: #e0e0e0;
+	}
+
 	.menu-bar-item-button:disabled {
 		opacity: 0.3;
+		cursor: default;
 	}
 
 	.menu-bar-item-danger {
