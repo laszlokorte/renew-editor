@@ -78,7 +78,7 @@
 
 	.app-name {
 		display: grid;
-		grid-template-columns: auto auto;
+		grid-template-columns: auto max-content;
 		align-items: center;
 		gap: 1ex;
 		padding: 0.5ex;
@@ -90,9 +90,15 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		font-weight: bold;
-		grid-column: 2 / span 1;
+		grid-column: 1 / span 2;
 		grid-row: 1;
 		background: #700;
+		align-self: stretch;
+		justify-self: stretch;
+		display: flex;
+		flex-wrap: nowrap;
+		align-items: center;
+		justify-content: center;
 	}
 
 	@media (hover: hover) {
