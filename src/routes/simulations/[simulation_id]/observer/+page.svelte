@@ -146,8 +146,16 @@
 									<button
 										class="menu-bar-item-button"
 										onclick={() => {
-											alert('the document is saved automatically');
-										}}>Save</button
+											data.commands.duplicate();
+										}}>Duplicate</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											data.commands.downloadSNS();
+										}}>Download SNS</button
 									>
 								</li>
 							</ul>

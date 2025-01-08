@@ -5,6 +5,7 @@ import authState from '$lib/components/auth/local_state.svelte.js'
 import simulationApi from '$lib/api/simulations.js'
 import documentApi from '$lib/api/documents.js'
 import LiveState from '$lib/api/livestate';
+import {downloadFile} from '$lib/io/download';
 
 export const ssr = false;
 
@@ -16,7 +17,18 @@ function createCommands(api, fetchFn) {
 				.then((r) => {
 					return goto(`${base}/simulations/${r.id}/observer`)
 				})
-		}
+		},
+
+		downloadFile: (url, filename) => {
+			return api.loadUrl(url)
+			.then(r => {
+				return r.blob().then((d) => {
+					downloadFile(d, filename)
+				})
+			}).catch(e => {
+				alert(e.message)
+			})
+		},
 	}
 }
 

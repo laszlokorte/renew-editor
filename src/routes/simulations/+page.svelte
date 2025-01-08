@@ -9,7 +9,7 @@
 
 	const { data } = $props();
 
-	const { createSimulation } = $derived(data.commands);
+	const { createSimulation, downloadFile } = $derived(data.commands);
 
 	let createFormVisible = $state(false);
 	let importing = $state(false);
@@ -157,6 +157,21 @@
 										}}>Start</button
 									>
 								{/if}
+								<button
+									type="button"
+									class="action-export"
+									onclick={(evt) => {
+										evt.preventDefault();
+										downloadFile(sim.links.shadow_net_compiled.href, `${sim.id}.sns`);
+									}}>Download SNS</button
+								>
+
+								<button
+									class="action-duplicate"
+									onclick={() => {
+										fetch(sim.links.duplicate.href, { method: sim.links.duplicate.method });
+									}}>Duplicate</button
+								>
 								<button
 									type="button"
 									class="action-delete"

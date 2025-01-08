@@ -3,6 +3,7 @@ import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
 import simulationApi from '$lib/api/simulations.js'
+import {downloadFile} from '$lib/io/download';
 
 export const ssr = false;
 
@@ -10,7 +11,24 @@ function createCommands(fetchFn, sim) {
 	const api = simulationApi(fetchFn, authState.routes, authState.authHeader)
 
 	return {
-		
+		downloadSNS() {
+			return new Promise(r => r(sim.links.shadow_net_compiled.href))
+			.then((url) => api.loadUrl(url))
+			.then(r => {
+				return r.blob().then((d) => {
+					downloadFile(d, `${sim.id}.sns`)
+				})
+			}).catch(e => {
+				alert(e.message)
+			})
+		},
+		duplicate() {
+			return api
+				.callJson(sim.links.duplicate)
+				.then((r) => {
+					return goto(`${base}/simulations/${r.id}/observer`)
+				})
+		}
 	}
 }
 
