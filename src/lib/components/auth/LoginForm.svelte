@@ -1,14 +1,22 @@
 <script>
 	import { goto } from '$app/navigation';
 	import { authenticate } from '$lib/api/auth.js';
+	import { getMetas } from '../../../env.js';
 
 	const { auth, onSuccess } = $props();
 
-	const knownApis = [
-		{ label: 'PetriStation', url: 'https://api.petristation.net/api' },
-		{ label: 'RenewCollab', url: 'https://renewcollab.laszlokorte.de/api' },
-		{ label: 'LocalDev', url: 'http://localhost:4000/api' }
-	];
+	const knownApis = getMetas('known_api').map((v) => {
+		const kv = Object.fromEntries(
+			v
+				.split(',', 2)
+				.map((s) => s.trim())
+				.map((s) => s.split('=', 2))
+		);
+
+		console.log(kv);
+
+		return kv;
+	});
 
 	let apiUrl = $state(knownApis[0]?.url ?? '');
 

@@ -21,3 +21,4 @@ vite.config.ts.timestamp-*
 
 publish.sh
 publish2.sh
+*.tar

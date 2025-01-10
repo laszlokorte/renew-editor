@@ -19,7 +19,7 @@ function createCommands(api, fetchFn) {
 				})
 		},
 
-		downloadFile: (url, filename) => {
+		downloadFile(url, filename) {
 			return api.loadUrl(url)
 			.then(r => {
 				return r.blob().then((d) => {
@@ -29,6 +29,10 @@ function createCommands(api, fetchFn) {
 				alert(e.message)
 			})
 		},
+
+		callJSON(link) {
+			return api.callJson(link)
+		}
 	}
 }
 

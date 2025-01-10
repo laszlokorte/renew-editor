@@ -9,7 +9,7 @@
 
 	const { data } = $props();
 
-	const { createSimulation, downloadFile } = $derived(data.commands);
+	const { createSimulation, downloadFile, callJSON } = $derived(data.commands);
 
 	let createFormVisible = $state(false);
 	let importing = $state(false);
@@ -169,7 +169,7 @@
 								<button
 									class="action-duplicate"
 									onclick={() => {
-										fetch(sim.links.duplicate.href, { method: sim.links.duplicate.method });
+										callJSON(sim.links.duplicate);
 									}}>Duplicate</button
 								>
 								<button

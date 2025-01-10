@@ -1,5 +1,7 @@
 .svelte-kit
 .build
+build
+.env
 dev
 node_modules
 publish.sh
