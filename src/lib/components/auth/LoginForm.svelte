@@ -5,15 +5,13 @@
 
 	const { auth, onSuccess } = $props();
 
-	const knownApis = getMetas('known_api').map((v) => {
+	const knownApis = getMetas('env_known_api').map((v) => {
 		const kv = Object.fromEntries(
 			v
 				.split(',', 2)
 				.map((s) => s.trim())
 				.map((s) => s.split('=', 2))
 		);
-
-		console.log(kv);
 
 		return kv;
 	});

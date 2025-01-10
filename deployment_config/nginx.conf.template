@@ -7,7 +7,9 @@ server {
 
     location / {
         ssi on;
-        set $knownapi "${KNOWN_API}";
+        set $ssi_knownapi "${EDITOR_KNOWN_API}";
+        set $ssi_appname "${EDITOR_APP_NAME}";
+
         root   /usr/share/nginx/html;
         index  200.html index.html index.htm;
         try_files $uri /200.html;

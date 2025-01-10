@@ -3,23 +3,24 @@
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
-		<link rel="apple-touch-icon" href="%sveltekit.assets%/appicon.png"/>
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/appicon.png" />
 
 		%sveltekit.env.PUBLIC_HTML_HEAD_INJECT%
 
-		<meta name="mobile-web-app-capable" content="yes">
-		<meta name="apple-mobile-web-app-capable" content="yes">
-		<meta name="apple-mobile-web-app-status-bar-style" content="black">
-		<meta name="apple-mobile-web-app-title" content="PetriStation">
-		<link href="%sveltekit.assets%/splash.png" rel="apple-touch-startup-image">
-
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+		<meta name="apple-mobile-web-app-title" content="PetriStation" />
+		<link href="%sveltekit.assets%/splash.png" rel="apple-touch-startup-image" />
 
 		<link rel="stylesheet" href="%sveltekit.assets%/style.css" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+		/>
 		%sveltekit.head%
 	</head>
-	<body data-sveltekit-preload-data="hover" style="
-		overscroll-behavior: none; overflow: hidden;">
+	<body data-sveltekit-preload-data="hover" style="overscroll-behavior: none; overflow: hidden">
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

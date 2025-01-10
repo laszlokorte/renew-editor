@@ -1,7 +1,13 @@
 FROM node:23 AS builder
 
-ARG APP_NAME="XXPetri StationXX"
-ARG HTML_HEAD_INJECT='<meta name="known_api" content="<!--# echo var="knownapi" -->">'
+ARG APP_NAME="Petri Station"
+ARG HTML_HEAD_INJECT='\
+    <!--# if expr="$ssi_knownapi" -->\
+    <meta name="env_known_api" content="<!--# echo var="ssi_knownapi" -->">\
+    <!--# endif -->\
+    <!--# if expr="$ssi_appname" -->\
+    <meta name="env_app_title" content="<!--# echo var="ssi_appname" -->">\
+    <!--# endif -->'
 
 WORKDIR /app
 COPY package*.json .
@@ -18,3 +24,6 @@ FROM nginx
 COPY ./deployment_config/nginx.conf.template /etc/nginx/templates/default.conf.template
 
 COPY --from=builder /app/build /usr/share/nginx/html
+
+ENV EDITOR_KNOWN_API="label=Local, url=http://localhost:8000"
+ENV EDITOR_APP_NAME="Renew Web Editor"
