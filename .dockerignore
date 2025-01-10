@@ -7,4 +7,4 @@ node_modules
 publish.sh
 README.md
 deployment_config
-!deployment_config/nginx.conf
+!deployment_config/nginx.conf.template

@@ -15,6 +15,6 @@ RUN ["npm", "run", "build"]
 
 FROM nginx
 
-COPY ./deployment_config/nginx.conf /etc/nginx/conf.d/default.conf
+COPY ./deployment_config/nginx.conf.template /etc/nginx/templates/default.conf.template
 
 COPY --from=builder /app/build /usr/share/nginx/html
