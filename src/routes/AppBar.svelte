@@ -78,11 +78,12 @@
 
 	.app-name {
 		display: grid;
-		grid-template-columns: auto max-content;
+		grid-template-columns: auto 1fr;
 		align-items: center;
 		gap: 1ex;
 		padding: 0.5ex;
 		margin: 0;
+		max-width: 35vw;
 	}
 
 	.offline-indicator {
