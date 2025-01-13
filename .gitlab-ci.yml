@@ -1,31 +1,25 @@
 stages:
-  - build
+   - build
 
-build-sqlite-all:
-  # Use the official docker image.
-  image: docker:cli
-  tags:
-    - docker
+build:
   stage: build
-  services:
-    - docker:dind
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
   variables:
-    DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
-    CI_REGISTRY_IMAGE_LATEST: $CI_REGISTRY_IMAGE:latest
-  before_script:
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
-  # All branches are tagged with $DOCKER_IMAGE_NAME (defaults to commit ref slug)
-  # Default branch is also tagged with `latest`
+    IMAGE_TAG: $CI_REGISTRY_IMAGE:latest
+    DOCKER_FILE: Dockerfile
+
+    KANIKO_REGISTRY_CREDS: >-
+      {"auths":{
+        "$CI_REGISTRY":{
+          "username": "$CI_REGISTRY_USER",
+          "password": "$CI_REGISTRY_PASSWORD"}}}
   script:
-    - docker build --pull -t "$DOCKER_IMAGE_NAME" .
-    - docker push "$DOCKER_IMAGE_NAME"
-    - |
-      if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
-        docker tag "$DOCKER_IMAGE_NAME" "$CI_REGISTRY_IMAGE_LATEST"
-        docker push "$CI_REGISTRY_IMAGE_LATEST"
-      fi
-  # Run this job in a branch where a Dockerfile exists
-  rules:
-    - if: $CI_COMMIT_BRANCH
-      exists:
-        - Dockerfile
+    - echo "$KANIKO_REGISTRY_CREDS" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context "$CI_PROJECT_DIR"
+      --dockerfile "$DOCKER_FILE"
+      --destination "$IMAGE_TAG"
+  tags:
+    - tgi
