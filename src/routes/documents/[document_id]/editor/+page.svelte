@@ -956,7 +956,9 @@
 														onpointerdown={(evt) => {
 															if (evt.isPrimary && E.isLeftButton(evt)) {
 																evt.preventDefault();
-																evt.currentTarget.focus();
+																evt.currentTarget.focus({
+																	preventScroll: true
+																});
 																evt.currentTarget.setPointerCapture(evt.pointerId);
 																backoffValue.value = true;
 																const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
@@ -1575,7 +1577,9 @@
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
-																		evt.currentTarget.focus();
+																		evt.currentTarget.focus({
+																			preventScroll: true
+																		});
 																		waypoints.value = localProp.reset;
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = wp_proposal;
@@ -1667,7 +1671,9 @@
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
-																		evt.currentTarget.focus();
+																		evt.currentTarget.focus({
+																			preventScroll: true
+																		});
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
 																		waypoints.value = localProp.reset;
@@ -1762,7 +1768,9 @@
 															onpointerdown={(evt) => {
 																if (evt.isPrimary && E.isLeftButton(evt)) {
 																	evt.preventDefault();
-																	evt.currentTarget.focus();
+																	evt.currentTarget.focus({
+																		preventScroll: true
+																	});
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = source_pos.value;
 																	pointerOffset.value = Geo.diff2d(
@@ -1842,7 +1850,9 @@
 															onpointerdown={(evt) => {
 																if (evt.isPrimary && E.isLeftButton(evt)) {
 																	evt.preventDefault();
-																	evt.currentTarget.focus();
+																	evt.currentTarget.focus({
+																		preventScroll: true
+																	});
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
 																	backoffValue.value = target_pos.value;
 																	pointerOffset.value = Geo.diff2d(
@@ -2071,7 +2081,9 @@
 														onpointerdown={(evt) => {
 															if (evt.isPrimary && E.isLeftButton(evt)) {
 																evt.preventDefault();
-																evt.currentTarget.focus();
+																evt.currentTarget.focus({
+																	preventScroll: true
+																});
 																evt.currentTarget.setPointerCapture(evt.pointerId);
 																backoffValue.value = boxPos.value;
 																pointerOffset.value = Geo.diff2d(
@@ -2143,7 +2155,9 @@
 																onpointerdown={(evt) => {
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
-																		evt.currentTarget.focus();
+																		evt.currentTarget.focus({
+																			preventScroll: true
+																		});
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		backoffValue.value = pos.value;
 																		pointerOffset.value = Geo.diff2d(
