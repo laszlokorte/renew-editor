@@ -5,15 +5,14 @@ server {
 
     #access_log  /var/log/nginx/host.access.log  main;
 
-    location / {
+    location ${BASE_PATH} {
         ssi on;
         set $ssi_knownapi "${EDITOR_KNOWN_API}";
         set $ssi_appname "${EDITOR_APP_NAME}";
-        set $ssi_baseurl "${EDITOR_BASE_URL}";
 
-        root   /usr/share/nginx/html;
+        alias   /usr/share/nginx/html/;
         index  200.html index.html index.htm;
-        try_files $uri /200.html;
+        try_files $uri ${BASE_PATH}/200.html;
     }
 
     #error_page  404              /404.html;
