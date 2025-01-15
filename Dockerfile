@@ -1,5 +1,6 @@
 FROM node:23 AS builder
 
+ARG BASE_PATH=""
 ARG APP_NAME="Petri Station"
 ARG HTML_HEAD_INJECT='\
     <!--# if expr="$ssi_knownapi" -->\
@@ -19,6 +20,7 @@ COPY . .
 
 ENV VITE_APP_NAME=${APP_NAME}
 ENV PUBLIC_HTML_HEAD_INJECT=${HTML_HEAD_INJECT}
+ENV BASE_PATH=${BASE_PATH}
 
 RUN ["npm", "run", "build"]
 
@@ -30,4 +32,4 @@ COPY --from=builder /app/build /usr/share/nginx/html
 
 ENV EDITOR_KNOWN_API="label=Local, url=http://localhost:8000"
 ENV EDITOR_APP_NAME="Petri Station"
-ENV EDITOR_BASE_URL="."
+ENV EDITOR_BASE_URL=""

@@ -23,3 +23,27 @@ build:
       --destination "$IMAGE_TAG"
   tags:
     - tgi
+
+build_with_sub_path:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  variables:
+    IMAGE_TAG: $CI_REGISTRY_IMAGE:subpath-latest
+    DOCKER_FILE: Dockerfile
+
+    KANIKO_REGISTRY_CREDS: >-
+      {"auths":{
+        "$CI_REGISTRY":{
+          "username": "$CI_REGISTRY_USER",
+          "password": "$CI_REGISTRY_PASSWORD"}}}
+  script:
+    - echo "$KANIKO_REGISTRY_CREDS" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context "$CI_PROJECT_DIR"
+      --dockerfile "$DOCKER_FILE"
+      --destination "$IMAGE_TAG"
+      --build-arg=BASE_PATH=/editor
+  tags:
+    - tgi
