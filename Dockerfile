@@ -30,4 +30,4 @@ COPY --from=builder /app/build /usr/share/nginx/html
 
 ENV EDITOR_KNOWN_API="label=Local, url=http://localhost:8000"
 ENV EDITOR_APP_NAME="Petri Station"
-ENV EDITOR_BASE_URL=""
+ENV EDITOR_BASE_URL="."
