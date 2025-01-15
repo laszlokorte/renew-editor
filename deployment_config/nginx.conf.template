@@ -9,6 +9,7 @@ server {
         ssi on;
         set $ssi_knownapi "${EDITOR_KNOWN_API}";
         set $ssi_appname "${EDITOR_APP_NAME}";
+        set $ssi_baseurl "${EDITOR_BASE_URL}";
 
         root   /usr/share/nginx/html;
         index  200.html index.html index.htm;

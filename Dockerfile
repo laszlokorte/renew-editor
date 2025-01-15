@@ -7,6 +7,9 @@ ARG HTML_HEAD_INJECT='\
     <!--# endif -->\
     <!--# if expr="$ssi_appname" -->\
     <meta name="env_app_title" content="<!--# echo var="ssi_appname" -->">\
+    <!--# endif -->\
+    <!--# if expr="$ssi_baseurl" -->\
+    <meta name="env_base_url" content="<!--# echo var="ssi_baseurl" -->">\
     <!--# endif -->'
 
 WORKDIR /app
@@ -26,4 +29,5 @@ COPY ./deployment_config/nginx.conf.template /etc/nginx/templates/default.conf.t
 COPY --from=builder /app/build /usr/share/nginx/html
 
 ENV EDITOR_KNOWN_API="label=Local, url=http://localhost:8000"
-ENV EDITOR_APP_NAME="Renew Web Editor"
+ENV EDITOR_APP_NAME="Petri Station"
+ENV EDITOR_BASE_URL=""
