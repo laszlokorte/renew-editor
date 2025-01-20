@@ -15,9 +15,14 @@
 
 	<p>Welcome to the {appTitle} Web Editor</p>
 
-	<div>
+	<div style="display: flex; margin: 1ex; gap: 1ex">
 		<a href="{base}/documents" class="action">View Documents</a>
 		<a href="{base}/simulations" class="action">View Simulations</a>
+	</div>
+	<div style="display: flex; margin: 1ex; gap: 1ex">
+		<a href="mailto:petristation@laszlokorte.de?subject=Petristation%20Feedback" class="action"
+			>Send Feedback</a
+		>
 	</div>
 </section>
 
