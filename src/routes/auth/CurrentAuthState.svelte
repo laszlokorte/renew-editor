@@ -27,5 +27,6 @@
 		background: #0007;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 </style>

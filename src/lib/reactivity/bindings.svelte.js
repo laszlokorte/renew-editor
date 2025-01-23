@@ -246,6 +246,65 @@ export function bindValue(node, someAtom) {
 	};
 }
 
+
+
+export function bindNumericValue(node, someAtom) {
+	function oninput(e) {
+		const before = someAtom.value;
+		const newValue = node.valueAsNumber;
+		const newValueString = node.value;
+		if(!isNaN(newValue)) {
+			const newVal = someAtom.value;
+			if(node.valueAsNumber != newVal) {
+				someAtom.value = node.valueAsNumber;
+				node.value = (Math.round(node.value * 100) / 100).toFixed(2)
+			}
+		}
+	}
+
+	node.valueAsNumber = someAtom.value;
+
+	$effect.pre(() => {
+		const newVal = someAtom.value;
+
+		untrack(() => {
+			if(node.valueAsNumber !== newVal) {
+				tick().then(() => {
+					node.valueAsNumber = newVal;
+				})
+			}
+		})
+	});
+
+	node.addEventListener("input", oninput);
+	node.addEventListener("change", oninput);
+
+
+	return {
+		update(newAtom) {
+			someAtom = newAtom
+			node.valueAsNumber = someAtom.value;
+
+			$effect(() => {
+				const newVal = someAtom.value;
+
+				untrack(() => {
+					if(node.valueAsNumber !== newVal) {
+						tick().then(() => {
+							node.valueAsNumber = newVal;
+						})
+					}
+				})
+			});
+		},
+
+		destroy() {
+			node.removeEventListener("input", oninput);
+			node.removeEventListener("change", oninput);
+		}
+	};
+}
+
 export function readScroll(node, someAtom) {
 	 const onScrollThrottled = throttled(function onscroll(e) {
 	 	const newValue = someAtom.value
