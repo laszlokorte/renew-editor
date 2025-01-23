@@ -89,15 +89,14 @@
 		};
 	}
 
-
 	function debounce(callback, delay) {
-		let timer
-			return function(...args) {
-				clearTimeout(timer)
-				timer = setTimeout(() => {
-					callback(...args);
-				}, delay)
-		}
+		let timer;
+		return function (...args) {
+			clearTimeout(timer);
+			timer = setTimeout(() => {
+				callback(...args);
+			}, delay);
+		};
 	}
 
 	const tools = [
@@ -281,12 +280,14 @@
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}
-
-			{@const updateText = debounce((id, value) =>
-						cast('change_text_body', {
-							layer_id: id,
-							val: value
-						}), 200)}
+			{@const updateText = debounce(
+				(id, value) =>
+					cast('change_text_body', {
+						layer_id: id,
+						val: value
+					}),
+				700
+			)}
 			{@const moveCursor = throttle((pos) => cast('cursor', pos), 20)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
 			{@const extension = view(
@@ -2508,380 +2509,454 @@
 									/></label
 								>
 							{/each}
-						<hr />
+							<hr />
 						</div>
 
 						{#snippet edgeProps()}
 							{@const isCyclic = view(['edge', 'cyclic', L.valueOr(false)], singleSelectedLayer)}
 
 							<label class="pretty-number">
-							<span class="pretty-number-label">Stroke</span>
-							<input
-								type="number"
-								class="pretty-number-control"
-								size="4"
-								min="0"
-								onchange={(evt) =>
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'edge',
-										attr: 'stroke_width',
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={view(['edge', 'style', 'stroke_width', L.valueOr('1')], singleSelectedLayer)}
-							/>
-						</label>
-						{@const strokeColor = view(
-										['edge', 'style', 'stroke_color', L.valueOr('#000000')],
+								<span class="pretty-number-label">Stroke</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'stroke_width',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={view(
+										['edge', 'style', 'stroke_width', L.valueOr('1')],
 										singleSelectedLayer
 									)}
-						<label class="pretty-color">
+								/>
+							</label>
+							{@const strokeColor = view(
+								['edge', 'style', 'stroke_color', L.valueOr('#000000')],
+								singleSelectedLayer
+							)}
+							<label class="pretty-color">
 								<span class="pretty-color-label">Line Color</span>
-								<svg preserveAspectRatio="xMinYMid meet" class="pretty-color-value" style:color={strokeColor.value} viewBox="-16 -16 32 32">
-									<path stroke="currentColor" stroke-width="8" d="M-12,0C0,-12,12,12,24,0" fill="none" />
+								<svg
+									preserveAspectRatio="xMinYMid meet"
+									class="pretty-color-value"
+									style:color={strokeColor.value}
+									viewBox="-16 -16 32 32"
+								>
+									<path
+										stroke="currentColor"
+										stroke-width="8"
+										d="M-12,0C0,-12,12,12,24,0"
+										fill="none"
+									/>
 								</svg>
 
 								<input
 									type="color"
 									class="pretty-color-control"
-										onchange={(evt) =>
-											cast('change_style', {
+									onchange={(evt) =>
+										cast('change_style', {
 											layer_id: singleSelectedLayer.value.id,
 											type: 'edge',
 											attr: 'stroke_color',
 											val: evt.currentTarget.value
 										})}
-										use:bindValue={strokeColor}
-									/>
-								</label
-							>
+									use:bindValue={strokeColor}
+								/>
+							</label>
 
-							{@const opacityValueStrict = view(['style', 'opacity', L.rewrite(R.clamp(0, 1)), L.valueOr(1), L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))], singleSelectedLayer)}
+							{@const opacityValueStrict = view(
+								[
+									'style',
+									'opacity',
+									L.rewrite(R.clamp(0, 1)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
 							<label class="pretty-number">
-							<span class="pretty-number-label">Opacity</span>
-							<input
-								type="number"
-								class="pretty-number-control"
-								size="4"
-								min="0"
-								max="1"
-								step="0.01"
-								onchange={(evt) =>{
-									opacityValueStrict.value = evt.currentTarget.valueAsNumber;
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'layer',
-										attr: 'opacity',
-										val: opacityValueStrict.value
-									})}}
-								use:bindNumericValue={opacityValueStrict}
-							/>
+								<span class="pretty-number-label">Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									onchange={(evt) => {
+										opacityValueStrict.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'opacity',
+											val: opacityValueStrict.value
+										});
+									}}
+									use:bindNumericValue={opacityValueStrict}
+								/>
 							</label>
 
 							{@const sourceTipShapeValue = view(
-									['edge', 'style', 'source_tip_symbol_shape_id', L.valueOr(''), L.defaults('')],
-									singleSelectedLayer
-								)}
+								['edge', 'style', 'source_tip_symbol_shape_id', L.valueOr(''), L.defaults('')],
+								singleSelectedLayer
+							)}
 
 							<label class="pretty-select">
 								<span class="pretty-select-label">Source Tip</span>
 								{#await data.symbols then symbols}
-								<span class="pretty-select-value">{symbols.get(sourceTipShapeValue.value)?.name ?? "None"}</span>
+									<span class="pretty-select-value"
+										>{symbols.get(sourceTipShapeValue.value)?.name ?? 'None'}</span
+									>
 								{/await}
 								<select
-								class="pretty-select-control"
-								onchange={(evt) =>
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'edge',
-										attr: 'source_tip_symbol_shape_id',
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={sourceTipShapeValue}
-							>
-								{#await data.symbols then symbols}
-									<option value="">None</option>
-									{@const symbolGroups = R.groupBy(([id, symbol]) => {
-										return symbol.name.split("-", 2)[0]
-									}, symbols.entries())}
-									{#each Object.entries(symbolGroups) as [g, s] (g)}
-										<optgroup label={g}>
-											{#each s as [id, symbol] (id)}
-												<option value={id}>{symbol.name}</option>
-											{/each}
-										</optgroup>
-									{/each}
-
-								{/await}
-							</select>
+									class="pretty-select-control"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'source_tip_symbol_shape_id',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={sourceTipShapeValue}
+								>
+									{#await data.symbols then symbols}
+										<option value="">None</option>
+										{@const symbolGroups = R.groupBy(([id, symbol]) => {
+											return symbol.name.split('-', 2)[0];
+										}, symbols.entries())}
+										{#each Object.entries(symbolGroups) as [g, s] (g)}
+											<optgroup label={g}>
+												{#each s as [id, symbol] (id)}
+													<option value={id}>{symbol.name}</option>
+												{/each}
+											</optgroup>
+										{/each}
+									{/await}
+								</select>
 							</label>
 							{@const strokeDashValue = view(
-									['edge', 'style', 'stroke_dash_array', L.valueOr('')],
-									singleSelectedLayer
-								)}
+								['edge', 'style', 'stroke_dash_array', L.valueOr('')],
+								singleSelectedLayer
+							)}
 							<label class="pretty-select">
 								<span class="pretty-select-label">Dash</span>
-								<span class="pretty-select-value">{strokeDashValue.value || "None"}</span>
+								<span class="pretty-select-value">{strokeDashValue.value || 'None'}</span>
 								<select
-								class="pretty-select-control"
-								onchange={(evt) =>
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'edge',
-										attr: 'stroke_dash_array',
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={strokeDashValue}
-							>
-								<option value="">No Dash</option>
-								<option value="5 5">5 5</option>
-								<option value="10 5">10 5</option>
-								<option value="2 2">2 2</option>
-							</select>
-						</label>
+									class="pretty-select-control"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'stroke_dash_array',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={strokeDashValue}
+								>
+									<option value="">No Dash</option>
+									<option value="5 5">5 5</option>
+									<option value="10 5">10 5</option>
+									<option value="2 2">2 2</option>
+								</select>
+							</label>
 							{@const targetTipShapeValue = view(
-									['edge', 'style', 'target_tip_symbol_shape_id', L.valueOr(''), L.defaults('')],
-									singleSelectedLayer
-								)}
+								['edge', 'style', 'target_tip_symbol_shape_id', L.valueOr(''), L.defaults('')],
+								singleSelectedLayer
+							)}
 
 							<label class="pretty-select">
 								<span class="pretty-select-label">Target Tip</span>
 								{#await data.symbols then symbols}
-								<span class="pretty-select-value">{symbols.get(targetTipShapeValue.value)?.name ?? "None"}</span>
+									<span class="pretty-select-value"
+										>{symbols.get(targetTipShapeValue.value)?.name ?? 'None'}</span
+									>
 								{/await}
 								<select
-								class="pretty-select-control"
-								onchange={(evt) =>
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'edge',
-										attr: 'target_tip_symbol_shape_id',
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={targetTipShapeValue}
-							>
-								{#await data.symbols then symbols}
-									<option value="">None</option>
-									{@const symbolGroups = R.groupBy(([id, symbol]) => {
-										return symbol.name.split("-", 2)[0]
-									}, symbols.entries())}
-									{#each Object.entries(symbolGroups) as [g, s] (g)}
-										<optgroup label={g}>
-											{#each s as [id, symbol] (id)}
-												<option value={id}>{symbol.name}</option>
-											{/each}
-										</optgroup>
-									{/each}
-
-								{/await}
-							</select>
+									class="pretty-select-control"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'target_tip_symbol_shape_id',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={targetTipShapeValue}
+								>
+									{#await data.symbols then symbols}
+										<option value="">None</option>
+										{@const symbolGroups = R.groupBy(([id, symbol]) => {
+											return symbol.name.split('-', 2)[0];
+										}, symbols.entries())}
+										{#each Object.entries(symbolGroups) as [g, s] (g)}
+											<optgroup label={g}>
+												{#each s as [id, symbol] (id)}
+													<option value={id}>{symbol.name}</option>
+												{/each}
+											</optgroup>
+										{/each}
+									{/await}
+								</select>
 							</label>
 
-							{@const smoothnessValue = view(['edge', 'style', 'smoothness', L.valueOr('linear')], singleSelectedLayer)}
-
+							{@const smoothnessValue = view(
+								['edge', 'style', 'smoothness', L.valueOr('linear')],
+								singleSelectedLayer
+							)}
 
 							<div class="pretty-checkbox-group">
 								<span class="pretty-checkbox-group-head">smoothness</span>
 								<div class="pretty-checkbox-group-body">
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="linear"
+											bind:group={smoothnessValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'smoothness',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>Left</title>
+											<path
+												stroke="currentColor"
+												stroke-width="5"
+												d="M-12,-12L5,-4L-5,4L12,12"
+												fill="none"
+											/>
+										</svg></label
+									>
 
-								<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="linear"
-									bind:group={smoothnessValue.value}
-										onchange={(evt) => {
-										if(evt.currentTarget.checked) {
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'edge',
-												attr: 'smoothness',
-												val: evt.currentTarget.value
-											})
-										}
-									}}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Left</title>
-									<path stroke="currentColor" stroke-width="5" d="M-12,-12L5,-4L-5,4L12,12" fill="none" />
-								</svg></label
-							>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="autobezier"
+											bind:group={smoothnessValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'smoothness',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>Left</title>
+											<path
+												stroke="currentColor"
+												stroke-width="5"
+												d="M-12,-12  C 32,-7  -32,7  12,12"
+												fill="none"
+											/>
+										</svg></label
+									>
+								</div>
+							</div>
+							{@const strokeJoinValue = view(
+								['edge', 'style', 'stroke_join', L.valueOr('bevel')],
+								singleSelectedLayer
+							)}
 
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="autobezier"
-									bind:group={smoothnessValue.value}
-										onchange={(evt) => {
-										if(evt.currentTarget.checked) {
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'edge',
-												attr: 'smoothness',
-												val: evt.currentTarget.value
-											})
-										}
-									}}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Left</title>
-									<path stroke="currentColor" stroke-width="5" d="M-12,-12  C 32,-7  -32,7  12,12" fill="none" />
-								</svg></label
-							>
-						</div></div>
-						{@const strokeJoinValue = view(
-									['edge', 'style', 'stroke_join', L.valueOr('bevel')],
-									singleSelectedLayer
-								)}
-
-						<div class="pretty-checkbox-group">
+							<div class="pretty-checkbox-group">
 								<span class="pretty-checkbox-group-head">Join</span>
 								<div class="pretty-checkbox-group-body">
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="bevel"
+											bind:group={strokeJoinValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'stroke_join',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>bevel</title>
 
-								<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="bevel"
-									bind:group={strokeJoinValue.value}
-									onchange={(evt) => {
-										if(evt.currentTarget.checked) {
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'edge',
-												attr: 'stroke_join',
-												val: evt.currentTarget.value
-											})
-										}
-									}}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>bevel</title>
+											<path
+												stroke="currentColor"
+												stroke-width="10"
+												d="M-10,-10L6,0L-10,10"
+												fill="none"
+												stroke-linejoin="bevel"
+											/>
+										</svg></label
+									>
 
-									<path stroke="currentColor" stroke-width="10" d="M-10,-10L6,0L-10,10" fill="none" stroke-linejoin="bevel" />
-																	</svg></label
-							>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="miter"
+											bind:group={strokeJoinValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'stroke_join',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>miter</title>
 
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="miter"
-									bind:group={strokeJoinValue.value}
-									onchange={(evt) => {
-										if(evt.currentTarget.checked) {
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'edge',
-												attr: 'stroke_join',
-												val: evt.currentTarget.value
-											})
-										}
-									}}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>miter</title>
+											<path
+												stroke="currentColor"
+												stroke-width="10"
+												d="M-10,-10L6,0L-10,10"
+												fill="none"
+												stroke-linejoin="miter"
+											/>
+										</svg></label
+									>
 
-									<path stroke="currentColor" stroke-width="10" d="M-10,-10L6,0L-10,10" fill="none" stroke-linejoin="miter" />
-																	</svg></label
-							>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="round"
+											bind:group={strokeJoinValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'stroke_join',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>round</title>
 
+											<path
+												stroke="currentColor"
+												stroke-width="10"
+												d="M-10,-10L6,0L-10,10"
+												fill="none"
+												stroke-linejoin="round"
+											/>
+										</svg></label
+									>
+								</div>
+							</div>
 
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="round"
-									bind:group={strokeJoinValue.value}
-									onchange={(evt) => {
-										if(evt.currentTarget.checked) {
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'edge',
-												attr: 'stroke_join',
-												val: evt.currentTarget.value
-											})
-										}
-									}}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>round</title>
-
-									<path stroke="currentColor" stroke-width="10" d="M-10,-10L6,0L-10,10" fill="none" stroke-linejoin="round" />
-																	</svg></label
-							>
-						</div>
-					</div>
-
-
-
-						{@const strokeCapValue = view(
-									['edge', 'style', 'stroke_cap', L.valueOr('butt')],
-									singleSelectedLayer
-								)}
+							{@const strokeCapValue = view(
+								['edge', 'style', 'stroke_cap', L.valueOr('butt')],
+								singleSelectedLayer
+							)}
 							<div class="pretty-checkbox-group">
 								<span class="pretty-checkbox-group-head">Cap</span>
 								<div class="pretty-checkbox-group-body">
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="butt"
+											bind:group={strokeCapValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'stroke_cap',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>butt</title>
 
-								<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="butt"
-									bind:group={strokeCapValue.value}
-									onchange={(evt) => {
-										if(evt.currentTarget.checked) {
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'edge',
-												attr: 'stroke_cap',
-												val: evt.currentTarget.value
-											})
-										}
-									}}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>butt</title>
+											<path
+												stroke="currentColor"
+												stroke-width="10"
+												d="M-10,-10L10,10"
+												fill="none"
+												stroke-linecap="butt"
+											/>
+										</svg></label
+									>
 
-									<path stroke="currentColor" stroke-width="10" d="M-10,-10L10,10" fill="none" stroke-linecap="butt" />
-																	</svg></label
-							>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="squre"
+											bind:group={strokeCapValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'stroke_cap',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>squre</title>
 
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="squre"
-									bind:group={strokeCapValue.value}
-									onchange={(evt) => {
-										if(evt.currentTarget.checked) {
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'edge',
-												attr: 'stroke_cap',
-												val: evt.currentTarget.value
-											})
-										}
-									}}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>squre</title>
+											<path
+												stroke="currentColor"
+												stroke-width="10"
+												d="M-10,-10L10,10"
+												fill="none"
+												stroke-linecap="squre"
+											/>
+										</svg></label
+									>
 
-									<path stroke="currentColor" stroke-width="10" d="M-10,-10L10,10" fill="none" stroke-linecap="squre" />
-																	</svg></label
-							>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="round"
+											bind:group={strokeCapValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'stroke_cap',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>round</title>
 
-
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="round"
-									bind:group={strokeCapValue.value}
-									onchange={(evt) => {
-										if(evt.currentTarget.checked) {
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'edge',
-												attr: 'stroke_cap',
-												val: evt.currentTarget.value
-											})
-										}
-									}}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>round</title>
-
-									<path stroke="currentColor" stroke-width="10" d="M-10,-10L10,10" fill="none" stroke-linecap="round" />
-																	</svg></label
-							>
-						</div>
-					</div>
+											<path
+												stroke="currentColor"
+												stroke-width="10"
+												d="M-10,-10L10,10"
+												fill="none"
+												stroke-linecap="round"
+											/>
+										</svg></label
+									>
+								</div>
+							</div>
 
 							<label class="pretty-checkbox"
 								><input
@@ -2896,58 +2971,81 @@
 										});
 									}}
 									type="checkbox"
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Cyclic</title>
-									<text text-anchor="middle" dominant-baseline="middle" x="0" y="2" font-size="20" fill="currentColor" font-weight="bold">C</text>
+								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+									><title>Cyclic</title>
+									<text
+										text-anchor="middle"
+										dominant-baseline="middle"
+										x="0"
+										y="2"
+										font-size="20"
+										fill="currentColor"
+										font-weight="bold">C</text
+									>
 								</svg></label
 							>
 						{/snippet}
 						{#snippet boxProps()}
 							{@const shapeValue = view(
-									['box', 'shape', L.valueOr(''), L.defaults('')],
-									singleSelectedLayer
-								)}
+								['box', 'shape', L.valueOr(''), L.defaults('')],
+								singleSelectedLayer
+							)}
 							<label class="pretty-select">
 								<span class="pretty-select-label">Shape</span>
 								{#await data.symbols then symbols}
-								<span class="pretty-select-value">{symbols.get(shapeValue.value)?.name ?? "None"}</span>
+									<span class="pretty-select-value"
+										>{symbols.get(shapeValue.value)?.name ?? 'None'}</span
+									>
 								{/await}
 								<select
-								class="pretty-select-control"
-								onchange={(evt) =>
-									cast('change_layer_shape', {
-										layer_id: singleSelectedLayer.value.id,
-										shape_id: evt.currentTarget.value
-									})}
-								use:bindValue={shapeValue}
-							>
-								{#await data.symbols then symbols}
-									<option value="">None</option>
-									{@const symbolGroups = R.groupBy(([id, symbol]) => {
-										return symbol.name.split("-", 2)[0]
-									}, symbols.entries())}
-									{#each Object.entries(symbolGroups) as [g, s] (g)}
-										<optgroup label={g}>
-											{#each s as [id, symbol] (id)}
-												<option value={id}>{symbol.name}</option>
-											{/each}
-										</optgroup>
-									{/each}
-
-								{/await}
-							</select>
+									class="pretty-select-control"
+									onchange={(evt) =>
+										cast('change_layer_shape', {
+											layer_id: singleSelectedLayer.value.id,
+											shape_id: evt.currentTarget.value
+										})}
+									use:bindValue={shapeValue}
+								>
+									{#await data.symbols then symbols}
+										<option value="">None</option>
+										{@const symbolGroups = R.groupBy(([id, symbol]) => {
+											return symbol.name.split('-', 2)[0];
+										}, symbols.entries())}
+										{#each Object.entries(symbolGroups) as [g, s] (g)}
+											<optgroup label={g}>
+												{#each s as [id, symbol] (id)}
+													<option value={id}>{symbol.name}</option>
+												{/each}
+											</optgroup>
+										{/each}
+									{/await}
+								</select>
 							</label>
-							{@render commonProps()}
+							{@render commonProps(L.valueOr('#70DB93'), L.valueOr('#000000'))}
 						{/snippet}
 
-						{#snippet commonProps()}
+						{#snippet commonProps(defaultBackground, defaultStroke)}
 							{@const backgroundColorValue = view(
-										['style', 'background_color', L.valueOr('#70DB93')],
-										singleSelectedLayer
-									)}
+								['style', 'background_color', defaultBackground],
+								singleSelectedLayer
+							)}
 							<label class="pretty-color">
 								<span class="pretty-color-label">Fill</span>
-								<svg preserveAspectRatio="xMinYMid meet" class="pretty-color-value" style:color={backgroundColorValue.value} viewBox="0 0 32 32">
-									<rect fill="currentColor" stroke-width="4" x="0" y="0" width="32" height="32" stroke="none"></rect>
+								<svg
+									preserveAspectRatio="xMinYMid meet"
+									class="pretty-color-value"
+									style:color={backgroundColorValue.value}
+									viewBox="0 0 32 32"
+								>
+									<rect
+										fill="currentColor"
+										stroke-width="6"
+										x="0"
+										y="0"
+										width="32"
+										height="32"
+										stroke="#eee"
+									></rect>
 								</svg>
 
 								<input
@@ -2964,13 +3062,39 @@
 								/></label
 							>
 							{@const borderColorValue = view(
-										['style', 'border_color', L.valueOr('#000000')],
-										singleSelectedLayer
-									)}
+								['style', 'border_color', defaultStroke],
+								singleSelectedLayer
+							)}
 							<label class="pretty-color">
 								<span class="pretty-color-label">Stroke</span>
-								<svg preserveAspectRatio="xMinYMid meet" class="pretty-color-value" style:color={borderColorValue.value} viewBox="0 0 32 32">
-									<rect stroke="currentColor" stroke-width="4" x="4" y="4" width="26" height="26" fill="none"></rect>
+								<svg
+									preserveAspectRatio="xMinYMid meet"
+									class="pretty-color-value"
+									style:color={borderColorValue.value}
+									viewBox="0 0 32 32"
+								>
+									<rect
+										stroke="#eee"
+										stroke-width="4"
+										x="4"
+										y="4"
+										width="26"
+										height="26"
+										fill="none"
+										stroke-dasharray="1 7"
+										stroke-dashoffset="1"
+										rx="3"
+										ry="3"
+									></rect>
+									<rect
+										stroke="currentColor"
+										stroke-width="4"
+										x="4"
+										y="4"
+										width="26"
+										height="26"
+										fill="none"
+									></rect>
 								</svg>
 
 								<input
@@ -2986,68 +3110,81 @@
 									use:bindValue={borderColorValue}
 								/></label
 							>
-							{@const opacityValueStrict = view(['style', 'opacity', L.rewrite(R.clamp(0, 1)), L.valueOr(1), L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))], singleSelectedLayer)}
+							{@const opacityValueStrict = view(
+								[
+									'style',
+									'opacity',
+									L.rewrite(R.clamp(0, 1)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
 							<label class="pretty-number">
-							<span class="pretty-number-label">Opacity</span>
-							<input
-								type="number"
-								class="pretty-number-control"
-								size="4"
-								min="0"
-								max="1"
-								step="0.01"
-								onchange={(evt) =>{
-									opacityValueStrict.value = evt.currentTarget.valueAsNumber;
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'layer',
-										attr: 'opacity',
-										val: opacityValueStrict.value
-									})}}
-								use:bindNumericValue={opacityValueStrict}
-							/>
+								<span class="pretty-number-label">Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									onchange={(evt) => {
+										opacityValueStrict.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'opacity',
+											val: opacityValueStrict.value
+										});
+									}}
+									use:bindNumericValue={opacityValueStrict}
+								/>
 							</label>
 							{@const dashValue = view(
-									['style', 'border_dash_array', L.valueOr('')],
-									singleSelectedLayer
-								)}
+								['style', 'border_dash_array', L.valueOr('')],
+								singleSelectedLayer
+							)}
 							<label class="pretty-select">
 								<span class="pretty-select-label">Dash</span>
-								<span class="pretty-select-value">{dashValue.value || "None"}</span>
+								<span class="pretty-select-value">{dashValue.value || 'None'}</span>
 								<select
-								class="pretty-select-control"
-								onchange={(evt) =>
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'layer',
-										attr: 'border_dash_array',
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={dashValue}
-							>
-								<option value="">No Dash</option>
-								<option value="5 5">5 5</option>
-								<option value="10 5">10 5</option>
-								<option value="2 2">2 2</option>
-							</select>
-						</label>
+									class="pretty-select-control"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'border_dash_array',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={dashValue}
+								>
+									<option value="">No Dash</option>
+									<option value="5 5">5 5</option>
+									<option value="10 5">10 5</option>
+									<option value="2 2">2 2</option>
+								</select>
+							</label>
 							<label class="pretty-number">
-							<span class="pretty-number-label">Stroke</span>
-							<input
-								type="number"
-								class="pretty-number-control"
-								size="4"
-								min="0"
-								onchange={(evt) =>
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'layer',
-										attr: 'border_width',
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={view(['style', 'border_width', L.valueOr('1')], singleSelectedLayer)}
-							/>
-						</label>
+								<span class="pretty-number-label">Stroke</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'border_width',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={view(
+										['style', 'border_width', L.valueOr('1')],
+										singleSelectedLayer
+									)}
+								/>
+							</label>
 						{/snippet}
 						{#snippet groupProps()}
 							Group
@@ -3065,169 +3202,329 @@
 							)}
 							<label class="pretty-select">
 								<span class="pretty-select-label">Font FAmily</span>
-								<span style:font-family={fontFamily.value} class="pretty-select-value">{fontFamily.value}</span>
+								<span style:font-family={fontFamily.value} class="pretty-select-value"
+									>{fontFamily.value}</span
+								>
 								<select
-								class="pretty-select-control"
-								onchange={(evt) =>
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'text',
-										attr: 'font_family',
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={fontFamily}
-							>
-								<option value="serif">Serif</option>
-								<option value="sans-serif">Sans-Serif</option>
-								<option value="monospace">Monospace</option>
-							</select>
-						</label>
+									class="pretty-select-control"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'font_family',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={fontFamily}
+								>
+									<option value="serif">Serif</option>
+									<option value="sans-serif">Sans-Serif</option>
+									<option value="monospace">Monospace</option>
+								</select>
+							</label>
 							<label class="pretty-number">
-							<span class="pretty-number-label">Size</span>
-							<input
-								type="number"
-								class="pretty-number-control"
-								size="4"
-								min="1"
-								max="128"
-								onchange={(evt) =>
-									cast('change_style', {
-										layer_id: singleSelectedLayer.value.id,
-										type: 'text',
-										attr: 'font_size',
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={view(['text', 'style', 'font_size'], singleSelectedLayer)}
-							/>
-						</label>
+								<span class="pretty-number-label">Size</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="1"
+									max="128"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'font_size',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={view(['text', 'style', 'font_size'], singleSelectedLayer)}
+								/>
+							</label>
 
 							<div class="pretty-checkbox-group">
 								<span class="pretty-checkbox-group-head">Style</span>
 								<div class="pretty-checkbox-group-body">
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											onchange={(evt) =>
+												cast('change_style', {
+													layer_id: singleSelectedLayer.value.id,
+													type: 'text',
+													attr: 'bold',
+													val: evt.currentTarget.checked
+												})}
+											type="checkbox"
+											bind:checked={bold.value}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>Bold</title>
+											<text
+												text-anchor="middle"
+												dominant-baseline="middle"
+												x="0"
+												y="2"
+												font-size="20"
+												fill="currentColor"
+												stroke="none"
+												font-weight="bold">B</text
+											>
+										</svg></label
+									>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="checkbox"
+											onchange={(evt) =>
+												cast('change_style', {
+													layer_id: singleSelectedLayer.value.id,
+													type: 'text',
+													attr: 'italic',
+													val: evt.currentTarget.checked
+												})}
+											bind:checked={italic.value}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>Italic</title>
+											<text
+												text-anchor="middle"
+												dominant-baseline="middle"
+												x="0"
+												y="2"
+												font-size="20"
+												fill="currentColor"
+												stroke="none"
+												font-style="italic">I</text
+											>
+										</svg></label
+									>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="checkbox"
+											onchange={(evt) =>
+												cast('change_style', {
+													layer_id: singleSelectedLayer.value.id,
+													type: 'text',
+													attr: 'underline',
+													val: evt.currentTarget.checked
+												})}
+											bind:checked={underline.value}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>Underline</title>
+											<text
+												text-anchor="middle"
+												dominant-baseline="middle"
+												x="0"
+												y="2"
+												font-size="20"
+												fill="currentColor"
+												stroke="none"
+												text-decoration="underline">U</text
+											>
+										</svg></label
+									>
+								</div>
+							</div>
 
-								<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									onchange={(evt) =>
-										cast('change_style', {
-											layer_id: singleSelectedLayer.value.id,
-											type: 'text',
-											attr: 'bold',
-											val: evt.currentTarget.checked
-										})}
-									type="checkbox"
-									bind:checked={bold.value}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Bold</title>
-									<text text-anchor="middle" dominant-baseline="middle" x="0" y="2" font-size="20" fill="currentColor" font-weight="bold">B</text>
-								</svg></label
-							>
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="checkbox"
-									onchange={(evt) =>
-										cast('change_style', {
-											layer_id: singleSelectedLayer.value.id,
-											type: 'text',
-											attr: 'italic',
-											val: evt.currentTarget.checked
-										})}
-									bind:checked={italic.value}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Italic</title>
-									<text text-anchor="middle" dominant-baseline="middle" x="0" y="2" font-size="20" fill="currentColor" font-style="italic">I</text>
-								</svg></label
-							>
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="checkbox"
-									onchange={(evt) =>
-										cast('change_style', {
-											layer_id: singleSelectedLayer.value.id,
-											type: 'text',
-											attr: 'underline',
-											val: evt.currentTarget.checked
-										})}
-									bind:checked={underline.value}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Underline</title>
-									<text text-anchor="middle" dominant-baseline="middle" x="0" y="2" font-size="20" fill="currentColor" text-decoration="underline">U</text>
-								</svg></label
-							>
+							{@const breakValue = view(
+								['text', 'style', 'blank_lines', L.valueOr(false)],
+								singleSelectedLayer
+							)}
+							<div class="pretty-checkbox-group">
+								<span class="pretty-checkbox-group-head">Breaks</span>
+								<div class="pretty-checkbox-group-body">
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="checkbox"
+											value="round"
+											bind:checked={breakValue.value}
+											onchange={(evt) => {
+												cast('change_style', {
+													layer_id: singleSelectedLayer.value.id,
+													type: 'text',
+													attr: 'blank_lines',
+													val: evt.currentTarget.checked
+												});
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>lines</title><text
+												text-anchor="middle"
+												dominant-baseline="middle"
+												x="0"
+												y="0"
+												font-size="20"
+												fill="currentColor"
+												font-weight="bold">¶</text
+											>
+										</svg></label
+									>
 								</div>
 							</div>
 
 							{@const textColor = view(['text', 'style', 'text_color'], singleSelectedLayer)}
 							<label class="pretty-color">
 								<span class="pretty-color-label">Color</span>
-								<svg preserveAspectRatio="xMinYMid meet" class="pretty-color-value" style:color={textColor.value} viewBox="-16 -16 32 32">
-									<text text-anchor="middle" dominant-baseline="middle" x="0" y="4" font-size="26" fill="currentColor" stroke="black" stroke-width="3">A</text>
-									<text text-anchor="middle" dominant-baseline="middle" x="0" y="4" font-size="26" fill="currentColor" stroke-width="0">A</text>
+								<svg
+									preserveAspectRatio="xMinYMid meet"
+									class="pretty-color-value"
+									style:color={textColor.value}
+									viewBox="-16 -16 32 32"
+								>
+									<text
+										text-anchor="middle"
+										dominant-baseline="middle"
+										x="0"
+										y="4"
+										font-size="30"
+										fill="none"
+										stroke="#eee"
+										stroke-width="6">A</text
+									>
+									<text
+										text-anchor="middle"
+										dominant-baseline="middle"
+										x="0"
+										y="4"
+										font-size="30"
+										fill="currentColor"
+										stroke-width="0">A</text
+									>
 								</svg>
 
 								<input
 									type="color"
 									class="pretty-color-control"
-										onchange={(evt) =>
-											cast('change_style', {
-												layer_id: singleSelectedLayer.value.id,
-												type: 'text',
-												attr: 'text_color',
-												val: evt.currentTarget.value
-											})}
-										use:bindValue={textColor}
-									/>
-								</label
-							>
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'text_color',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={textColor}
+								/>
+							</label>
 							{@const alignmentValue = view(['text', 'style', 'alignment'], singleSelectedLayer)}
-
 
 							<div class="pretty-checkbox-group">
 								<span class="pretty-checkbox-group-head">Alignment</span>
 								<div class="pretty-checkbox-group-body">
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="left"
+											bind:group={alignmentValue.value}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>Left</title>
+											<rect
+												x="-12"
+												y="-10"
+												height="4"
+												width="24"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+											<rect
+												x="-12"
+												y="-2"
+												height="4"
+												width="12"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+											<rect
+												x="-12"
+												y="6"
+												height="4"
+												width="16"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+										</svg></label
+									>
 
-								<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="left"
-									bind:group={alignmentValue.value}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Left</title>
-									<rect x="-12" y="-10" height="4" width="24" fill="currentColor" stroke="none" stroke-width="0"></rect>
-									<rect x="-12" y="-2" height="4" width="12" fill="currentColor" stroke="none" stroke-width="0"></rect>
-									<rect x="-12" y="6" height="4" width="16" fill="currentColor" stroke="none" stroke-width="0"></rect>
-								</svg></label
-							>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="center"
+											bind:group={alignmentValue.value}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>Center</title>
+											<rect
+												x="-12"
+												y="-10"
+												height="4"
+												width="24"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+											<rect
+												x="-6"
+												y="-2"
+												height="4"
+												width="12"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+											<rect
+												x="-8"
+												y="6"
+												height="4"
+												width="16"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+										</svg></label
+									>
 
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="center"
-									bind:group={alignmentValue.value}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Center</title>
-									<rect x="-12" y="-10" height="4" width="24" fill="currentColor" stroke="none" stroke-width="0"></rect>
-									<rect x="-6" y="-2" height="4" width="12" fill="currentColor" stroke="none" stroke-width="0"></rect>
-									<rect x="-8" y="6" height="4" width="16" fill="currentColor" stroke="none" stroke-width="0"></rect>
-								</svg></label
-							>
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="right"
+											bind:group={alignmentValue.value}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>Right</title>
+											<rect
+												x="-12"
+												y="-10"
+												height="4"
+												width="24"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+											<rect
+												x="0"
+												y="-2"
+												height="4"
+												width="12"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+											<rect
+												x="-4"
+												y="6"
+												height="4"
+												width="16"
+												fill="currentColor"
+												stroke="none"
+												stroke-width="0"
+											></rect>
+										</svg></label
+									>
+								</div>
+							</div>
 
-							<label class="pretty-checkbox"
-								><input
-									class="pretty-checkbox-control"
-									type="radio"
-									value="right"
-									bind:group={alignmentValue.value}
-								/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"><title>Right</title>
-									<rect x="-12" y="-10" height="4" width="24" fill="currentColor" stroke="none" stroke-width="0"></rect>
-									<rect x="0" y="-2" height="4" width="12" fill="currentColor" stroke="none" stroke-width="0"></rect>
-									<rect x="-4" y="6" height="4" width="16" fill="currentColor" stroke="none" stroke-width="0"></rect>
-								</svg></label
-							>
-						</div>
-					</div>
-
-
-						{@render commonProps()}
+							{@render commonProps(L.valueOr('transparent'), L.valueOr('transparent'))}
 						{/snippet}
 						<div
 							style="display: flex; gap: 1em; align-items: center; white-space: wrap; padding: 0 1ex;"
@@ -3248,21 +3545,21 @@
 					</div>
 				</div>
 
-				{#if singleSelectedLayerType.value == "text"}
-
+				{#if singleSelectedLayerType.value == 'text'}
 					<div class="topsubbar">
 						<div class="toolbar" style="display: block;">
 							<label class="pretty-text">
 								<span class="pretty-text-label">Edit Text</span>
-								<textarea  class="pretty-text-control"
-						style="height: 100%; min-height: 6em; resize: none;  width: 100%; justify-self: stretch; flex-grow: 1; box-sizing: border-box;"
-						rows="1"
-						cols="50"
-						oninput={(evt) => {
-							updateText(singleSelectedLayer.value.id, evt.currentTarget.value)
-						}}
-						use:bindValue={view(['text', 'body'], singleSelectedLayer)}
-					></textarea>
+								<textarea
+									class="pretty-text-control"
+									style="height: 100%; min-height: 6em; resize: none;  width: 100%; justify-self: stretch; flex-grow: 1; box-sizing: border-box;"
+									rows="1"
+									cols="50"
+									oninput={(evt) => {
+										updateText(singleSelectedLayer.value.id, evt.currentTarget.value);
+									}}
+									use:bindValue={view(['text', 'body'], singleSelectedLayer)}
+								></textarea>
 							</label>
 						</div>
 					</div>
@@ -3450,6 +3747,8 @@
 										☰
 									</div>
 									<div
+										role="button"
+										tabindex="-1"
 										onclick={() => {
 											const newSel = update(R.not, selected);
 
@@ -3457,6 +3756,17 @@
 												cast('select', id);
 											} else {
 												cast('select', null);
+											}
+										}}
+										onkeydown={(evt) => {
+											if (evt.key == 'space') {
+												const newSel = update(R.not, selected);
+
+												if (newSel) {
+													cast('select', id);
+												} else {
+													cast('select', null);
+												}
 											}
 										}}
 										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center; box-sizing: border-box;"
@@ -3477,6 +3787,7 @@
 								{#if isLast}
 									{#each [id, ...parents] as p, i (p)}
 										<div
+											role="region"
 											style:margin-left="{2.5 + depth - i}em"
 											ondragenter={(evt) => {
 												const sourceId = evt.dataTransfer.getData(
@@ -3533,7 +3844,16 @@
 							<div>
 								Linked:<br />
 								<u
+									tabindex="-1"
 									style="cursor: pointer"
+									role="button"
+									onkeydown={(evt) => {
+										if (evt.key === 'enter') {
+											const id = singleSelectedHyperinkedId.value;
+											selectedLayers.value = [id];
+											cast('select', id);
+										}
+									}}
 									onclick={() => {
 										const id = singleSelectedHyperinkedId.value;
 										selectedLayers.value = [id];
@@ -3774,6 +4094,15 @@
 						ondblclick={() => {
 							cameraRotation.value = 0;
 						}}
+						tabindex="-1"
+						role="button"
+						onkeydown={(evt) => {
+							if (evt.key === 'enter' || evt.key === 'space') {
+								update(R.not, lockRotation);
+							} else if (evt.key === 'escape') {
+								cameraRotation.value = 0;
+							}
+						}}
 					>
 						<svg viewBox="-20 -20 40 40" width="40" height="40" style="width: 100%;">
 							<g transform="rotate({cameraRotation.value})">
@@ -3954,7 +4283,9 @@
 		z-index: 100;
 		display: grid;
 		grid-template-columns:
-			[body-start] 0.5ex [top-start left-start] auto [left-end topsubbar-start] 1fr[topsubbar-end right-start] max(20vw)
+			[body-start] 0.5ex [top-start left-start] auto [left-end topsubbar-start] 1fr[topsubbar-end right-start] max(
+				20vw
+			)
 			[right-end top-end] 1em [body-end];
 		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start topsubbar-start] 1fr [topsubbar-end] auto [left-end right-end] 1em [body-end];
 		gap: 0.5em;
@@ -4127,45 +4458,6 @@
 
 	.droppable {
 		cursor: move;
-	}
-
-	.color-wrapper {
-		display: grid;
-		align-content: center;
-		justify-content: center;
-		width: 1.8em;
-		height: 1.8em;
-		border-radius: 100%;
-		border: 2px solid #444;
-		background: red;
-		padding: 0;
-		cursor: pointer;
-		grid-template-columns: 100%;
-		grid-template-rows: 100%;
-		overflow: hidden;
-		grid-auto-columns: 1ex;
-		grid-auto-rows: 1ex;
-		cursor: pointer;
-		flex-shrink: 0;
-	}
-
-	.color-wrapper > input[type='color'] {
-		padding: 0;
-		margin: 0;
-		outline: none;
-		border: none;
-		display: block;
-		width: 100%;
-		height: 100%;
-		grid-column-start: -3;
-		grid-row-start: -3;
-		grid-column-end: 3;
-		grid-row-end: 3;
-		cursor: pointer;
-	}
-
-	.color-wrapper:focus-within {
-		outline: 2px solid #23875d;
 	}
 
 	.tool-button {
@@ -4347,6 +4639,16 @@
 		gap: 0.1ex;
 	}
 
+	.pretty-select::after {
+		content: '▼';
+		grid-area: value / full;
+		align-self: center;
+		justify-self: end;
+		display: block;
+		padding: 5px;
+		color: #aaa;
+	}
+
 	.pretty-select-value {
 		grid-area: value / full;
 		display: block;
@@ -4383,7 +4685,6 @@
 		max-width: 12em;
 		padding: 0.1ex;
 		gap: 0.1ex;
-
 	}
 
 	.pretty-number-label {
@@ -4476,7 +4777,7 @@
 	.pretty-color-label::after,
 	.pretty-text-label::after,
 	.pretty-checkbox-group-head::after {
-		content: ": ";
+		content: ': ';
 		color: #888;
 	}
 
@@ -4520,7 +4821,6 @@
 		justify-items: stretch;
 		padding: 0.1ex;
 		gap: 0.1ex;
-
 	}
 
 	.pretty-text-label {
@@ -4539,6 +4839,4 @@
 		box-sizing: border-box;
 		min-width: 6em;
 	}
-
-
 </style>

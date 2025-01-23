@@ -180,8 +180,8 @@
 				x: (bounds.maxX + bounds.minX) / 2,
 				y: (bounds.maxY + bounds.minY) / 2,
 				z: -Math.max(
-					Math.log(bounds.maxX - bounds.minX) - Math.log(plane.x),
-					Math.log(bounds.maxY - bounds.minY) - Math.log(plane.y)
+					Math.log(bounds.maxX - bounds.minX) - (plane.x ? Math.log(plane.x) : 0),
+					Math.log(bounds.maxY - bounds.minY) - (plane.y ? Math.log(plane.y) : 0)
 				),
 				w: bounds.angle
 			}),

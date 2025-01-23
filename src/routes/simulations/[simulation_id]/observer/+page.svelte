@@ -43,13 +43,9 @@
 
 	const { data } = $props();
 
-	const { _ } = $derived(data.commands);
-
 	const currentInstance = atom(null);
 	const textBounds = atom({});
 	const expandedPlaces = atom({});
-
-	const activeTool = atom('select');
 
 	const cameraSettings = atom({
 		plane: {
@@ -281,9 +277,18 @@
 												stroke-width="5"
 												{...doc.value.viewbox}
 											/>
+											{#key current_net_id.value + (camera.value.plane.x !== 0) + (camera.value.plane.y !== 0)}
+												<MountTrigger
+													onMount={() => {
+														call((c) => {
+															c && c.resetCamera();
+														}, cameraScroller);
+													}}
+												/>
+											{/key}
 
 											<g transform={rotationTransform.value}>
-												<g id="full-document-{doc.value.id}">
+												<g id="full-document-{current_net_id}">
 													{#each layersInOrder.value as { index, id, depth, hidden } (id)}
 														{#if !hidden}
 															{@const el = view(
@@ -431,45 +436,6 @@
 												</g>
 											</g>
 
-											{#if activeTool.value === 'magnifier'}
-												<Magnifier
-													{frameBoxPath}
-													clientToCanvas={liveLenses.clientToCanvas}
-													cameraRotationLens={liveLenses.cameraRotationIso}
-													{cameraRotation}
-													onZoomDelta={navigationActions.zoomDelta}
-													onZoomFrame={navigationActions.zoomFrame}
-													{cameraScale}
-												/>
-											{/if}
-
-											{#if activeTool.value === 'paner'}
-												<Paner
-													{frameBoxPath}
-													clientToCanvas={liveLenses.clientToCanvas}
-													onPan={navigationActions.panMove}
-												/>
-											{/if}
-
-											{#if activeTool.value === 'rotator'}
-												<Rotator
-													{frameBoxPath}
-													clientToCanvas={liveLenses.clientToCanvas}
-													onRotate={navigationActions.rotate}
-													{rotationTransform}
-													{cameraScale}
-												/>
-											{/if}
-
-											{#if activeTool.value === 'zoomer'}
-												<Zoomer
-													{frameBoxPath}
-													clientToCanvas={liveLenses.clientToCanvas}
-													onZoom={navigationActions.zoomDelta}
-													{rotationTransform}
-													{cameraScale}
-												/>
-											{/if}
 											<g transform={rotationTransform.value}>
 												<LiveResource socket={data.live_socket} resource={current_instance.value}>
 													{#snippet children(instance, _presence, {})}
@@ -504,10 +470,11 @@
 															<rect
 																{...pos.value}
 																fill="white"
-																fill-opacity="0.3"
-																stroke="lime"
+																fill-opacity="0.7"
 																stroke-width="8"
-																class="transition-fade-out"
+																class="transition-shine transition-fade-out"
+																rx="5"
+																ry="5"
 															></rect>
 														{/each}
 
@@ -1080,10 +1047,17 @@
 
 	.transition-fade-out {
 		animation-name: transition-fade-out;
-		animation-duration: 0.5s;
+		animation-duration: 0.8s;
 		animation-timing-function: ease-out;
 		animation-fill-mode: forwards;
 		opacity: 1;
+	}
+
+	.transition-shine {
+		stroke: #11ff66;
+		fill: white;
+		fill-opacity: 0.7;
+		stroke-width: 8;
 	}
 
 	@keyframes transition-fade-out {
