@@ -1022,7 +1022,6 @@
 		top: 0;
 		bottom: 0.5ex;
 		text-align: center;
-		flex: flex;
 		align-items: center;
 		align-content: center;
 		color: #fff;

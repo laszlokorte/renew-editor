@@ -34,7 +34,9 @@
 				<br />
 				<span
 					style="border-radius: 1ex; display: inline-block; padding: 0.5ex 1ex; color: #000; background: #ddeeee"
-					>{data.authState.value.url}</span
+					><a style="color: inherit;" href={data.authState.value.url} target="_blank"
+						>{data.authState.value.url}</a
+					></span
 				><br />
 				and logged in in as<br />
 				<strong

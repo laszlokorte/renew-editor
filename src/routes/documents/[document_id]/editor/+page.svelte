@@ -4529,7 +4529,6 @@
 		top: 0;
 		bottom: 0.5ex;
 		text-align: center;
-		flex: flex;
 		align-items: center;
 		align-content: center;
 		color: #fff;
@@ -4554,15 +4553,6 @@
 		cursor: move;
 	}
 
-	text.selected {
-		stroke: var(--selection-color, #7af);
-		fill: var(--selection-color, #7af);
-		stroke-width: 5;
-		vector-effect: non-scaling-stroke;
-		pointer-events: none;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
 	path.selected {
 		stroke: var(--selection-color, #7af);
 		pointer-events: none;
@@ -4573,11 +4563,7 @@
 		stroke-width: 5;
 		pointer-events: none;
 		stroke-linecap: butt;
-		stroke-linejoin: butt;
-	}
-
-	input[type='search'] {
-		width: 100%;
+		stroke-linejoin: round;
 	}
 
 	textarea {

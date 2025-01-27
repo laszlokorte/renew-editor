@@ -11,6 +11,8 @@
 <AppBar authState={data.authState} />
 
 <section class="hero">
+	<img style="max-width: 5em; margin: 1em auto" src="{base}/favicon.svg" alt="Renew" class="icon" />
+
 	<h2>{appTitle}</h2>
 
 	<p>Welcome to the {appTitle} Web Editor</p>

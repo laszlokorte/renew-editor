@@ -4,8 +4,6 @@
 	import CurrentAuthState from './auth/CurrentAuthState.svelte';
 	import { view, atom, update } from '$lib/reactivity/atom.svelte';
 
-	const favicon = '';
-
 	const appTitle = env.APP_NAME;
 
 	const { authState, errors = atom([]), connectionState = atom(undefined) } = $props();
