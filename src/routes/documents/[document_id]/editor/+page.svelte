@@ -64,6 +64,7 @@
 
 	const textBounds = atom({});
 	const showMinimap = atom(true);
+	const showHierarchy = atom(true);
 	const showCursors = atom(true);
 	const selectedBlueprint = atom(undefined);
 	const showOtherSelections = atom(true);
@@ -759,6 +760,12 @@
 								</li>
 								<li class="menu-bar-menu-item">
 									<label>
+										<input type="checkbox" bind:checked={showHierarchy.value} />
+										Show Hierarchy</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
 										<input type="checkbox" bind:checked={showCursors.value} />
 										Show Remote Cursors</label
 									>
@@ -1209,6 +1216,132 @@
 												{/each}
 											</g>
 										</g>
+										<g transform={rotationTransform.value} opacity="0.7">
+											{#each selectedLayers.value as id (id)}
+												{@const els = view(
+													['layers', 'items', L.filter((el) => el.hyperlink == id)],
+													doc
+												)}
+												{#each els.value as el}
+													{#if el.box}
+														<rect
+															class="link-selected"
+															x={el.box.position_x - cameraScale.value}
+															y={el.box.position_y - cameraScale.value}
+															width={el.box.width + 2 * cameraScale.value}
+															height={el.box.height + 2 * cameraScale.value}
+															cursor="move"
+														></rect>
+													{/if}
+													{#if el.text}
+														{@const bbox = view(L.prop(el.id), textBounds)}
+
+														{#if bbox.value}
+															<rect
+																class="link-selected"
+																x={bbox.value.x}
+																y={bbox.value.y}
+																width={bbox.value.width}
+																height={bbox.value.height}
+																stroke-width={cameraScale.value * 6}
+															></rect>
+														{/if}
+													{/if}
+													{#if el.edge}
+														<path
+															class="link-selected"
+															d={edgePath[el.edge?.style?.smoothness ?? 'linear'](
+																el.edge,
+																L.get(localProp('waypoints'), el.edge)
+															)}
+															stroke="black"
+															fill="none"
+															stroke-width={(el.edge?.style?.stroke_width ?? 1) * 1 +
+																6 * cameraScale.value}
+															stroke-linejoin={el.edge?.style?.stroke_join ?? 'rect'}
+															stroke-linecap={el.edge?.style?.stroke_cap ?? 'butt'}
+														/>
+
+														{#if el.edge?.style?.source_tip_symbol_shape_id}
+															{@const source_angle = edgeAngle['source'](
+																el.edge,
+																L.get(localProp('waypoints'), el.edge)
+															)}
+															<g
+																class="link-selected"
+																transform="rotate({source_angle} {el.edge.source_x} {el.value?.edge
+																	.source_y})"
+															>
+																{#await data.symbols then symbols}
+																	{@const symbol = symbols.get(
+																		el.edge?.style?.source_tip_symbol_shape_id
+																	)}
+																	{@const size = el.edge?.style?.stroke_width ?? 1}
+
+																	{#if symbol}
+																		{#each symbol.paths as path, i (i)}
+																			<path
+																				fill={path.fill_color ?? 'transparent'}
+																				stroke={path.stroke_color ?? 'transparent'}
+																				d={buildPath(
+																					{
+																						x: el.edge.source_x - size,
+																						y: el.edge.source_y - size,
+																						width: 2 * size,
+																						height: 2 * size
+																					},
+																					path
+																				)}
+																				fill-rule="evenodd"
+																			/>
+																		{/each}
+																	{/if}
+																{/await}
+															</g>
+														{/if}
+
+														{#if el.edge?.style?.target_tip_symbol_shape_id}
+															{@const target_angle = edgeAngle['target'](
+																el.edge,
+																L.get(localProp('waypoints'), el.edge)
+															)}
+															<g
+																class="link-selected"
+																transform="rotate({target_angle} {el.edge.target_x} {el.value?.edge
+																	.target_y})"
+															>
+																{#await data.symbols then symbols}
+																	{@const symbol = symbols.get(
+																		el.edge?.style?.target_tip_symbol_shape_id
+																	)}
+																	{@const size = el.edge?.style?.stroke_width ?? 1}
+
+																	{#if symbol}
+																		{#each symbol.paths as path, i (i)}
+																			<path
+																				fill={path.fill_color ?? 'transparent'}
+																				stroke={path.stroke_color ?? 'transparent'}
+																				d={buildPath(
+																					{
+																						x: el.edge.target_x - size,
+																						y: el.edge.target_y - size,
+																						width: 2 * size,
+																						height: 2 * size
+																					},
+																					path
+																				)}
+																				fill-rule="evenodd"
+																			/>
+																		{/each}
+																	{/if}
+																{/await}
+															</g>
+														{/if}
+													{/if}
+												{/each}
+											{/each}
+										</g>
+
 										<g transform={rotationTransform.value} opacity="0.7">
 											{#each selectedLayers.value as id (id)}
 												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
@@ -3586,7 +3719,7 @@
 
 						<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
 					</Minimap>
-					<div class="toolbar vertical">
+					<div class="toolbar vertical" class:hidden={!showHierarchy.value}>
 						Hierarchy
 						<hr />
 						<!-- <input style="" type="search" name="" placeholder="search" /> -->
@@ -3862,51 +3995,65 @@
 								>
 							</div>
 						{/if}
-						<label>
-							Interface: <select
-								disabled={!singleSelectedLayer.value}
-								onchange={(evt) =>
-									cast('set_socket_schema', {
-										layer_id: singleSelectedLayer.value.id,
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={view(
-									['interface_id', L.defaults(''), L.valueOr('')],
-									singleSelectedLayer
-								)}
-							>
-								{#await data.socket_schemas then schemas}
+						<label class="pretty-select" style="max-width: none">
+							<span class="pretty-select-label">Interface:</span>
+							{#await data.socket_schemas then schemas}
+								<span class="pretty-select-value"
+									>{view(
+										['interface_id', L.reread((v) => schemas.get(v)?.name || 'None')],
+										singleSelectedLayer
+									).value}</span
+								>
+								<select
+									class="pretty-select-control"
+									disabled={!singleSelectedLayer.value}
+									onchange={(evt) =>
+										cast('set_socket_schema', {
+											layer_id: singleSelectedLayer.value.id,
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={view(
+										['interface_id', L.defaults(''), L.valueOr('')],
+										singleSelectedLayer
+									)}
+								>
 									<option value="">None</option>
 									{#each schemas.entries() as [id, s]}
 										<option value={id}>{s.name}</option>
 									{/each}
-								{/await}
-							</select>
+								</select>
+							{/await}
 						</label>
-						<label
-							><span>Semantic Tag:</span><br />
-							<select
-								disabled={!singleSelectedLayer.value}
-								onchange={(evt) =>
-									cast('set_semantic_tag', {
-										layer_id: singleSelectedLayer.value.id,
-										val: evt.currentTarget.value
-									})}
-								use:bindValue={view(
-									['semantic_tag', L.defaults(''), L.valueOr('')],
-									singleSelectedLayer
-								)}
-							>
-								{#await data.semantic_tags then tags}
+						<label class="pretty-select" style="max-width: none">
+							<span class="pretty-select-label">Semantic Tab:</span>
+							{#await data.semantic_tags then tags}
+								<span class="pretty-select-value"
+									>{view(['semantic_tag', L.defaults(''), L.valueOr('None')], singleSelectedLayer)
+										.value}</span
+								>
+								<select
+									class="pretty-select-control"
+									disabled={!singleSelectedLayer.value}
+									onchange={(evt) =>
+										cast('set_semantic_tag', {
+											layer_id: singleSelectedLayer.value.id,
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={view(
+										['semantic_tag', L.defaults(''), L.valueOr('')],
+										singleSelectedLayer
+									)}
+								>
 									<option value="">None</option>
 									{#each tags as t}
 										<option value={t}>{t}</option>
 									{/each}
-								{/await}
-							</select></label
-						>
+								</select>
+							{/await}
+						</label>
 						<button
 							disabled={!singleSelectedLayerType.value}
+							class="delete-button"
 							onclick={(evt) => {
 								evt.preventDefault();
 								cast('delete_layer', selectedLayers.value[0]);
@@ -4535,6 +4682,11 @@
 		font-weight: bold;
 	}
 
+	.draggable {
+		pointer-events: all;
+		cursor: move;
+	}
+
 	rect.selected {
 		stroke: var(--selection-color, #7af);
 		fill: var(--selection-color, #7af);
@@ -4548,16 +4700,40 @@
 		outline: none;
 	}
 
-	.draggable {
-		pointer-events: all;
-		cursor: move;
-	}
-
 	path.selected {
 		stroke: var(--selection-color, #7af);
 		pointer-events: none;
 	}
 	g.selected {
+		stroke: var(--selection-color, #7af);
+		fill: var(--selection-color, #7af);
+		stroke-width: 5;
+		pointer-events: none;
+		stroke-linecap: butt;
+		stroke-linejoin: round;
+	}
+
+	rect.link-selected {
+		stroke-dasharray: 3 10;
+		stroke: var(--selection-color, #7af);
+		fill: var(--selection-color, #7af);
+		fill-opacity: 0.3;
+		stroke-width: 5;
+		vector-effect: non-scaling-stroke;
+		pointer-events: none;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		paint-order: stroke;
+		outline: none;
+	}
+
+	path.link-selected {
+		stroke-dasharray: 5 20;
+		stroke: var(--selection-color, #7af);
+		pointer-events: none;
+	}
+	g.link-selected {
+		stroke-dasharray: 5 20;
 		stroke: var(--selection-color, #7af);
 		fill: var(--selection-color, #7af);
 		stroke-width: 5;
@@ -4824,5 +5000,25 @@
 		border: 1px solid #e0e0e0;
 		box-sizing: border-box;
 		min-width: 6em;
+	}
+
+	.delete-button {
+		background: #a00;
+		color: #fff;
+		border: none;
+		padding: 1ex;
+		cursor: pointer;
+	}
+
+	.delete-button:disabled {
+		background: #aaa;
+		cursor: default;
+	}
+
+	.delete-button:not(:disabled):hover {
+		background: #a22;
+	}
+	.delete-button:not(:disabled):active {
+		background: #900;
 	}
 </style>
