@@ -8,7 +8,7 @@
 	const { data } = $props();
 </script>
 
-<AppBar authState={data.authState} />
+<AppBar authState={data.authState} connectionState={data.connectionState} />
 
 <section class="hero">
 	<img style="max-width: 5em; margin: 1em auto" src="{base}/favicon.svg" alt="Renew" class="icon" />

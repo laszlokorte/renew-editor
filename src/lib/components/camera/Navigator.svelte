@@ -26,7 +26,7 @@
 
 	const svgElement = atom(null);
 	const thisElement = view(
-		L.setter((g) => g.ownerSVGElement),
+		L.rewrite((g) => g.ownerSVGElement),
 		svgElement
 	);
 

@@ -68,7 +68,7 @@
 	const showCursors = atom(true);
 	const selectedBlueprint = atom(undefined);
 	const showOtherSelections = atom(true);
-	const showDebug = atom(true);
+	const showDebug = atom(false);
 	const showGrid = atom(false);
 	const showRename = atom(false);
 	const lockRotation = atom(false);
@@ -83,6 +83,7 @@
 		return (...args) => {
 			if (timerFlag === null) {
 				mainFunction(...args);
+
 				timerFlag = setTimeout(() => {
 					timerFlag = null;
 				}, delay);
@@ -92,6 +93,7 @@
 
 	function debounce(callback, delay) {
 		let timer;
+
 		return function (...args) {
 			clearTimeout(timer);
 			timer = setTimeout(() => {
@@ -836,6 +838,13 @@
 										href="https://www.petristation.net/">petristation.net</a
 									>
 								</li>
+								<li class="menu-bar-menu-item">
+									<a
+										class="menu-bar-item-button"
+										target="_blank"
+										href="https://www.youtube.com/@petristation">youtube/@petristation</a
+									>
+								</li>
 							</ul>
 						</li>
 					</ol>
@@ -1072,7 +1081,7 @@
 																}}
 																fill={el.value?.style?.background_color ?? '#70DB93'}
 																stroke={el.value?.style?.border_color ?? 'black'}
-																stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
+																stroke-dasharray={el.value?.style?.border_dash_array ?? 'none'}
 																stroke-width={el.value?.style?.border_width ?? '1'}
 																opacity={el.value?.style?.opacity ?? '1'}
 															>
@@ -1139,7 +1148,7 @@
 																opacity={el.value?.style?.opacity ?? '1'}
 																stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
 																stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
-																stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+																stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
 																stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 															>
 																<path
@@ -1158,7 +1167,8 @@
 																		el.value?.edge,
 																		L.get(localProp('waypoints'), el.value?.edge)
 																	)}
-																	stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ?? ''}
+																	stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ??
+																		'none'}
 																	fill="none"
 																/>
 
@@ -1258,7 +1268,7 @@
 															fill="none"
 															stroke-width={(el.edge?.style?.stroke_width ?? 1) * 1 +
 																6 * cameraScale.value}
-															stroke-linejoin={el.edge?.style?.stroke_join ?? 'rect'}
+															stroke-linejoin={el.edge?.style?.stroke_join ?? 'miter'}
 															stroke-linecap={el.edge?.style?.stroke_cap ?? 'butt'}
 														/>
 
@@ -1381,7 +1391,7 @@
 														fill="none"
 														stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
 															6 * cameraScale.value}
-														stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+														stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
 														stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 													/>
 
@@ -1506,7 +1516,7 @@
 																	fill="none"
 																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
 																		4 * cameraScale.value}
-																	stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+																	stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
 																	stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 																/>
 
@@ -2899,42 +2909,13 @@
 								</div>
 							</div>
 							{@const strokeJoinValue = view(
-								['edge', 'style', 'stroke_join', L.valueOr('bevel')],
+								['edge', 'style', 'stroke_join', L.valueOr('miter')],
 								singleSelectedLayer
 							)}
 
 							<div class="pretty-checkbox-group">
 								<span class="pretty-checkbox-group-head">Join</span>
 								<div class="pretty-checkbox-group-body">
-									<label class="pretty-checkbox"
-										><input
-											class="pretty-checkbox-control"
-											type="radio"
-											value="bevel"
-											bind:group={strokeJoinValue.value}
-											onchange={(evt) => {
-												if (evt.currentTarget.checked) {
-													cast('change_style', {
-														layer_id: singleSelectedLayer.value.id,
-														type: 'edge',
-														attr: 'stroke_join',
-														val: evt.currentTarget.value
-													});
-												}
-											}}
-										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
-											><title>bevel</title>
-
-											<path
-												stroke="currentColor"
-												stroke-width="10"
-												d="M-10,-10L6,0L-10,10"
-												fill="none"
-												stroke-linejoin="bevel"
-											/>
-										</svg></label
-									>
-
 									<label class="pretty-checkbox"
 										><input
 											class="pretty-checkbox-control"
@@ -2960,6 +2941,35 @@
 												d="M-10,-10L6,0L-10,10"
 												fill="none"
 												stroke-linejoin="miter"
+											/>
+										</svg></label
+									>
+
+									<label class="pretty-checkbox"
+										><input
+											class="pretty-checkbox-control"
+											type="radio"
+											value="bevel"
+											bind:group={strokeJoinValue.value}
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'edge',
+														attr: 'stroke_join',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
+										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+											><title>bevel</title>
+
+											<path
+												stroke="currentColor"
+												stroke-width="10"
+												d="M-10,-10L6,0L-10,10"
+												fill="none"
+												stroke-linejoin="bevel"
 											/>
 										</svg></label
 									>
@@ -3035,7 +3045,7 @@
 										><input
 											class="pretty-checkbox-control"
 											type="radio"
-											value="squre"
+											value="square"
 											bind:group={strokeCapValue.value}
 											onchange={(evt) => {
 												if (evt.currentTarget.checked) {
@@ -3048,14 +3058,14 @@
 												}
 											}}
 										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
-											><title>squre</title>
+											><title>square</title>
 
 											<path
 												stroke="currentColor"
 												stroke-width="10"
 												d="M-10,-10L10,10"
 												fill="none"
-												stroke-linecap="squre"
+												stroke-linecap="square"
 											/>
 										</svg></label
 									>
@@ -3164,6 +3174,19 @@
 							)}
 							<label class="pretty-color">
 								<span class="pretty-color-label">Fill</span>
+
+								<input
+									type="color"
+									class="pretty-color-control"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'background_color',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={backgroundColorValue}
+								/>
 								<svg
 									preserveAspectRatio="xMinYMid meet"
 									class="pretty-color-value"
@@ -3178,8 +3201,16 @@
 										width="32"
 										height="32"
 										stroke="#eee"
+										class="swatch-rect"
 									></rect>
 								</svg>
+							</label>
+							{@const borderColorValue = view(
+								['style', 'border_color', defaultStroke],
+								singleSelectedLayer
+							)}
+							<label class="pretty-color">
+								<span class="pretty-color-label">Stroke</span>
 
 								<input
 									type="color"
@@ -3188,18 +3219,11 @@
 										cast('change_style', {
 											layer_id: singleSelectedLayer.value.id,
 											type: 'layer',
-											attr: 'background_color',
+											attr: 'border_color',
 											val: evt.currentTarget.value
 										})}
-									use:bindValue={backgroundColorValue}
-								/></label
-							>
-							{@const borderColorValue = view(
-								['style', 'border_color', defaultStroke],
-								singleSelectedLayer
-							)}
-							<label class="pretty-color">
-								<span class="pretty-color-label">Stroke</span>
+									use:bindValue={borderColorValue}
+								/>
 								<svg
 									preserveAspectRatio="xMinYMid meet"
 									class="pretty-color-value"
@@ -3207,6 +3231,7 @@
 									viewBox="0 0 32 32"
 								>
 									<rect
+										class="swatch-rect"
 										stroke="#eee"
 										stroke-width="4"
 										x="4"
@@ -3229,20 +3254,7 @@
 										fill="none"
 									></rect>
 								</svg>
-
-								<input
-									type="color"
-									class="pretty-color-control"
-									onchange={(evt) =>
-										cast('change_style', {
-											layer_id: singleSelectedLayer.value.id,
-											type: 'layer',
-											attr: 'border_color',
-											val: evt.currentTarget.value
-										})}
-									use:bindValue={borderColorValue}
-								/></label
-							>
+							</label>
 							{@const opacityValueStrict = view(
 								[
 									'style',
@@ -3912,7 +3924,7 @@
 											<span>{elSemantic.value}</span>
 										</div>
 										<small
-											style="color: #aaa; display: block; max-width: 100%; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: none; white-space: nowrap; box-sizing: border-box;"
+											style="color: #aaa; display: block; max-width: 100%; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: normal; white-space: nowrap; box-sizing: border-box;"
 											>({el.value.z_index}/{elId.value})</small
 										>
 									</div>
@@ -3996,7 +4008,7 @@
 							</div>
 						{/if}
 						<label class="pretty-select" style="max-width: none">
-							<span class="pretty-select-label">Interface:</span>
+							<span class="pretty-select-label">Interface</span>
 							{#await data.socket_schemas then schemas}
 								<span class="pretty-select-value"
 									>{view(
@@ -4025,7 +4037,7 @@
 							{/await}
 						</label>
 						<label class="pretty-select" style="max-width: none">
-							<span class="pretty-select-label">Semantic Tab:</span>
+							<span class="pretty-select-label">Semantic Tag</span>
 							{#await data.semantic_tags then tags}
 								<span class="pretty-select-value"
 									>{view(['semantic_tag', L.defaults(''), L.valueOr('None')], singleSelectedLayer)
@@ -4236,7 +4248,7 @@
 						</div>
 					</div>
 					<div
-						style="user-select: none; user-callout: none; text-align: center; font-size: 2em; cursor: pointer; display: grid; align-content: center; justify-content: center; line-height: 1; padding: 0.5ex"
+						style="user-select: none; text-align: center; font-size: 2em; cursor: pointer; display: grid; align-content: center; justify-content: center; line-height: 1; padding: 0.5ex"
 						onclick={() => update(R.not, lockRotation)}
 						ondblclick={() => {
 							cameraRotation.value = 0;
@@ -4492,6 +4504,7 @@
 		scrollbar-width: none;
 		user-select: none;
 		overscroll-behavior: contain;
+		touch-action: auto;
 	}
 
 	.toolbar.dense {
@@ -4824,6 +4837,10 @@
 		box-sizing: border-box;
 	}
 
+	.pretty-select:focus-within > .pretty-select-value {
+		outline: 3px solid #23875d;
+	}
+
 	.pretty-select-label {
 		grid-area: label / full;
 		display: block;
@@ -4866,6 +4883,22 @@
 		min-width: 6em;
 	}
 
+	.pretty-number-control:focus {
+		outline: 3px solid #23875d;
+	}
+
+	.pretty-color-label:has(~ :focus) {
+		color: #23875d;
+	}
+
+	.pretty-number-label:has(~ :focus) {
+		color: #23875d;
+	}
+
+	.pretty-select-label:has(~ :focus) {
+		color: #23875d;
+	}
+
 	.pretty-color {
 		display: grid;
 		grid-template-columns: [full-start] 1fr [full-end];
@@ -4890,6 +4923,11 @@
 		font-weight: bold;
 		stroke-linejoin: round;
 		stroke-linecap: round;
+	}
+
+	.pretty-color-control:focus + svg .swatch-rect,
+	.pretty-color-control:active + svg .swatch-rect {
+		stroke: #23875d;
 	}
 
 	.pretty-color-label {

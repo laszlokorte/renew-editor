@@ -303,7 +303,7 @@
 																	tabindex="-1"
 																	fill={el.value?.style?.background_color ?? '#70DB93'}
 																	stroke={el.value?.style?.border_color ?? 'black'}
-																	stroke-dasharray={el.value?.style?.border_dash_array ?? ''}
+																	stroke-dasharray={el.value?.style?.border_dash_array ?? 'none'}
 																	stroke-width={el.value?.style?.border_width ?? '1'}
 																	opacity={el.value?.style?.opacity ?? '1'}
 																	onclick={(evt) => {
@@ -357,7 +357,7 @@
 																	opacity={el.value?.style?.opacity ?? '1'}
 																	stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
 																	stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
-																	stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'rect'}
+																	stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
 																	stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 																>
 																	<path
@@ -377,7 +377,7 @@
 																			L.get('waypoints', el.value?.edge)
 																		)}
 																		stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ??
-																			''}
+																			'none'}
 																		fill="none"
 																	/>
 

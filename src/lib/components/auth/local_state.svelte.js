@@ -1,4 +1,3 @@
-
 import { Socket } from "phoenix";
 
 function tryParse(str) {
@@ -26,9 +25,9 @@ export default (() => {
 	return {
 		set value(authData) {
 			currentValue = authData
-			if(currentValue) {
+			if(isBrowser && currentValue) {
 				localStorage.setItem("authed", JSON.stringify(authData))
-			} else {
+			} else if(isBrowser) {
 				localStorage.removeItem("authed")
 			}
 		},
@@ -52,7 +51,11 @@ export default (() => {
 		},
 		createSocket() {
 			if(currentValue && currentValue.token && this.value.routes && this.value.routes.live_socket) {
-				return new Socket(this.value.routes.live_socket.href, {longPollFallbackMs: null, params: {token: currentValue.token}})
+				return new Socket(this.value.routes.live_socket.href, {
+					longPollFallbackMs: null,
+					transport: window?.WebSocket,
+					params: {token: currentValue.token}
+				})
 			} else {
 				return null
 			}

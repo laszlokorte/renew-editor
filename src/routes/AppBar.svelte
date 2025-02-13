@@ -13,7 +13,11 @@
 	}
 </script>
 
-<div class="app-bar" class:offline={connectionState.value === false}>
+<div
+	class="app-bar"
+	class:offline={connectionState.value === false}
+	class:unknown={connectionState.value === undefined}
+>
 	<a href="{base}/"
 		><h2 class="app-name">
 			<img style="grid-row: 1; grid-column: 1;" src="{base}/favicon.svg" alt="Renew" class="icon" />
@@ -68,10 +72,12 @@
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		padding: 1ex 1em;
+		padding: 0.5ex 1em;
 		background: #222;
 		color: #fff;
 		user-select: none;
+		border-top: 0.5ex solid #222;
+		border-bottom: 0.5ex solid #222;
 	}
 
 	.app-name {
@@ -143,5 +149,10 @@
 
 	.offline {
 		background: #770000;
+		border-color: #770000;
+	}
+
+	.unknown {
+		border-top-color: #aa0000;
 	}
 </style>

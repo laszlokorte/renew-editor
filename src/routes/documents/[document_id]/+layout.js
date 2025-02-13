@@ -96,19 +96,19 @@ export async function load({params, fetch}) {
 					return {
 						document: j,
 						commands: createCommands(fetch, j),
-						symbols: api.loadJson(j.links.symbols.href).then(symbols => {
+						symbols: new Promise((r, e) => j.links.symbols ? r(j.links.symbols.href) : e("doc.links.symbols not defined")).then(api.loadJson).then(symbols => {
 							return new Map(symbols.shapes.map(s => [s.id, {name:s.name, paths: s.paths}]))
 						}),
-						socket_schemas: api.loadJson(j.links.socket_schemas.href).then(socket_schemas => {
+						socket_schemas: new Promise((r, e) => j.links.socket_schemas ? r(j.links.socket_schemas.href) : e("doc.links.socket_schemas not defined")).then(api.loadJson).then(socket_schemas => {
 							return new Map(socket_schemas.socket_schemas.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
-						semantic_tags: api.loadJson(j.links.semantic_tags.href).then(semantic_tags => {
+						semantic_tags: new Promise((r, e) => j.links.semantic_tags ? r(j.links.semantic_tags.href) : e("doc.links.semantic_tags not defined")).then(api.loadJson).then(semantic_tags => {
 							return semantic_tags.semantic_tags
 						}),
-						primitives: api.loadJson(j.links.primitives.href).then(primitives => {
+						primitives: new Promise((r, e) => j.links.primitives ? r(j.links.primitives.href) : e("doc.links.primitives not defined")).then(api.loadJson).then(primitives => {
 							return primitives.groups
 						}),
-						blueprints: api.loadJson(j.links.blueprints.href).then(blueprints => {
+						blueprints: new Promise((r, e) => j.links.blueprints ? r(j.links.blueprints.href) : e("doc.links.blueprints not defined")).then(api.loadJson).then(blueprints => {
 							return new Map(blueprints.blueprints.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
 					}

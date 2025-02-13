@@ -11,8 +11,10 @@ export async function load() {
 	const connectionState = atom(undefined)
 
 	if(live_socket) {
-	    live_socket.onError((e) => console.error(e));
-	    live_socket.connect();
+	    live_socket.onError((e) => {
+	      console.error(e);
+		  connectionState.value = false
+	    });
 
 	    live_socket.onOpen(() => {
 		  connectionState.value = true
@@ -21,6 +23,8 @@ export async function load() {
 		live_socket.onClose(() => {
 		  connectionState.value = false
 		});
+
+	    live_socket.connect();
 	}
 
 	return {

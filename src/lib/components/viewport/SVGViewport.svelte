@@ -2,6 +2,7 @@
 	import * as L from 'partial.lenses';
 	import { view, atom, update, combine, read } from '$lib/reactivity/atom.svelte';
 	import { numberSvgFormat } from '$lib/svg/formatter';
+	import { stopPropagation } from 'svelte/legacy';
 
 	const { camera, children, onclick, onkeydown, onpointermove, ondblclick } = $props();
 
@@ -47,7 +48,6 @@
 		width: 100%;
 		height: 100%;
 		touch-action: none;
-		contain: strict;
 
 		user-select: none;
 		-webkit-user-select: none;
@@ -59,6 +59,19 @@
 		-webkit-user-drag: none;
 		-webkit-user-modify: none;
 		-webkit-highlight: none;
+		display: block;
+	}
+
+	.canvas :global(*) {
+		user-select: none !important;
+		-webkit-touch-callout: none !important;
+		-webkit-user-callout: none !important;
+		-webkit-user-select: none !important;
+		-webkit-user-drag: none !important;
+		-webkit-user-modify: none !important;
+		-webkit-highlight: none !important;
+		display: block;
+		touch-action: none;
 	}
 
 	.canvas:focus {

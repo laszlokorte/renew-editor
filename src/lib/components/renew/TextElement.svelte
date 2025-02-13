@@ -22,7 +22,7 @@
 		<rect
 			fill={el.style?.background_color ?? 'transparent'}
 			stroke={el.style?.border_color ?? 'transparent'}
-			stroke-dasharray={el.style?.border_dash_array ?? ''}
+			stroke-dasharray={el.style?.border_dash_array ?? 'none'}
 			stroke-width={el.style?.border_width ?? '0'}
 			x={bbox.value.x}
 			y={bbox.value.y}
@@ -102,5 +102,12 @@
 		text-rendering: geometricPrecision;
 		pointer-events: none;
 		vector-effect: non-scaling-stroke;
+		user-select: none !important;
+		-webkit-touch-callout: none !important;
+		-webkit-user-callout: none !important;
+		-webkit-user-select: none !important;
+		-webkit-user-modify: none !important;
+		-webkit-highlight: none !important;
+		-webkit-tap-highlight-color: transparent;
 	}
 </style>
