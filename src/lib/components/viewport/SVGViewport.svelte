@@ -3,6 +3,7 @@
 	import { view, atom, update, combine, read } from '$lib/reactivity/atom.svelte';
 	import { numberSvgFormat } from '$lib/svg/formatter';
 	import { stopPropagation } from 'svelte/legacy';
+	import PreventSafariMagnifier from './PreventSafariMagnifier.svelte';
 
 	const { camera, children, onclick, onkeydown, onpointermove, ondblclick } = $props();
 
@@ -36,6 +37,8 @@
 	{#if children}
 		{@render children()}
 	{/if}
+
+	<PreventSafariMagnifier />
 </svg>
 
 <style>

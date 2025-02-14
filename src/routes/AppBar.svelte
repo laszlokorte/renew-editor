@@ -153,6 +153,6 @@
 	}
 
 	.unknown {
-		border-top-color: #aa0000;
+		border-top-color: #aa4400;
 	}
 </style>
