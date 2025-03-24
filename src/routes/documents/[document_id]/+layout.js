@@ -28,13 +28,78 @@ function createCommands(fetchFn, doc) {
 		},
 
 		simulateDocument() {
-			return api
-				.simulateDocument(doc.id)
-				.then((r) => {
-					window.open(`${base}/simulations/${r.id}/observer`)
-					
-					return r 
-				})
+			const simWindow = new Promise((resolve, reject) => {
+				const w = window.open("", "_blank");
+				if(w) {
+					w.document.write(`
+				        <html>
+				        <head>
+				            <title>Creating Simulation</title>
+							<style>
+								html {
+									height: 100%;
+								}
+								body {
+									font-family: monospace;
+									display: grid;
+									align-content: center;
+									justify-content: center;
+									height: 100%;
+									font-size: 1.2em;
+									background: #ddeeee;
+								}
+
+								h1 {
+									font-size: 1.2em;
+									margin: 0;
+								}
+
+								.container {
+									padding: 1em;
+									background: #fff;
+									border: 1ex solid #eee;
+									gap: 1em;
+									display: flex;
+									flex-direction: column;
+								}
+
+								p {
+									margin: 0;
+								}
+							</style>
+				        </head>
+				        <body>
+				            <div class="container">
+							<h1>Setting up Simulation</h1>
+							<p>Compiling Shadow Nets…</p>
+							<div class="status">may take a few seconds</div>
+				            </div>
+				        </body>
+				        </html>
+				    `);
+				    w.document.close();
+
+				    resolve(w)
+				} else {
+					reject('could not open new window')
+				}
+			})
+
+		    const sim = api.simulateDocument(doc.id)
+
+		    return simWindow.then((w) => {
+		    	sim.then((r) => {
+		    		w.location  = `${base}/simulations/${r.id}/observer`
+		    	}).catch((e) => {
+		    		w.document.querySelector('.status').textContent = 'Error: ' + e
+		    	})
+		    }).catch(() => {
+		    	return sim.then((r) => {
+		    		window.location  = `${base}/simulations/${r.id}/observer`
+
+		    		return r
+		    	})
+		    })
 		},
 
 		downloadJson(svg) {
