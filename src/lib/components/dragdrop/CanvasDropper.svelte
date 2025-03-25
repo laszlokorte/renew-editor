@@ -1,9 +1,15 @@
 <script>
 	import { atom } from '$lib/reactivity/atom.svelte.js';
 	import { constructLenses } from '$lib/components/camera/live_lenses';
-	const { children, camera, onDrop, dragging = atom(0), onDropFile } = $props();
+	const {
+		children,
+		camera,
+		onDrop,
+		dragging = atom(0),
+		onDropFile,
+		domElement = atom(undefined)
+	} = $props();
 
-	const domElement = atom(undefined);
 	const lenses = constructLenses(domElement, camera);
 
 	const onDragOver = (evt) => {

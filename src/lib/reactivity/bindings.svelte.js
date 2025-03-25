@@ -1,5 +1,6 @@
 import * as R from "ramda";
 import {tick, untrack} from "svelte";
+import {enableDragDropTouch} from '../io/drag-drop-touch'
 
 export function throttled(fn) {
 	let ticking = false;
@@ -399,6 +400,30 @@ export function disableTouchEventsIf(node, atom) {
 			evt.preventDefault();
 		}
 	})
+}
+
+export function polyfillDragDrop(node, args) {
+	let poly = null
+	if(args && args.dropArea) {
+		$effect(() => {
+			const dropArea = args.dropArea.value
+			poly = enableDragDropTouch(node, dropArea, args.options)
+			return () => {
+				poly.dispose()
+				poly = null
+			}
+		})
+	} else {
+		poly = enableDragDropTouch(node, document, args?.options)
+	}
+
+	return {
+        destroy() {
+        	if(poly) {
+            	poly.dispose()
+        	}
+        },
+    };
 }
 
 export function disableEventIf(node, {eventType, cond}) {

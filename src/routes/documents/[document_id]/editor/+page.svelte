@@ -12,7 +12,11 @@
 		viewCombined,
 		call
 	} from '$lib/reactivity/atom.svelte';
-	import { bindValue, bindNumericValue } from '$lib/reactivity/bindings.svelte.js';
+	import {
+		bindValue,
+		bindNumericValue,
+		polyfillDragDrop
+	} from '$lib/reactivity/bindings.svelte.js';
 	import { numberSvgFormat } from '$lib/svg/formatter';
 	import AppBar from '../../../AppBar.svelte';
 
@@ -76,6 +80,8 @@
 	const pointerOffset = atom({ x: 0, y: 0 });
 	const gridDistance = atom(32);
 	const gridDistanceExp = view(logLens(2), gridDistance);
+
+	const dropperDomElement = atom(undefined);
 
 	function throttle(mainFunction, delay) {
 		let timerFlag = null;
@@ -870,6 +876,7 @@
 				<div class="body">
 					<CanvasDropper
 						{camera}
+						domElement={dropperDomElement}
 						onDrop={(mime, content, pos) => {
 							if (mime === 'application/json+renewex-layer') {
 								dispatch('create_layer', {
@@ -2498,10 +2505,12 @@
 														{rotationTransform}
 														{cameraScale}
 														validEdge={(source, target) => {
-															return !semantics.edgeWhitelist[source.semantic_tag] ||
+															return (
+																!semantics.edgeWhitelist[source.semantic_tag] ||
 																semantics.edgeWhitelist[source.semantic_tag].indexOf(
 																	target.semantic_tag
-																) > -1;
+																) > -1
+															);
 														}}
 														newEdge={(e) => {
 															const isValidEdge =
@@ -3782,6 +3791,7 @@
 						<!-- <input style="" type="search" name="" placeholder="search" /> -->
 						<div
 							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
+							use:polyfillDragDrop
 						>
 							{#each layersInOrder.value as { index, id, depth, hidden, isLast, parents } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
@@ -4152,7 +4162,7 @@
 					{/if}
 				</div>
 				<div class="sidebar left">
-					<div class="toolbar vertical">
+					<div class="toolbar vertical" use:polyfillDragDrop={{ dropArea: dropperDomElement }}>
 						<small>Create</small>
 						{#await data.primitives}
 							-
