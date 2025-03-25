@@ -472,8 +472,8 @@ var DragDropTouch = class {
    * @returns
    */
   _getTarget(e) {
-    let pt = pointFrom(e), el = this._dropRootOriginal // this._dropRoot.elementFromPoint(pt.x, pt.y);
-    while (el && getComputedStyle(el).pointerEvents == `none`) {
+    let pt = pointFrom(e), el = this._dropRoot.elementFromPoint(pt.x, pt.y);
+    while (el && getComputedStyle(el).pointerEvents == `none` &&  this._dropRootOriginal !== el) {
       el = el.parentElement;
     }
     return el;

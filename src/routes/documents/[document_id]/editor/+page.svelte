@@ -4162,7 +4162,7 @@
 					{/if}
 				</div>
 				<div class="sidebar left">
-					<div class="toolbar vertical" use:polyfillDragDrop={{ dropArea: dropperDomElement }}>
+					<div class="toolbar vertical" use:polyfillDragDrop={{ dropArea: dropperDomElement, options: {dragThresholdPixels: 0} }}>
 						<small>Create</small>
 						{#await data.primitives}
 							-
