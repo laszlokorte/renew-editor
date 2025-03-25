@@ -10,6 +10,7 @@
 		frameBoxPath,
 		clientToCanvas,
 		cameraTow = atom(),
+		validEdge,
 		newEdge,
 		newEdgeNode
 	} = $props();
@@ -147,6 +148,7 @@
 			R.map((node) => {
 				if (
 					!R.equals(node.id, draftSourceId.value) &&
+					validEdge(draftSourceId.value, node.id) &&
 					Math.hypot(node.x - worldPos.x, node.y - worldPos.y) < snapRadiusScaled.value
 				) {
 					return node.id;
@@ -174,10 +176,17 @@
 		if (validConnection.value && newEdge) {
 			newEdge(connection.value);
 		} else if (newEdgeNode) {
-			newEdgeNode({
-				source: draftSourceId.value,
-				newTarget: draftTargetPosition.value
-			});
+			const dist = Math.hypot(
+				draftSourcePosition.value.x - draftTargetPosition.value.x,
+				draftSourcePosition.value.y - draftTargetPosition.value.y
+			);
+
+			if (dist > snapRadiusScaled.value * 2) {
+				newEdgeNode({
+					source: draftSourceId.value,
+					newTarget: draftTargetPosition.value
+				});
+			}
 		}
 
 		preventNextClick = true;
@@ -209,26 +218,28 @@
 
 	<g transform={rotationTransform.value} pointer-events="none">
 		{#each sockets.value as v, i (i)}
-			<circle
-				data-idx={JSON.stringify(v.id)}
-				class="socket-outer"
-				cx={v.x}
-				cy={v.y}
-				pointer-events="all"
-				r={snapRadiusScaled.value}
-				class:active-source={draftSourceId.value === v.id}
-				class:active-target={draftTargetId.value === v.id}
-			></circle>
-			<circle
-				data-idx={JSON.stringify(v.id)}
-				class="socket-center"
-				cx={v.x}
-				cy={v.y}
-				pointer-events="all"
-				r={snapRadiusCenterScaled.value}
-				class:active-source={draftSourceId.value === v.id}
-				class:active-target={draftTargetId.value === v.id}
-			></circle>
+			{#if !draftSourceId.value || validEdge(draftSourceId.value, v.id)}
+				<circle
+					data-idx={JSON.stringify(v.id)}
+					class="socket-outer"
+					cx={v.x}
+					cy={v.y}
+					pointer-events="all"
+					r={snapRadiusScaled.value}
+					class:active-source={draftSourceId.value === v.id}
+					class:active-target={draftTargetId.value === v.id}
+				></circle>
+				<circle
+					data-idx={JSON.stringify(v.id)}
+					class="socket-center"
+					cx={v.x}
+					cy={v.y}
+					pointer-events="all"
+					r={snapRadiusCenterScaled.value}
+					class:active-source={draftSourceId.value === v.id}
+					class:active-target={draftTargetId.value === v.id}
+				></circle>
+			{/if}
 		{/each}
 
 		{#if draftSourcePosition.value && draftTargetSnappedPosition.value}

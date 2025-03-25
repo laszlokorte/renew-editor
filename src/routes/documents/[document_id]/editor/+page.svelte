@@ -662,6 +662,14 @@
 									<button
 										class="menu-bar-item-button"
 										onclick={() => {
+											cameraZoom.value = 0;
+										}}>Reset Zoom</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
 											update(R.add(0.2), cameraZoom);
 										}}>Zoom in</button
 									>
@@ -672,14 +680,6 @@
 										onclick={() => {
 											update(R.add(-0.2), cameraZoom);
 										}}>Zoom out</button
-									>
-								</li>
-								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
-										onclick={() => {
-											cameraZoom.value = 0;
-										}}>Reset Zoom</button
 									>
 								</li>
 								<li class="menu-bar-menu-item">
@@ -697,6 +697,14 @@
 									<button
 										class="menu-bar-item-button"
 										onclick={() => {
+											cameraRotation.value = 0;
+										}}>Reset Rotation</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
 											update(R.add(90), cameraRotation);
 										}}>Rotate Clockwise</button
 									>
@@ -707,14 +715,6 @@
 										onclick={() => {
 											update(R.add(-90), cameraRotation);
 										}}>Rotate Counter-Clockwise</button
-									>
-								</li>
-								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
-										onclick={() => {
-											cameraRotation.value = 0;
-										}}>Reset Rotation</button
 									>
 								</li>
 
@@ -2404,111 +2404,156 @@
 										{/if}
 										{#if activeTool.value == 'edge'}
 											{#await data.socket_schemas then s}
-												<Edger
-													sockets={viewCombined(
-														[
-															L.reread(({ inOrder, flatLayers }) =>
-																inOrder
-																	.filter(R.complement(R.prop('hidden')))
-																	.flatMap(({ index, id, depth, hidden }) => {
-																		const el = R.find((l) => l.id === id, flatLayers);
-																		const iid = el?.interface_id;
+												{#await data.semantics then semantics}
+													<Edger
+														sockets={viewCombined(
+															[
+																L.reread(({ inOrder, flatLayers }) =>
+																	inOrder
+																		.filter(R.complement(R.prop('hidden')))
+																		.flatMap(({ index, id, depth, hidden }) => {
+																			const el = R.find((l) => l.id === id, flatLayers);
+																			const iid = el?.interface_id;
+																			const semantic_tag = el?.semantic_tag;
 
-																		if (iid) {
-																			const socket_schema = s.get(iid);
-																			return socket_schema.sockets
-																				.map((sock) => {
-																					if (el.box) {
-																						return {
-																							id: {
-																								socket: sock.id,
-																								layer: id
-																							},
-																							x: buildCoord(
-																								{
-																									x: el.box.position_x,
-																									y: el.box.position_y,
-																									width: el.box.width,
-																									height: el.box.height
+																			if (iid) {
+																				const socket_schema = s.get(iid);
+																				return socket_schema.sockets
+																					.map((sock) => {
+																						if (el.box) {
+																							return {
+																								id: {
+																									socket: sock.id,
+																									layer: id,
+																									semantic_tag
 																								},
-																								'x',
-																								false,
-																								sock.x
-																							),
-																							y: buildCoord(
-																								{
-																									x: el.box.position_x,
-																									y: el.box.position_y,
-																									width: el.box.width,
-																									height: el.box.height
+																								x: buildCoord(
+																									{
+																										x: el.box.position_x,
+																										y: el.box.position_y,
+																										width: el.box.width,
+																										height: el.box.height
+																									},
+																									'x',
+																									false,
+																									sock.x
+																								),
+																								y: buildCoord(
+																									{
+																										x: el.box.position_x,
+																										y: el.box.position_y,
+																										width: el.box.width,
+																										height: el.box.height
+																									},
+																									'y',
+																									false,
+																									sock.y
+																								)
+																							};
+																						} else if (el.text?.hint) {
+																							return {
+																								id: {
+																									socket: sock.id,
+																									layer: id
 																								},
-																								'y',
-																								false,
-																								sock.y
-																							)
-																						};
-																					} else if (el.text?.hint) {
-																						return {
-																							id: {
-																								socket: sock.id,
-																								layer: id
-																							},
-																							x: buildCoord(
-																								{
-																									x: el.text.hint.x,
-																									y: el.text.hint.y,
-																									width: el.text.hint.width,
-																									height: el.text.hint.height
-																								},
-																								'x',
-																								false,
-																								sock.x
-																							),
-																							y: buildCoord(
-																								{
-																									x: el.text.hint.x,
-																									y: el.text.hint.y,
-																									width: el.text.hint.width,
-																									height: el.text.hint.height
-																								},
-																								'y',
-																								false,
-																								sock.y
-																							)
-																						};
-																					} else {
-																						return null;
-																					}
-																				})
-																				.filter(R.identity);
-																		} else {
-																			return [];
+																								x: buildCoord(
+																									{
+																										x: el.text.hint.x,
+																										y: el.text.hint.y,
+																										width: el.text.hint.width,
+																										height: el.text.hint.height
+																									},
+																									'x',
+																									false,
+																									sock.x
+																								),
+																								y: buildCoord(
+																									{
+																										x: el.text.hint.x,
+																										y: el.text.hint.y,
+																										width: el.text.hint.width,
+																										height: el.text.hint.height
+																									},
+																									'y',
+																									false,
+																									sock.y
+																								)
+																							};
+																						} else {
+																							return null;
+																						}
+																					})
+																					.filter(R.identity);
+																			} else {
+																				return [];
+																			}
+																		})
+																)
+															],
+															{ inOrder: layersInOrder, flatLayers: read(['layers', 'items'], doc) }
+														)}
+														{frameBoxObject}
+														{frameBoxPath}
+														clientToCanvas={liveLenses.clientToCanvas}
+														{rotationTransform}
+														{cameraScale}
+														validEdge={(source, target) => {
+															return !semantics.edgeWhitelist[source.semantic_tag] ||
+																semantics.edgeWhitelist[source.semantic_tag].indexOf(
+																	target.semantic_tag
+																) > -1;
+														}}
+														newEdge={(e) => {
+															const isValidEdge =
+																!semantics.edgeWhitelist[e.source.semantic_tag] ||
+																semantics.edgeWhitelist[e.source.semantic_tag].indexOf(
+																	e.target.semantic_tag
+																) > -1;
+															if (isValidEdge) {
+																dispatch('create_layer', {
+																	base_layer_id: L.get('id', singleSelectedLayer.value),
+																	source: {
+																		socket_id: e.source.socket,
+																		layer_id: e.source.layer
+																	},
+																	target: { socket_id: e.target.socket, layer_id: e.target.layer }
+																}).then((l) => {
+																	selectedLayers.value = [l.id];
+																	cast('select', l.id);
+																});
+															}
+														}}
+														newEdgeNode={(e) => {
+															const autoNodeType = semantics.autoEdgeNode[e.source.semantic_tag];
+
+															if (autoNodeType) {
+																dispatch('create_layer', {
+																	base_layer_id: L.get(
+																		['id', L.valueOr(e.source.layer)],
+																		singleSelectedLayer.value
+																	),
+																	pos: e.newTarget,
+																	...autoNodeType.target
+																}).then((l) => {
+																	dispatch('create_layer', {
+																		base_layer_id: l.id,
+																		source: {
+																			...autoNodeType.edge.source,
+																			layer_id: e.source.layer
+																		},
+																		target: {
+																			...autoNodeType.edge.target,
+																			layer_id: l.id
 																		}
-																	})
-															)
-														],
-														{ inOrder: layersInOrder, flatLayers: read(['layers', 'items'], doc) }
-													)}
-													{frameBoxObject}
-													{frameBoxPath}
-													clientToCanvas={liveLenses.clientToCanvas}
-													{rotationTransform}
-													{cameraScale}
-													newEdge={(e) => {
-														dispatch('create_layer', {
-															base_layer_id: L.get('id', singleSelectedLayer.value),
-															source: {
-																socket_id: e.source.socket,
-																layer_id: e.source.layer
-															},
-															target: { socket_id: e.target.socket, layer_id: e.target.layer }
-														}).then((l) => {
-															selectedLayers.value = [l.id];
-															cast('select', l.id);
-														});
-													}}
-													newEdgeNode={(t) => {}}
-												/>
+																	}).then((l2) => {
+																		selectedLayers.value = [l2.id];
+																		cast('select', l2.id);
+																	});
+																});
+															}
+														}}
+													/>
+												{/await}
 											{/await}
 										{/if}
 
@@ -4096,6 +4141,13 @@
 									<textarea value={JSON.stringify(Array.from(symbols.entries()))}></textarea>
 								{/await}
 							</details>
+							<details>
+								<summary>Debug Primitives </summary>
+
+								{#await data.primitives then primitives}
+									<textarea value={JSON.stringify(primitives)}></textarea>
+								{/await}
+							</details>
 						</div>
 					{/if}
 				</div>
@@ -4557,6 +4609,7 @@
 	.sidebar.right {
 		grid-area: right;
 		justify-self: stretch;
+		max-height: 100%;
 	}
 
 	@media (max-width: 40em) {

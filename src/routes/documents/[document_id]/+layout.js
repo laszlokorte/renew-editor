@@ -4,6 +4,7 @@ import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
 import documentApi from '$lib/api/documents.js'
 import {downloadFile} from '$lib/io/download';
+import defaultSemantics from './defaultSemantics.json'
 
 export const ssr = false;
 
@@ -176,6 +177,7 @@ export async function load({params, fetch}) {
 						blueprints: new Promise((r, e) => j.links.blueprints ? r(j.links.blueprints.href) : e("doc.links.blueprints not defined")).then(api.loadJson).then(blueprints => {
 							return new Map(blueprints.blueprints.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
+						semantics: new Promise((r, e) => j.links.semantics ? r(j.links.semantics.href) : e("doc.links.semantics not defined")).then(api.loadJson).catch(_e => defaultSemantics),
 					}
 				})
 			} else {
