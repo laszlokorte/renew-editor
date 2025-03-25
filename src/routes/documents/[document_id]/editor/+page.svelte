@@ -3181,6 +3181,15 @@
 									>
 								</svg></label
 							>
+
+							<button
+								onclick={() => {
+									dispatch('change_edge_direction', {
+										layer_id: singleSelectedLayer.value.id
+									});
+								}}
+								class="action-button">Reverse</button
+							>
 						{/snippet}
 						{#snippet boxProps()}
 							{@const shapeValue = view(
@@ -4162,7 +4171,13 @@
 					{/if}
 				</div>
 				<div class="sidebar left">
-					<div class="toolbar vertical" use:polyfillDragDrop={{ dropArea: dropperDomElement, options: {dragThresholdPixels: 0} }}>
+					<div
+						class="toolbar vertical"
+						use:polyfillDragDrop={{
+							dropArea: dropperDomElement,
+							options: { dragThresholdPixels: 0 }
+						}}
+					>
 						<small>Create</small>
 						{#await data.primitives}
 							-
@@ -5109,6 +5124,15 @@
 		border: none;
 		padding: 1ex;
 		cursor: pointer;
+	}
+
+	.action-button {
+		background: #333;
+		color: #fff;
+		border: none;
+		padding: 1ex;
+		cursor: pointer;
+		align-self: end;
 	}
 
 	.delete-button:disabled {
