@@ -39,7 +39,7 @@
 	import { buildPath, buildCoord } from '$lib/components/renew/symbols';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
-	import { edgeAngle, edgePath } from '$lib/components/renew/edges.js';
+	import { edgeAngle, edgePath, tipColor } from '$lib/components/renew/edges.js';
 	import { walkDocument } from '$lib/components/renew/document.js';
 
 	import * as E from '$lib/dom/events';
@@ -796,11 +796,6 @@
 							Simulate
 							<ul class="menu-bar-menu" class:open={startingSimulation}>
 								<li class="menu-bar-menu-item">
-									<a class="menu-bar-item-button" href="{base}/simulations" target="_blank"
-										>Show Simulations</a
-									>
-								</li>
-								<li class="menu-bar-menu-item">
 									<button
 										disabled={startingSimulation}
 										class="menu-bar-item-button"
@@ -813,6 +808,31 @@
 										{/if}
 									</button>
 								</li>
+								<li class="menu-bar-menu-item">
+									<a class="menu-bar-item-button" href="{base}/simulations" target="_blank"
+										>Show all Simulations</a
+									>
+								</li>
+								{#await data.linked_simulations then links}
+									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+
+									<LiveResource socket={data.live_socket} resource={links}>
+										{#snippet children(ls)}
+											<li class="menu-bar-menu-item">Latest simulations</li>
+											{#each ls.value.items.slice(0, 5) as l}
+												<li class="menu-bar-menu-item">
+													<a
+														class="menu-bar-item-button"
+														href="{base}/simulations/{l.id}/observer"
+														target="_blank">{l.id}</a
+													>
+												</li>
+											{:else}
+												<li class="menu-bar-menu-item">None</li>
+											{/each}
+										{/snippet}
+									</LiveResource>
+								{/await}
 							</ul>
 						</li>
 						<!-- <li class="menu-bar-item" tabindex="-1">
@@ -1164,7 +1184,9 @@
 																		L.get(localProp('waypoints'), el.value?.edge)
 																	)}
 																	pointer-events="stroke"
-																	fill="none"
+																	fill={el.value?.edge?.cyclic
+																		? (el.value?.style?.background_color ?? 'none')
+																		: 'none'}
 																	stroke="none"
 																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
 																		10 * cameraScale.value}
@@ -1176,7 +1198,9 @@
 																	)}
 																	stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ??
 																		'none'}
-																	fill="none"
+																	fill={el.value?.edge?.cyclic
+																		? (el.value?.style?.background_color ?? 'none')
+																		: 'none'}
 																/>
 
 																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
@@ -1184,10 +1208,16 @@
 																		el.value?.edge,
 																		L.get(localProp('waypoints'), el.value?.edge)
 																	)}
-																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																	{@const size =
+																		(el.value?.edge?.style?.stroke_width ?? 1) *
+																		(el.value?.edge?.style?.source_tip_size ?? 1)}
 
 																	<g
-																		fill={el.value?.style?.background_color ?? 'black'}
+																		fill={tipColor(
+																			el.value?.style?.background_color,
+																			el.value?.edge?.style?.stroke_color,
+																			'black'
+																		)}
 																		transform="rotate({source_angle} {el.value?.edge.source_x} {el
 																			.value?.edge.source_y})"
 																	>
@@ -1209,9 +1239,15 @@
 																		el.value?.edge,
 																		L.get(localProp('waypoints'), el.value?.edge)
 																	)}
-																	{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																	{@const size =
+																		(el.value?.edge?.style?.stroke_width ?? 1) *
+																		(el.value?.edge?.style?.target_tip_size ?? 1)}
 																	<g
-																		fill={el.value?.style?.background_color ?? 'black'}
+																		fill={tipColor(
+																			el.value?.style?.background_color,
+																			el.value?.edge?.style?.stroke_color,
+																			'black'
+																		)}
 																		transform="rotate({target_angle} {el.value?.edge.target_x} {el
 																			.value?.edge.target_y})"
 																	>
@@ -1293,7 +1329,9 @@
 																	{@const symbol = symbols.get(
 																		el.edge?.style?.source_tip_symbol_shape_id
 																	)}
-																	{@const size = el.edge?.style?.stroke_width ?? 1}
+																	{@const size =
+																		(el.value?.edge?.style?.stroke_width ?? 1) *
+																		(el.value?.edge?.style?.source_tip_size ?? 1)}
 
 																	{#if symbol}
 																		{#each symbol.paths as path, i (i)}
@@ -1331,7 +1369,9 @@
 																	{@const symbol = symbols.get(
 																		el.edge?.style?.target_tip_symbol_shape_id
 																	)}
-																	{@const size = el.edge?.style?.stroke_width ?? 1}
+																	{@const size =
+																		(el.value?.edge?.style?.stroke_width ?? 1) *
+																		(el.value?.edge?.style?.target_tip_size ?? 1)}
 
 																	{#if symbol}
 																		{#each symbol.paths as path, i (i)}
@@ -1416,7 +1456,9 @@
 																{@const symbol = symbols.get(
 																	el.value?.edge?.style?.source_tip_symbol_shape_id
 																)}
-																{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																{@const size =
+																	(el.value?.edge?.style?.stroke_width ?? 1) *
+																	(el.value?.edge?.style?.source_tip_size ?? 1)}
 
 																{#if symbol}
 																	{#each symbol.paths as path, i (i)}
@@ -1454,7 +1496,9 @@
 																{@const symbol = symbols.get(
 																	el.value?.edge?.style?.target_tip_symbol_shape_id
 																)}
-																{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																{@const size =
+																	(el.value?.edge?.style?.stroke_width ?? 1) *
+																	(el.value?.edge?.style?.target_tip_size ?? 1)}
 
 																{#if symbol}
 																	{#each symbol.paths as path, i (i)}
@@ -1541,7 +1585,9 @@
 																			{@const symbol = symbols.get(
 																				el.value?.edge?.style?.source_tip_symbol_shape_id
 																			)}
-																			{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																			{@const size =
+																				(el.value?.edge?.style?.stroke_width ?? 1) *
+																				(el.value?.edge?.style?.source_tip_size ?? 1)}
 
 																			{#if symbol}
 																				{#each symbol.paths as path, i (i)}
@@ -1579,7 +1625,9 @@
 																			{@const symbol = symbols.get(
 																				el.value?.edge?.style?.target_tip_symbol_shape_id
 																			)}
-																			{@const size = el.value?.edge?.style?.stroke_width ?? 1}
+																			{@const size =
+																				(el.value?.edge?.style?.stroke_width ?? 1) *
+																				(el.value?.edge?.style?.target_tip_size ?? 1)}
 
 																			{#if symbol}
 																				{#each symbol.paths as path, i (i)}
@@ -2836,6 +2884,40 @@
 									{/await}
 								</select>
 							</label>
+
+							{@const sourceTipSize = view(
+								[
+									'edge',
+									'style',
+									'source_tip_size',
+									L.rewrite(R.clamp(0, 10)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
+							<label class="pretty-number">
+								<span class="pretty-number-label">Source Tip Size</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="3"
+									min="0"
+									max="10"
+									step="0.01"
+									onchange={(evt) => {
+										sourceTipSize.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'source_tip_size',
+											val: sourceTipSize.value
+										});
+									}}
+									use:bindNumericValue={sourceTipSize}
+								/>
+							</label>
+
 							{@const strokeDashValue = view(
 								['edge', 'style', 'stroke_dash_array', L.valueOr('')],
 								singleSelectedLayer
@@ -2897,6 +2979,39 @@
 										{/each}
 									{/await}
 								</select>
+							</label>
+
+							{@const targetTipSize = view(
+								[
+									'edge',
+									'style',
+									'target_tip_size',
+									L.rewrite(R.clamp(0, 10)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
+							<label class="pretty-number">
+								<span class="pretty-number-label">Target Tip Size</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="3"
+									min="0"
+									max="10"
+									step="0.01"
+									onchange={(evt) => {
+										targetTipSize.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'target_tip_size',
+											val: targetTipSize.value
+										});
+									}}
+									use:bindNumericValue={targetTipSize}
+								/>
 							</label>
 
 							{@const smoothnessValue = view(
@@ -3182,6 +3297,77 @@
 								</svg></label
 							>
 
+							{@const backgroundColorValue = view(
+								['style', 'background_color', L.defaults('transparent')],
+								singleSelectedLayer
+							)}
+							<div class="pretty-color-group">
+								<label class="pretty-color">
+									<span class="pretty-color-label">Fill</span>
+
+									<input
+										type="color"
+										class="pretty-color-control"
+										onchange={(evt) =>
+											cast('change_style', {
+												layer_id: singleSelectedLayer.value.id,
+												type: 'layer',
+												attr: 'background_color',
+												val: evt.currentTarget.value
+											})}
+										use:bindValue={backgroundColorValue}
+									/>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										style:color={backgroundColorValue.value}
+										viewBox="0 0 32 32"
+									>
+										<rect
+											fill="currentColor"
+											stroke-width="6"
+											x="0"
+											y="0"
+											width="32"
+											height="32"
+											stroke="#eee"
+											class="swatch-rect"
+										></rect>
+
+										{#if !backgroundColorValue.value}
+											<path line-joincap="round" stroke-width="4" d="M6 6 l 20 20 " stroke="red" />
+										{/if}
+									</svg>
+								</label>
+								<button
+									class="pretty-color-reset"
+									disabled={!backgroundColorValue.value}
+									onclick={(e) => {
+										backgroundColorValue.value = null;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'background_color',
+											val: null
+										});
+									}}
+								>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										viewBox="0 0 32 32"
+									>
+										<titel>Reset Color</titel>
+										<path
+											line-joincap="round"
+											stroke-width="4"
+											d="M11 11 l 10 10 M 11 21 l 10 -10"
+											stroke="red"
+										/>
+									</svg>
+								</button>
+							</div>
+
 							<button
 								onclick={() => {
 									dispatch('change_edge_direction', {
@@ -3235,89 +3421,156 @@
 								['style', 'background_color', defaultBackground],
 								singleSelectedLayer
 							)}
-							<label class="pretty-color">
-								<span class="pretty-color-label">Fill</span>
+							<div class="pretty-color-group">
+								<label class="pretty-color">
+									<span class="pretty-color-label">Fill</span>
 
-								<input
-									type="color"
-									class="pretty-color-control"
-									onchange={(evt) =>
+									<input
+										type="color"
+										class="pretty-color-control"
+										onchange={(evt) =>
+											cast('change_style', {
+												layer_id: singleSelectedLayer.value.id,
+												type: 'layer',
+												attr: 'background_color',
+												val: evt.currentTarget.value
+											})}
+										use:bindValue={backgroundColorValue}
+									/>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										style:color={backgroundColorValue.value}
+										viewBox="0 0 32 32"
+									>
+										<rect
+											fill="currentColor"
+											stroke-width="6"
+											x="0"
+											y="0"
+											width="32"
+											height="32"
+											stroke="#eee"
+											class="swatch-rect"
+										></rect>
+
+										{#if backgroundColorValue.value == 'transparent'}
+											<path line-joincap="round" stroke-width="4" d="M6 6 l 20 20 " stroke="red" />
+										{/if}
+									</svg>
+								</label>
+								<button
+									class="pretty-color-reset"
+									disabled={backgroundColorValue.value === 'transparent'}
+									onclick={(e) => {
+										backgroundColorValue.value = 'transparent';
 										cast('change_style', {
 											layer_id: singleSelectedLayer.value.id,
 											type: 'layer',
 											attr: 'background_color',
-											val: evt.currentTarget.value
-										})}
-									use:bindValue={backgroundColorValue}
-								/>
-								<svg
-									preserveAspectRatio="xMinYMid meet"
-									class="pretty-color-value"
-									style:color={backgroundColorValue.value}
-									viewBox="0 0 32 32"
+											val: 'transparent'
+										});
+									}}
 								>
-									<rect
-										fill="currentColor"
-										stroke-width="6"
-										x="0"
-										y="0"
-										width="32"
-										height="32"
-										stroke="#eee"
-										class="swatch-rect"
-									></rect>
-								</svg>
-							</label>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										viewBox="0 0 32 32"
+									>
+										<titel>Reset Color</titel>
+										<path
+											line-joincap="round"
+											stroke-width="4"
+											d="M11 11 l 10 10 M 11 21 l 10 -10"
+											stroke="red"
+										/>
+									</svg>
+								</button>
+							</div>
 							{@const borderColorValue = view(
 								['style', 'border_color', defaultStroke],
 								singleSelectedLayer
 							)}
-							<label class="pretty-color">
-								<span class="pretty-color-label">Stroke</span>
+							<div class="pretty-color-group">
+								<label class="pretty-color">
+									<span class="pretty-color-label">Strk</span>
 
-								<input
-									type="color"
-									class="pretty-color-control"
-									onchange={(evt) =>
+									<input
+										type="color"
+										class="pretty-color-control"
+										onchange={(evt) =>
+											cast('change_style', {
+												layer_id: singleSelectedLayer.value.id,
+												type: 'layer',
+												attr: 'border_color',
+												val: evt.currentTarget.value
+											})}
+										use:bindValue={borderColorValue}
+									/>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										style:color={borderColorValue.value}
+										viewBox="0 0 32 32"
+									>
+										<rect
+											class="swatch-rect"
+											stroke="#eee"
+											stroke-width="4"
+											x="4"
+											y="4"
+											width="26"
+											height="26"
+											fill="none"
+											stroke-dasharray="1 7"
+											stroke-dashoffset="1"
+											rx="3"
+											ry="3"
+										></rect>
+										<rect
+											stroke="currentColor"
+											stroke-width="4"
+											x="4"
+											y="4"
+											width="26"
+											height="26"
+											fill="none"
+										></rect>
+
+										{#if borderColorValue.value == 'transparent'}
+											<path line-joincap="round" stroke-width="4" d="M6 6 l 20 20 " stroke="red" />
+										{/if}
+									</svg>
+								</label>
+
+								<button
+									class="pretty-color-reset"
+									disabled={borderColorValue.value === 'transparent'}
+									onclick={(e) => {
+										borderColorValue.value = 'transparent';
 										cast('change_style', {
 											layer_id: singleSelectedLayer.value.id,
 											type: 'layer',
 											attr: 'border_color',
-											val: evt.currentTarget.value
-										})}
-									use:bindValue={borderColorValue}
-								/>
-								<svg
-									preserveAspectRatio="xMinYMid meet"
-									class="pretty-color-value"
-									style:color={borderColorValue.value}
-									viewBox="0 0 32 32"
+											val: 'transparent'
+										});
+									}}
 								>
-									<rect
-										class="swatch-rect"
-										stroke="#eee"
-										stroke-width="4"
-										x="4"
-										y="4"
-										width="26"
-										height="26"
-										fill="none"
-										stroke-dasharray="1 7"
-										stroke-dashoffset="1"
-										rx="3"
-										ry="3"
-									></rect>
-									<rect
-										stroke="currentColor"
-										stroke-width="4"
-										x="4"
-										y="4"
-										width="26"
-										height="26"
-										fill="none"
-									></rect>
-								</svg>
-							</label>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										viewBox="0 0 32 32"
+									>
+										<titel>Reset Color</titel>
+										<path
+											line-joincap="round"
+											stroke-width="4"
+											d="M11 11 l 10 10 M 11 21 l 10 -10"
+											stroke="red"
+										/>
+									</svg>
+								</button>
+							</div>
 							{@const opacityValueStrict = view(
 								[
 									'style',
@@ -5001,6 +5254,27 @@
 		font-weight: bold;
 		stroke-linejoin: round;
 		stroke-linecap: round;
+	}
+
+	.pretty-color-group {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		align-items: end;
+	}
+
+	.pretty-color-reset {
+		background: none;
+		border: none;
+		padding: 0;
+		width: 100%;
+		min-width: 2em;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.pretty-color-reset:disabled {
+		opacity: 0.1;
+		cursor: default;
 	}
 
 	.pretty-color-control:focus + svg .swatch-rect,

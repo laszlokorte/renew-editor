@@ -44,3 +44,13 @@ export const edgePath = {
 		}
 	}
 };
+
+export function tipColor(background, stroke, fallback) {
+	if(background && background !== 'transparent') {
+		return background
+	} else if (stroke) {
+		return stroke
+	} else {
+		return fallback
+	}
+}

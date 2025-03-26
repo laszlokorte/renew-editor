@@ -92,7 +92,8 @@ function createCommands(fetchFn, doc) {
 		    	sim.then((r) => {
 		    		w.location  = `${base}/simulations/${r.id}/observer`
 		    	}).catch((e) => {
-		    		w.document.querySelector('.status').textContent = 'Error: ' + e
+		    		console.error(e)
+		    		w.document.querySelector('.status').textContent = 'Error: ' + (e?.message ?? e)
 		    	})
 		    }).catch(() => {
 		    	return sim.then((r) => {
@@ -178,6 +179,8 @@ export async function load({params, fetch}) {
 							return new Map(blueprints.blueprints.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
 						semantics: new Promise((r, e) => j.links.semantics ? r(j.links.semantics.href) : e("doc.links.semantics not defined")).then(api.loadJson).catch(_e => defaultSemantics),
+
+						linked_simulations: new Promise((r, e) => j.links.linked_simulations ? r(j.links.linked_simulations.href) : e("doc.links.linked_simulations not defined")).then(api.loadJson),
 					}
 				})
 			} else {
