@@ -22,6 +22,14 @@ export default function(fetchFn, routes, token) {
 			return fetchJson(fetchFn, routes.documents.href, 'post', {"Authorization" : token})
 		},
 
+		loadSyntaxes() {
+			if(routes.syntax) {
+				return fetchJson(fetchFn, routes.syntax.href, 'get', {"Authorization" : token})
+			} else {
+				return Promise.reject(new Error("routes.syntax.href not defined"))
+			}
+		},
+
 		loadUrl(url) {
 			return fetchFn(url, {
 				headers: {

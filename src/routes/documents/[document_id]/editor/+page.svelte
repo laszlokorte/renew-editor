@@ -373,6 +373,9 @@
 					'de.renew.sdnet.gui.SDNDrawing',
 					'de.renew.diagram.drawing.DiagramDrawing'
 				]}
+				{@const syntaxes = {
+					foo: 'baar'
+				}}
 				{@const transientKind = atom(doc.value.kind)}
 				{@const predefinedKind = view(
 					[
@@ -385,6 +388,7 @@
 					transientKind
 				)}
 				{@const transientName = atom(doc.value.name)}
+
 				<form
 					onsubmit={(evt) => {
 						evt.preventDefault();
@@ -428,6 +432,27 @@
 								type="text"
 								bind:value={transientKind.value}
 							/>
+						</dd>
+						<dt>Syntax</dt>
+						<dd
+							style="display: grid; gap: 1ex; grid-template-columns: 1fr 3fr; align-items: baseline;"
+						>
+							{#await data.syntaxes}
+								loading
+							{:then syntaxes}
+								{@const transientSyntax = atom(doc.value.syntax_id)}
+								{@const syntaxId = view([L.valueOr('none'), L.defaults('none')], transientSyntax)}
+								<select name="syntax_id" class="form-field" bind:value={syntaxId.value}>
+									<option value="none">None</option>
+									{#each syntaxes.items as s}
+										<option value={s.id}>{s.name}</option>
+									{/each}
+								</select>
+
+								(reload required)
+							{:catch e}
+								error
+							{/await}
 						</dd>
 						<dt></dt>
 						<dd><button type="submit" class="form-button">Save</button></dd>

@@ -147,6 +147,8 @@ export async function load({params, fetch}) {
 	const api = documentApi(fetch, authState.routes, authState.authHeader)
 
 	if(authState.isAuthenticated) {
+		const syntaxes = api.loadSyntaxes()
+
 		return fetch(authState.value.routes.document.href.replace(':id', params.document_id), {
 			headers: {
 				"Content-Type": "application/json",
@@ -181,6 +183,8 @@ export async function load({params, fetch}) {
 						syntax: new Promise((r, e) => j.links.syntax ? r(j.links.syntax.href) : e("doc.links.syntax not defined")).then(api.loadJson).catch(_e => defaultSyntax),
 
 						linked_simulations: new Promise((r, e) => j.links.linked_simulations ? r(j.links.linked_simulations.href) : e("doc.links.linked_simulations not defined")).then(api.loadJson),
+
+						syntaxes: syntaxes,
 					}
 				})
 			} else {
