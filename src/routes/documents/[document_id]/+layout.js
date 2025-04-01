@@ -71,6 +71,8 @@ function createCommands(fetchFn, doc) {
 				        </head>
 				        <body>
 				            <div class="container">
+							<img style="width: 4em; margin: 1em auto" src="${base}/favicon.svg" alt="Renew" class="icon" />
+
 							<h1>Setting up Simulation</h1>
 							<p>Compiling Shadow Nets…</p>
 							<div class="status">may take a few seconds</div>
@@ -180,11 +182,11 @@ export async function load({params, fetch}) {
 						blueprints: new Promise((r, e) => j.links.blueprints ? r(j.links.blueprints.href) : e("doc.links.blueprints not defined")).then(api.loadJson).then(blueprints => {
 							return new Map(blueprints.blueprints.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
-						syntax: new Promise((r, e) => j.links.syntax ? r(j.links.syntax.href) : e("doc.links.syntax not defined")).then(api.loadJson).catch(_e => defaultSyntax),
-
 						linked_simulations: new Promise((r, e) => j.links.linked_simulations ? r(j.links.linked_simulations.href) : e("doc.links.linked_simulations not defined")).then(api.loadJson),
 
 						syntaxes: syntaxes,
+						defaultSyntax,
+						loadJson: api.loadJson
 					}
 				})
 			} else {

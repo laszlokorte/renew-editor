@@ -282,6 +282,19 @@
 	}
 
 	localProp.reset = Object.create(null);
+
+	function memo(fn) {
+		let prevArg = undefined;
+		let prevResult = undefined;
+		return function (arg) {
+			if (prevArg !== arg) {
+				prevArg = arg;
+				prevResult = fn(arg);
+			}
+
+			return prevResult;
+		};
+	}
 </script>
 
 <div class="full-page">
@@ -289,6 +302,16 @@
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}
+			{@const currentSyntax = view(
+				[
+					'syntax',
+					'href',
+					L.reread(memo(data.loadJson)),
+					L.valueOr(Promise.resolve(data.defaultSyntax))
+				],
+				doc
+			)}
+			{@const currentSyntaxValue = currentSyntax.value}
 			{@const updateText = debounce(
 				(id, value) =>
 					cast('change_text_body', {
@@ -440,7 +463,7 @@
 							{#await data.syntaxes}
 								loading
 							{:then syntaxes}
-								{@const transientSyntax = atom(doc.value.syntax_id)}
+								{@const transientSyntax = atom(doc.value.syntax?.id)}
 								{@const syntaxId = view([L.valueOr('none'), L.defaults('none')], transientSyntax)}
 								<select name="syntax_id" class="form-field" bind:value={syntaxId.value}>
 									<option value="none">None</option>
@@ -448,8 +471,6 @@
 										<option value={s.id}>{s.name}</option>
 									{/each}
 								</select>
-
-								(reload required)
 							{:catch e}
 								error
 							{/await}
@@ -2489,7 +2510,7 @@
 										{/if}
 										{#if activeTool.value == 'edge'}
 											{#await data.socket_schemas then s}
-												{#await data.syntax then syntax}
+												{#await currentSyntaxValue then syntax}
 													<Edger
 														sockets={viewCombined(
 															[
@@ -2631,7 +2652,8 @@
 																		target: {
 																			...autoNodeType.edge.target,
 																			layer_id: l.id
-																		}
+																		},
+																		semantic_tag: autoNodeType.edge.semantic_tag
 																	}).then((l2) => {
 																		selectedLayers.value = [l2.id];
 																		cast('select', l2.id);
