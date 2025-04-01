@@ -297,7 +297,12 @@
 					}),
 				700
 			)}
-			{@const moveCursor = throttle((pos) => cast('cursor', pos), 20)}
+			{@const moveCursor = throttle((pos) => {
+				const psum = L.sum([L.elems, 'count'], presence.value);
+				if (psum > 1) {
+					cast('cursor', pos);
+				}
+			}, 20)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
 			{@const extension = view(
 				[
@@ -2459,7 +2464,7 @@
 										{/if}
 										{#if activeTool.value == 'edge'}
 											{#await data.socket_schemas then s}
-												{#await data.semantics then semantics}
+												{#await data.syntax then syntax}
 													<Edger
 														sockets={viewCombined(
 															[
@@ -2554,16 +2559,16 @@
 														{cameraScale}
 														validEdge={(source, target) => {
 															return (
-																!semantics.edgeWhitelist[source.semantic_tag] ||
-																semantics.edgeWhitelist[source.semantic_tag].indexOf(
+																!syntax.edgeWhitelist[source.semantic_tag] ||
+																syntax.edgeWhitelist[source.semantic_tag].indexOf(
 																	target.semantic_tag
 																) > -1
 															);
 														}}
 														newEdge={(e) => {
 															const isValidEdge =
-																!semantics.edgeWhitelist[e.source.semantic_tag] ||
-																semantics.edgeWhitelist[e.source.semantic_tag].indexOf(
+																!syntax.edgeWhitelist[e.source.semantic_tag] ||
+																syntax.edgeWhitelist[e.source.semantic_tag].indexOf(
 																	e.target.semantic_tag
 																) > -1;
 															if (isValidEdge) {
@@ -2581,7 +2586,7 @@
 															}
 														}}
 														newEdgeNode={(e) => {
-															const autoNodeType = semantics.autoEdgeNode[e.source.semantic_tag];
+															const autoNodeType = syntax.autoEdgeNode[e.source.semantic_tag];
 
 															if (autoNodeType) {
 																dispatch('create_layer', {

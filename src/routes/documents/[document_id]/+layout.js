@@ -4,7 +4,7 @@ import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js'
 import documentApi from '$lib/api/documents.js'
 import {downloadFile} from '$lib/io/download';
-import defaultSemantics from './defaultSemantics.json'
+import defaultSyntax from './defaultSyntax.json'
 
 export const ssr = false;
 
@@ -178,7 +178,7 @@ export async function load({params, fetch}) {
 						blueprints: new Promise((r, e) => j.links.blueprints ? r(j.links.blueprints.href) : e("doc.links.blueprints not defined")).then(api.loadJson).then(blueprints => {
 							return new Map(blueprints.blueprints.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
-						semantics: new Promise((r, e) => j.links.semantics ? r(j.links.semantics.href) : e("doc.links.semantics not defined")).then(api.loadJson).catch(_e => defaultSemantics),
+						syntax: new Promise((r, e) => j.links.syntax ? r(j.links.syntax.href) : e("doc.links.syntax not defined")).then(api.loadJson).catch(_e => defaultSyntax),
 
 						linked_simulations: new Promise((r, e) => j.links.linked_simulations ? r(j.links.linked_simulations.href) : e("doc.links.linked_simulations not defined")).then(api.loadJson),
 					}
