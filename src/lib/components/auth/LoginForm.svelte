@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { authenticate } from '$lib/api/auth.js';
 	import { getMetas } from '../../../env.js';
+	import { page } from '$app/state';
 
 	const { auth, onSuccess } = $props();
 
@@ -16,13 +17,16 @@
 		return kv;
 	});
 
-	let apiUrl = $state(knownApis[0]?.url ?? '');
+	let apiUrl = $state(page.url.searchParams.get('server') ?? knownApis[0]?.url ?? '');
 
 	/** @type undefined | {error: string, message:string} */
 	let currentError = $state(undefined);
 
 	/** @type undefined | HTMLInputElement */
 	let passwordField = $state(undefined);
+
+	let emailValue = $state(page.url.searchParams.get('email'));
+	let passwordValue = $state(page.url.searchParams.get('password'));
 
 	let inProgress = $state(false);
 
@@ -102,6 +106,7 @@
 				class="text-input"
 				type="email"
 				name="email"
+				bind:value={emailValue}
 				required
 			/>
 		</dd>
@@ -113,6 +118,7 @@
 				class="text-input"
 				type="password"
 				bind:this={passwordField}
+				bind:value={passwordValue}
 				name="password"
 				required
 			/>
