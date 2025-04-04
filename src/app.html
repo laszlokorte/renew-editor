@@ -7,6 +7,12 @@
 
 		%sveltekit.env.PUBLIC_HTML_HEAD_INJECT%
 
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+		<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no" />
+		<meta name="HandheldFriendly" content="true" />
+		<meta name="MobileOptimized" content="width" />
+		<meta name="color-scheme" content="light" />
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black" />
@@ -16,7 +22,7 @@
 		<link rel="stylesheet" href="%sveltekit.assets%/style.css" />
 		<meta
 			name="viewport"
-			content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+			content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
 		/>
 		%sveltekit.head%
 		<style>

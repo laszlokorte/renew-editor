@@ -173,21 +173,19 @@
 			class="ring"
 			class:active
 			fill-opacity="0.1"
-			stroke-width="4px"
-			vector-effect="non-scaling-stroke"
+			stroke-width="{4 * cameraScale.value}px"
 		/>
 		<circle
 			cx={rotPivot.x}
 			cy={rotPivot.y}
 			r={minRadius.value * 0.92}
-			stroke-dasharray="7 4"
+			stroke-dasharray="{7 * cameraScale.value} {4 * cameraScale.value}"
 			fill="#aa8888"
 			class="ring"
 			class:active
 			fill-opacity="0.3"
 			stroke="#444"
-			stroke-width="4px"
-			vector-effect="non-scaling-stroke"
+			stroke-width="{4 * cameraScale.value}px"
 		/>
 
 		<circle

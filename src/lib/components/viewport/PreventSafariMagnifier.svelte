@@ -5,18 +5,21 @@
 		let pressed = false;
 
 		return function (evt) {
+			let double = false;
 			if (timer) {
 				clearTimeout(timer);
+				timer = null;
+				double = true;
 			}
 
 			if (pressed && evt.changedTouches.length === 1) {
 				if (func) {
-					func.apply(this, arguments);
+					func.call(this, evt, double);
 				}
 				clear();
 			} else if (evt.changedTouches.length === 1) {
 				pressed = true;
-				setTimeout(clear, timeout || 500);
+				timer = setTimeout(clear, timeout || 500);
 			}
 		};
 
@@ -27,7 +30,7 @@
 	}
 
 	$effect(() => {
-		const ignore = createHandler((e) => {
+		const ignore = createHandler((e, double) => {
 			e.preventDefault();
 
 			let touch = event.changedTouches[0];
@@ -45,6 +48,22 @@
 
 			// Dispatch the click event on the touched element
 			event.target.dispatchEvent(clickEvent);
+
+			if (double) {
+				// Create a new click event with touch coordinates
+				let doubleClickEvent = new MouseEvent('dblclick', {
+					bubbles: true,
+					cancelable: true,
+					view: window,
+					clientX: touch.clientX,
+					clientY: touch.clientY
+				});
+
+				doubleClickEvent.preventDefault();
+
+				// Dispatch the click event on the touched element
+				event.target.dispatchEvent(doubleClickEvent);
+			}
 		}, 500);
 
 		document.body.addEventListener('touchstart', ignore, { passive: false });
