@@ -2611,7 +2611,13 @@
 																) > -1
 															);
 														}}
-														newEdge={(e) => {
+														newEdge={(e, evt) => {
+															if(evt.shiftKey) {
+																e = {
+																	source: e.target,
+																	target: e.source
+																}
+															}
 															const isValidEdge =
 																!syntax.edgeWhitelist[e.source.semantic_tag] ||
 																syntax.edgeWhitelist[e.source.semantic_tag].indexOf(
@@ -2631,7 +2637,7 @@
 																});
 															}
 														}}
-														newEdgeNode={(e) => {
+														newEdgeNode={(e, evt) => {
 															const autoNodeType = syntax.autoEdgeNode[e.source.semantic_tag];
 
 															if (autoNodeType) {
@@ -2641,23 +2647,23 @@
 																		singleSelectedLayer.value
 																	),
 																	pos: e.newTarget,
-																	...autoNodeType.target
-																}).then((l) => {
-																	dispatch('create_layer', {
-																		base_layer_id: l.id,
+																	...autoNodeType.target,
+																	with_edge: {
 																		source: {
 																			...autoNodeType.edge.source,
 																			layer_id: e.source.layer
 																		},
 																		target: {
 																			...autoNodeType.edge.target,
-																			layer_id: l.id
 																		},
+																		reverse: evt.shiftKey,
+																		target_tip_symbol_shape_id: autoNodeType.edge.target_tip_symbol_shape_id,
+																		source_tip_symbol_shape_id: autoNodeType.edge.source_tip_symbol_shape_id,
 																		semantic_tag: autoNodeType.edge.semantic_tag
-																	}).then((l2) => {
-																		selectedLayers.value = [l2.id];
-																		cast('select', l2.id);
-																	});
+																	}
+																}).then((l) => {
+																	selectedLayers.value = [l.id];
+																	cast('select', l.id);
 																});
 															}
 														}}

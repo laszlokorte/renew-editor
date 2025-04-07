@@ -29,23 +29,46 @@
 				<a href="{base}/">Dashboard</a>
 			</p>
 			<h2>Authentication</h2>
-			<p style=" line-height: 2; display: flex; flex-direction: column; align-items: stretch;">
+			<div style=" line-height: 2; display: flex; flex-direction: column; align-items: stretch;">
 				You are currently connected to
 				<br />
-				<span
-					style="border-radius: 1ex; display: inline-block; padding: 0.5ex 1ex; color: #000; background: #ddeeee"
-					><a style="color: inherit;" href={data.authState.value.url} target="_blank"
+				<div
+					style="border-radius: 1ex; display: inline-block; padding: 0.5ex 1ex; color: #000; background: #ddeeee; display: flex; gap: 1ex; padding: 1ex 1em 1ex 1ex;"
+				>
+					<button
+						type="button"
+						class="refresh"
+						title={`Last update: ${data.authState.lastRefresh.toLocaleString()}`}
+						onclick={(evt) => {
+							const target = evt.currentTarget;
+							target.classList.add('loading');
+							data.authState
+								.refresh(window.fetch)
+								.then(() => {
+									target.classList.remove('loading');
+								})
+								.finally(() => {
+									target.classList.remove('loading');
+								});
+						}}
+						aria-label="refresh">↻</button
+					>
+					<a style="color: inherit;" href={data.authState.value.url} target="_blank"
 						>{data.authState.value.url}</a
-					></span
-				><br />
+					>
+				</div>
+				<br />
 				and logged in in as<br />
 				<strong
 					style="border-radius: 1ex; display: inline-block; padding: 0.5ex 1ex; color: #000; background: #ddeeee; text-align: center; font-size: large;"
 					>{data.authState.value.email}</strong
 				>
-			</p>
+			</div>
 			<hr />
 			<div class="center">
+				{#if data.authState.routes.backend}
+					<a href={data.authState.routes.backend.href} target="_blank" class="button">Backend</a>
+				{/if}
 				<LogoutForm auth={data.authState} onSuccess={onLogout} />
 			</div>
 		{:else}
@@ -60,14 +83,59 @@
 		text-align: center;
 	}
 
+	.button {
+		display: block;
+		padding: 1.5ex 2ex;
+		border: none;
+		background: black;
+		color: #fff;
+		font: inherit;
+		text-decoration: none;
+		cursor: pointer;
+	}
+
 	.content {
 		display: grid;
 		justify-content: center;
 		justify-items: stretch;
 	}
 
+	.refresh {
+		background: none;
+		border: none;
+		font: inherit;
+		cursor: pointer;
+		background: #000a;
+		color: #fff;
+		font-size: 1.25em;
+		width: 1.5em;
+		height: 1.5em;
+		display: grid;
+		padding: 0;
+		align-content: center;
+		justify-content: center;
+		border-radius: 100%;
+		transform: rotate(0);
+		transition: 1s transform ease;
+	}
+
+	.refresh:hover {
+		background: #0009;
+	}
+
+	.refresh:active {
+		background: #000c;
+	}
+
+	.refresh:global(.loading) {
+		transform: rotate(720deg);
+	}
+
 	.center {
 		text-align: center;
+		display: flex;
+		gap: 1em;
+		justify-content: center;
 	}
 
 	hr {

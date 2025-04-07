@@ -85,6 +85,7 @@
 
 	function onDropZone(evt) {
 		evt.preventDefault();
+		evt.stopPropagation();
 		draggingZone = false;
 
 		if (!evt.dataTransfer.files.length) {

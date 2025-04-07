@@ -5,8 +5,10 @@ import { atom } from '$lib/reactivity/atom.svelte';
 export const prerender = false;
 export const ssr = false;
 
-export async function load() {
+export async function load({fetch}) {
 	const live_socket = authState.createSocket();
+	authState.refresh(fetch)
+
 
 	const connectionState = atom(undefined)
 

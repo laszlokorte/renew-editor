@@ -1,4 +1,5 @@
 import { Socket } from "phoenix";
+import { fetchJson } from '$lib/api/json'
 
 function tryParse(str) {
 	try {
@@ -11,6 +12,7 @@ function tryParse(str) {
 export default (() => {
 	const isBrowser = typeof localStorage !== "undefined"
 	let currentValue = $state(isBrowser && tryParse(localStorage.getItem("authed")))
+	let lastRefresh = null
 
 	if(isBrowser) {
 		window.addEventListener('storage', onChange)
@@ -31,10 +33,14 @@ export default (() => {
 				localStorage.removeItem("authed")
 			}
 		},
+		get lastRefresh() {
+			return lastRefresh
+		},
 		get value() {
 			return currentValue
 		},
 		login(token) {
+			lastRefresh = new Date()
 			this.value = token
 		},
 		logout() {
@@ -48,6 +54,29 @@ export default (() => {
 		},
 		get routes() {
 			return this.value?.routes ?? []
+		},
+		refresh(fetchFn) {
+			return new Promise((res, rej) => {
+				let rootUrl = this.value?.url
+
+				if(rootUrl) {
+					fetchJson(fetchFn, rootUrl, "GET").then((protocolJson)=> {
+						this.value = {
+							...this.value,
+							routes: protocolJson.routes,
+						}
+						lastRefresh = new Date()
+
+						return protocolJson.routes
+					}).then((routes) => {
+						res(routes)
+					}).catch((e) => {
+						rej(e)
+					})
+				} else {
+					return Promise.reject("unknown api uil")
+				}
+			})
 		},
 		createSocket() {
 			if(currentValue && currentValue.token && this.value.routes && this.value.routes.live_socket) {

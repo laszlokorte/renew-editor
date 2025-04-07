@@ -174,7 +174,7 @@
 		cameraTow.value = undefined;
 
 		if (validConnection.value && newEdge) {
-			newEdge(connection.value);
+			newEdge(connection.value, evt);
 		} else if (newEdgeNode) {
 			const dist = Math.hypot(
 				draftSourcePosition.value.x - draftTargetPosition.value.x,
@@ -182,10 +182,13 @@
 			);
 
 			if (dist > snapRadiusScaled.value * 2) {
-				newEdgeNode({
-					source: draftSourceId.value,
-					newTarget: draftTargetPosition.value
-				});
+				newEdgeNode(
+					{
+						source: draftSourceId.value,
+						newTarget: draftTargetPosition.value
+					},
+					evt
+				);
 			}
 		}
 
