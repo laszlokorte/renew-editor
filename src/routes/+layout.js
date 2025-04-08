@@ -26,7 +26,7 @@ export async function load({fetch}) {
 		  connectionState.value = false
 		});
 
-	    live_socket.connect();
+	    authState.reconnectSocket();
 	}
 
 	return {

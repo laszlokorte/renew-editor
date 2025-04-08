@@ -83,6 +83,35 @@
 
 	const dropperDomElement = atom(undefined);
 
+	function hasTransferContent(trans, type) {
+		return [...trans.types].includes(type);
+	}
+
+	function getTransferContent(trans, type) {
+		if ([...trans.types].includes(type)) {
+			const orig = trans.getData(type);
+			if (orig) {
+				return orig;
+			} else {
+				const plain = trans.getData('text/plain');
+				if (plain) {
+					return JSON.parse(plain)[type];
+				}
+			}
+		}
+
+		return null;
+	}
+	function setTransferContent(trans, type, value) {
+		trans.setData(type, value);
+		trans.setData(
+			'text/plain',
+			JSON.stringify({
+				[type]: value
+			})
+		);
+	}
+
 	function throttle(mainFunction, delay) {
 		let timerFlag = null;
 
@@ -2612,11 +2641,11 @@
 															);
 														}}
 														newEdge={(e, evt) => {
-															if(evt.shiftKey) {
+															if (evt.shiftKey) {
 																e = {
 																	source: e.target,
 																	target: e.source
-																}
+																};
 															}
 															const isValidEdge =
 																!syntax.edgeWhitelist[e.source.semantic_tag] ||
@@ -2654,11 +2683,13 @@
 																			layer_id: e.source.layer
 																		},
 																		target: {
-																			...autoNodeType.edge.target,
+																			...autoNodeType.edge.target
 																		},
 																		reverse: evt.shiftKey,
-																		target_tip_symbol_shape_id: autoNodeType.edge.target_tip_symbol_shape_id,
-																		source_tip_symbol_shape_id: autoNodeType.edge.source_tip_symbol_shape_id,
+																		target_tip_symbol_shape_id:
+																			autoNodeType.edge.target_tip_symbol_shape_id,
+																		source_tip_symbol_shape_id:
+																			autoNodeType.edge.source_tip_symbol_shape_id,
 																		semantic_tag: autoNodeType.edge.semantic_tag
 																	}
 																}).then((l) => {
@@ -4111,7 +4142,10 @@
 						<!-- <input style="" type="search" name="" placeholder="search" /> -->
 						<div
 							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
-							use:polyfillDragDrop
+							use:polyfillDragDrop={{
+								dropArea: document,
+								options: { dragThresholdPixels: 0 }
+							}}
 						>
 							{#each layersInOrder.value as { index, id, depth, hidden, isLast, parents } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
@@ -4142,19 +4176,32 @@
 								<!-- svelte-ignore a11y_no_static_element_interactions -->
 								<div
 									style:margin-left="{2.5 + depth}em"
+									role="region"
 									ondragenter={(evt) => {
-										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
-										if (!sourceId || sourceId === id) {
+										const hasSourceId = hasTransferContent(
+											evt.dataTransfer,
+											'application/json+renewex-layer-id'
+										);
+
+										if (!hasSourceId) {
 											return;
 										}
+										evt.preventDefault();
+										evt.currentTarget.classList.add('droparea');
 										evt.currentTarget.style.backgroundColor = '#23875d';
 									}}
 									ondragleave={(evt) => {
+										evt.preventDefault();
+										evt.currentTarget.classList.remove('droparea');
 										evt.currentTarget.style.backgroundColor = 'white';
 									}}
 									ondrop={(evt) => {
-										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
+										const sourceId = getTransferContent(
+											evt.dataTransfer,
+											'application/json+renewex-layer-id'
+										);
 										if (!sourceId || sourceId === id) {
+											evt.currentTarget.style.backgroundColor = '#333';
 											return;
 										}
 
@@ -4170,11 +4217,14 @@
 									}}
 									style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
 									ondragover={(evt) => {
-										if (evt.dataTransfer.items.length < 1) {
+										if (evt.currentTarget === evt.relatedTarget) {
 											return;
 										}
-										const sourceId = evt.dataTransfer.getData('application/json+renewex-layer-id');
-										if (!sourceId || sourceId === id) {
+										const hasSourceId = hasTransferContent(
+											evt.dataTransfer,
+											'application/json+renewex-layer-id'
+										);
+										if (!hasSourceId) {
 											return;
 										}
 										evt.preventDefault();
@@ -4213,41 +4263,49 @@
 												evt.clientY - rect.top
 											);
 											evt.dataTransfer.effectAllowed = 'move';
-											evt.dataTransfer.setData('application/json+renewex-layer-id', id);
+											setTransferContent(evt.dataTransfer, 'application/json+renewex-layer-id', id);
 
 											selectedLayers.value = [id];
 											cast('select', id);
 										}}
 										ondragover={(evt) => {
-											if (evt.dataTransfer.items.length < 1) {
+											if (evt.currentTarget === evt.relatedTarget) {
 												return;
 											}
-											const sourceId = evt.dataTransfer.getData(
+											const hasSourceId = hasTransferContent(
+												evt.dataTransfer,
 												'application/json+renewex-layer-id'
 											);
-											if (!sourceId || sourceId === id) {
+											if (!hasSourceId) {
 												return;
 											}
 											evt.preventDefault();
 											evt.dataTransfer.dropEffect = 'move';
 										}}
 										ondragenter={(evt) => {
-											const sourceId = evt.dataTransfer.getData(
+											const hasSourceId = hasTransferContent(
+												evt.dataTransfer,
 												'application/json+renewex-layer-id'
 											);
-											if (!sourceId || sourceId === id) {
+											if (!hasSourceId) {
 												return;
 											}
+											evt.preventDefault();
+											evt.currentTarget.classList.add('droparea');
 											evt.currentTarget.style.backgroundColor = '#23875d';
 										}}
 										ondragleave={(evt) => {
+											evt.preventDefault();
+											evt.currentTarget.classList.remove('droparea');
 											evt.currentTarget.style.backgroundColor = '#333';
 										}}
 										ondrop={(evt) => {
-											const sourceId = evt.dataTransfer.getData(
+											const sourceId = getTransferContent(
+												evt.dataTransfer,
 												'application/json+renewex-layer-id'
 											);
 											if (!sourceId || sourceId === id) {
+											evt.currentTarget.style.backgroundColor = '#333';
 												return;
 											}
 
@@ -4310,24 +4368,31 @@
 											role="region"
 											style:margin-left="{2.5 + depth - i}em"
 											ondragenter={(evt) => {
-												const sourceId = evt.dataTransfer.getData(
+												const hasSourceId = hasTransferContent(
+													evt.dataTransfer,
 													'application/json+renewex-layer-id'
 												);
-												if (!sourceId || sourceId === p) {
+												if (!hasSourceId) {
 													return;
 												}
 
+												evt.preventDefault();
+												evt.currentTarget.classList.add('droparea');
 												evt.currentTarget.style.backgroundColor = '#23875d';
 											}}
 											ondragleave={(evt) => {
+												evt.preventDefault();
+												evt.currentTarget.classList.remove('droparea');
 												evt.currentTarget.style.backgroundColor = 'white';
 											}}
 											ondrop={(evt) => {
-												const sourceId = evt.dataTransfer.getData(
+												const sourceId = getTransferContent(
+													evt.dataTransfer,
 													'application/json+renewex-layer-id'
 												);
 
 												if (!sourceId || sourceId === p) {
+											evt.currentTarget.style.backgroundColor = '#333';
 													return;
 												}
 
@@ -4342,13 +4407,14 @@
 												evt.currentTarget.style.backgroundColor = 'white';
 											}}
 											ondragover={(evt) => {
-												if (evt.dataTransfer.items.length < 1) {
+												if (evt.currentTarget === evt.relatedTarget) {
 													return;
 												}
-												const sourceId = evt.dataTransfer.getData(
+												const hasSourceId = hasTransferContent(
+													evt.dataTransfer,
 													'application/json+renewex-layer-id'
 												);
-												if (!sourceId || sourceId === p) {
+												if (!hasSourceId) {
 													return;
 												}
 												evt.preventDefault();
@@ -5477,5 +5543,9 @@
 	}
 	.delete-button:not(:disabled):active {
 		background: #900;
+	}
+
+	:global(.droparea) * {
+		pointer-events: none;
 	}
 </style>

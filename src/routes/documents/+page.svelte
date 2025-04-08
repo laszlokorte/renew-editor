@@ -36,7 +36,21 @@
 	}
 
 	let dragging = $state(false);
+
 	function onDragEnter(evt) {
+		if (uploadFormVisible) {
+			return;
+		}
+
+		if (evt.dataTransfer.types.indexOf('Files') < 0) {
+			return;
+		}
+
+		evt.preventDefault();
+		dragging = true;
+	}
+
+	function onDragOver(evt) {
 		if (uploadFormVisible) {
 			return;
 		}
@@ -78,6 +92,16 @@
 		draggingZone = true;
 	}
 
+	function onDragOverZone(evt) {
+		evt.preventDefault();
+
+		if (evt.dataTransfer.types.indexOf('Files') < 0) {
+			return;
+		}
+
+		draggingZone = true;
+	}
+
 	function onDragLeaveZone(evt) {
 		evt.preventDefault();
 		draggingZone = false;
@@ -102,7 +126,8 @@
 <div
 	class="full-page"
 	class:dragging={dragging && !uploadFormVisible}
-	ondragover={onDragEnter}
+	ondragenter={onDragEnter}
+	ondragover={onDragOver}
 	ondragleave={onDragLeave}
 	ondrop={onDrop}
 >
@@ -115,7 +140,8 @@
 			class="drop-zone"
 			class:invitation={dragging}
 			class:ready={draggingZone}
-			ondragover={onDragEnterZone}
+			ondragenter={onDragEnterZone}
+			ondragover={onDragOverZone}
 			ondragleave={onDragLeaveZone}
 			ondrop={onDropZone}
 		>
@@ -312,6 +338,10 @@
 		grid-auto-rows: 1fr;
 	}
 
+	.full-page.dragging * {
+		pointer-events: none;
+	}
+
 	.full-page.dragging::after {
 		content: 'Drop Here';
 		font-size: 3vw;
@@ -463,6 +493,10 @@
 	.drop-zone.invitation {
 		color: #ffcc00;
 		background: #fffeed;
+	}
+
+	.drop-zone.invitation * {
+		pointer-events: none;
 	}
 
 	.drop-zone.ready {

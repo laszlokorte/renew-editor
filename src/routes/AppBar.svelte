@@ -25,7 +25,13 @@
 			<span style="grid-row: 1; grid-column: 2;">{appTitle}</span>
 
 			{#if connectionState.value === false}
-				<span class="offline-indicator">Offline</span>
+				<button
+					type="button"
+					class="offline-indicator"
+					onclick={(evt) => {
+						authState.reconnectSocket();
+					}}>Offline</button
+				>
 			{/if}
 		</h2></a
 	>
@@ -104,6 +110,10 @@
 		flex-wrap: nowrap;
 		align-items: center;
 		justify-content: center;
+		font: inherit;
+		color: #fff;
+		border: none;
+		cursor: pointer;
 	}
 
 	@media (hover: hover) {

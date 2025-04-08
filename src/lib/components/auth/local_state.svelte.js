@@ -12,7 +12,8 @@ function tryParse(str) {
 export default (() => {
 	const isBrowser = typeof localStorage !== "undefined"
 	let currentValue = $state(isBrowser && tryParse(localStorage.getItem("authed")))
-	let lastRefresh = null
+	let lastRefresh = new Date()
+	let socket = null
 
 	if(isBrowser) {
 		window.addEventListener('storage', onChange)
@@ -74,20 +75,27 @@ export default (() => {
 						rej(e)
 					})
 				} else {
-					return Promise.reject("unknown api uil")
+					console.log(this.value)
+					return Promise.reject("unknown api url")
 				}
 			})
 		},
 		createSocket() {
-			if(currentValue && currentValue.token && this.value.routes && this.value.routes.live_socket) {
-				return new Socket(this.value.routes.live_socket.href, {
-					longPollFallbackMs: null,
-					transport: window?.WebSocket,
-					params: {token: currentValue.token}
-				})
-			} else {
-				return null
+			if(!socket) {
+
+				if(currentValue && currentValue.token && this.value.routes && this.value.routes.live_socket) {
+					socket = new Socket(this.value.routes.live_socket.href, {
+						longPollFallbackMs: null,
+						transport: window?.WebSocket,
+						params: {token: currentValue.token}
+					})
+				} 
 			}
+			
+			return socket
+		},
+		reconnectSocket() {
+			socket?.connect()
 		}
 	}
 })()
