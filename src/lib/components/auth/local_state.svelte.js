@@ -57,6 +57,9 @@ export default (() => {
 			return this.value?.routes ?? []
 		},
 		refresh(fetchFn) {
+			if(!this.value) {
+				return Promise.resolve(false)
+			}
 			return new Promise((res, rej) => {
 				let rootUrl = this.value?.url
 

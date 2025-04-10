@@ -4,6 +4,8 @@
 	import CurrentAuthState from './auth/CurrentAuthState.svelte';
 	import { view, atom, update } from '$lib/reactivity/atom.svelte';
 
+	import SplashScreen from '$lib/components/splashscreen/SplashScreen.svelte';
+
 	const appTitle = env.APP_NAME;
 
 	const { authState, errors = atom([]), connectionState = atom(undefined) } = $props();
@@ -12,6 +14,8 @@
 		update((e) => e.slice(1), errors);
 	}
 </script>
+
+<SplashScreen icon="{base}/favicon.svg" color="white" />
 
 <div
 	class="app-bar"
