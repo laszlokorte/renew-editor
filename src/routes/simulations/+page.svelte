@@ -57,7 +57,7 @@
 				{#if importing}
 					<p>Compiling...</p>
 				{/if}
-				{#await Promise.all([data.documents, data.formalisms])}
+				{#await Promise.all([data.documents, data.formalisms.catch((e) => [])])}
 					Loading...
 				{:then [docs, formalisms]}
 					<p>
@@ -83,7 +83,11 @@
 						<label>
 							Main Name<br />
 							(The net to initialize the simulation with)<br />
-							<select style="min-width: 10em;" name="main_net_name" required>
+							<select
+								style="min-width: 10em; display: block; width: 100%; padding: 1ex"
+								name="main_net_name"
+								required
+							>
 								{#each docs.content.items as doc (doc.id)}
 									{#if importingDocuments.indexOf(doc.id) > -1}
 										<option value={doc.name}>{doc.name}</option>
@@ -96,15 +100,26 @@
 					<p>
 						<label>
 							Formalism<br />
-							<select style="min-width: 10em;" name="formalism" required>
+							{#if !formalisms.length}
+								Error loading formalisms...
+							{/if}
+							<select
+								style="min-width: 10em; display: block; width: 100%; padding: 1ex"
+								name="formalism"
+								required
+							>
 								{#each formalisms as { id, label } (id)}
 									<option value={id}>{label}</option>
+								{:else}
+									<option disabled value="">Error loading formalisms</option>
 								{/each}
 							</select>
 						</label>
 					</p>
 					<p>
-						<button type="submit" style="opacity: 1; background: #009;">Create</button>
+						<button disabled={importing} type="submit" style="opacity: 1; background: #009;"
+							>Create</button
+						>
 					</p>
 				{/await}
 			</div>

@@ -67,12 +67,12 @@
 		);
 
 	const textBounds = atom({});
-	const showMinimap = atom(true);
 	const showHierarchy = atom(true);
 	const showCursors = atom(true);
 	const selectedBlueprint = atom(undefined);
 	const showOtherSelections = atom(true);
 	const showDebug = atom(false);
+	const showMinimap = atom(true);
 	const showGrid = atom(false);
 	const showRename = atom(false);
 	const lockRotation = atom(false);
@@ -878,50 +878,49 @@
 							Simulate
 							<ul class="menu-bar-menu" class:open={startingSimulation}>
 								{#await data.formalisms then formalisms}
-
-								<li class="menu-bar-menu-item">
-									<label class="pretty-select" style="width: 100%; max-width: none">
-										<span class="pretty-select-label">Formalism</span>
+									<li class="menu-bar-menu-item">
+										<label class="pretty-select" style="width: 100%; max-width: none">
+											<span class="pretty-select-label">Formalism</span>
 											<span class="pretty-select-value"
-												>{L.get([L.find(R.propEq(currentFormalism.value, 'id')), 'label'], formalisms)}</span
+												>{L.get(
+													[L.find(R.propEq(currentFormalism.value, 'id')), 'label'],
+													formalisms
+												)}</span
 											>
 											{console.log(formalisms)}
 											<select class="pretty-select-control" bind:value={currentFormalism.value}>
-												{#each formalisms as {id, label} (id)}
+												{#each formalisms as { id, label } (id)}
 													<option value={id}>{label}</option>
 												{/each}
 											</select>
-									</label>
-								</li>
-								<li class="menu-bar-menu-item">
-									<button
-										disabled={startingSimulation}
-										class="menu-bar-item-button"
-										onclick={simulateThisDocument}
-									>
-										{#if startingSimulation}
-											Compiling…
-										{:else}
-											New Simulation
-										{/if}
-									</button>
-								</li>
-
+										</label>
+									</li>
+									<li class="menu-bar-menu-item">
+										<button
+											disabled={startingSimulation}
+											class="menu-bar-item-button new-sim-action"
+											onclick={simulateThisDocument}
+										>
+											{#if startingSimulation}
+												Compiling…
+											{:else}
+												New Simulation
+											{/if}
+										</button>
+									</li>
+									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								{:catch e}
-										<li class="menu-bar-menu-item">
-									<label class="pretty-select" style="width: 100%; max-width: none">
-										<span class="pretty-select-label">Formalism</span>
+									<li class="menu-bar-menu-item">
+										<label class="pretty-select" style="width: 100%; max-width: none">
+											<span class="pretty-select-label">Formalism</span>
 											<span class="pretty-select-value">Error loading formalisms</span>
-										</label></li>
+										</label>
+									</li>
 
-								<li class="menu-bar-menu-item">
-									<button
-										disabled={true}
-										class="menu-bar-item-button"
-									>
-										New Simulation
-									</button>
-								</li>
+									<li class="menu-bar-menu-item">
+										<button disabled={true} class="menu-bar-item-button"> New Simulation </button>
+									</li>
+									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								{/await}
 								<li class="menu-bar-menu-item">
 									<a class="menu-bar-item-button" href="{base}/simulations" target="_blank"
@@ -4900,6 +4899,26 @@
 		cursor: pointer;
 		flex-grow: 1;
 		padding: 1ex 4em 1ex 1ex;
+	}
+
+	.new-sim-action {
+		color: #090;
+	}
+	@media (pointer: fine) {
+		.new-sim-action:not(:disabled):hover {
+			background: #090;
+			color: #fff;
+		}
+
+		.new-sim-action:not(:disabled):active {
+			background: #5a5 !important;
+			color: #fff !important;
+		}
+
+		.new-sim-action:not(:disabled):focus {
+			background: #5a5;
+			color: #fff;
+		}
 	}
 
 	.menu-bar-item-button:hover {

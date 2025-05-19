@@ -119,7 +119,7 @@
 	const showDebug = atom(false);
 	const showInstances = atom(true);
 	const showLog = atom(false);
-	const showMinimap = atom(true);
+	const showMinimap = atom(false);
 	const showGrid = atom(false);
 	const gridDistance = atom(32);
 	const gridDistanceExp = view(logLens(2), gridDistance);
@@ -872,7 +872,9 @@
 						{/if}
 						{#if showLog.value}
 							<div class="toolbar vertical log">
-								{#await data.log_entries then entries}
+								{#await data.log_entries}
+									Loading log...
+								{:then entries}
 									<LiveResource socket={data.live_socket} resource={entries}>
 										{#snippet children(log)}
 											<ol
@@ -884,6 +886,8 @@
 											</ol>
 										{/snippet}
 									</LiveResource>
+								{:catch e}
+									Error loading log
 								{/await}
 							</div>
 						{/if}

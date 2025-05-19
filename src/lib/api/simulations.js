@@ -6,7 +6,7 @@ export default function(fetchFn, routes, token) {
 			return fetchJson(fetchFn, routes.simulations.href, 'get', {"Authorization" : token})
 		},
 		listFormalisms() {
-			return fetchJson(fetchFn, routes.formalisms.href, 'get', {"Authorization" : token}).then(r => (console.log(r.formalisms), r.formalisms))
+			return new Promise(r => r(routes.formalisms.href)).then(h => fetchJson(fetchFn, h, 'get', {"Authorization" : token})).then(r => r.formalisms)
 		},
 		loadJson(url) {
 			return fetchJson(fetchFn, url, 'get', {"Authorization" : token})
