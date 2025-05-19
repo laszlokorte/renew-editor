@@ -40,7 +40,7 @@
 				const document_ids = formData.getAll('document_ids');
 				importing = true;
 				importError.value = false;
-				createSimulation(document_ids, formData.get('main_net_name'))
+				createSimulation(document_ids, formData.get('main_net_name'), formData.get('formalism'))
 					.catch((e) => {
 						importError.value = e.message;
 					})
@@ -57,9 +57,9 @@
 				{#if importing}
 					<p>Compiling...</p>
 				{/if}
-				{#await data.documents}
+				{#await Promise.all([data.documents, data.formalisms])}
 					Loading...
-				{:then docs}
+				{:then [docs, formalisms]}
 					<p>
 						<label>
 							Net Documents:<br />
@@ -92,10 +92,21 @@
 							</select>
 						</label>
 					</p>
+
+					<p>
+						<label>
+							Formalism<br />
+							<select style="min-width: 10em;" name="formalism" required>
+								{#each formalisms as { id, label } (id)}
+									<option value={id}>{label}</option>
+								{/each}
+							</select>
+						</label>
+					</p>
+					<p>
+						<button type="submit" style="opacity: 1; background: #009;">Create</button>
+					</p>
 				{/await}
-				<p>
-					<button type="submit" style="opacity: 1; background: #009;">Create</button>
-				</p>
 			</div>
 		</form>
 	</Modal>

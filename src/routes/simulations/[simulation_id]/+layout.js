@@ -61,6 +61,7 @@ export async function load({params, fetch}) {
 						shadow_net_system: api.loadJson(j.content.shadow_net_system.href).then(sns => {
 							return sns.content
 						}),
+						log_entries: api.loadJson(j.links.log.href),
 					}
 				})
 			} else {

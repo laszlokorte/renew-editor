@@ -45,6 +45,8 @@ export default (() => {
 			this.value = token
 		},
 		logout() {
+			socket?.disconnect()
+			socket = null
 			this.value = null
 		},
 		get authHeader() {

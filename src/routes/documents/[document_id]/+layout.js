@@ -28,7 +28,7 @@ function createCommands(fetchFn, doc) {
 				})
 		},
 
-		simulateDocument() {
+		simulateDocument(formalism) {
 			const simWindow = new Promise((resolve, reject) => {
 				const w = window.open("", "_blank");
 				if(w) {
@@ -88,7 +88,7 @@ function createCommands(fetchFn, doc) {
 				}
 			})
 
-		    const sim = api.simulateDocument(doc.id)
+		    const sim = api.simulateDocument(doc.id, formalism)
 
 		    return simWindow.then((w) => {
 		    	sim.then((r) => {
@@ -183,6 +183,7 @@ export async function load({params, fetch}) {
 							return new Map(blueprints.blueprints.map(s => [s.id, {name:s.name, sockets: s.sockets}]))
 						}),
 						linked_simulations: new Promise((r, e) => j.links.linked_simulations ? r(j.links.linked_simulations.href) : e("doc.links.linked_simulations not defined")).then(api.loadJson),
+						formalisms: new Promise((r, e) => j.links.formalisms ? r(j.links.formalisms.href) : e("doc.links.formalisms not defined")).then(api.loadJson).then(r => r.formalisms) ,
 
 						syntaxes: syntaxes,
 						defaultSyntax,

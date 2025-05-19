@@ -24,6 +24,7 @@
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
 	import CameraScroller from '$lib/components/viewport/CameraScroller.svelte';
+	import Minimap from '$lib/components/editor/overlays/minimap/Minimap.svelte';
 
 	import { buildPath, buildCoord } from '$lib/components/renew/symbols';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
@@ -108,6 +109,20 @@
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 
 	let cameraScroller = atom(undefined);
+
+	const logLens = (base) =>
+		L.lens(
+			(x) => Math.log(x) / Math.log(base),
+			(y) => Math.pow(base, y)
+		);
+
+	const showDebug = atom(false);
+	const showInstances = atom(true);
+	const showLog = atom(false);
+	const showMinimap = atom(true);
+	const showGrid = atom(false);
+	const gridDistance = atom(32);
+	const gridDistanceExp = view(logLens(2), gridDistance);
 </script>
 
 <div class="full-page">
@@ -152,6 +167,143 @@
 										onclick={() => {
 											data.commands.downloadSNS();
 										}}>Download SNS</button
+									>
+								</li>
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							View
+
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											call((c) => {
+												c && c.resetCamera();
+											}, cameraScroller);
+										}}>Fit into Camera</button
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											cameraZoom.value = 0;
+										}}>Reset Zoom</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											update(R.add(0.2), cameraZoom);
+										}}>Zoom in</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											update(R.add(-0.2), cameraZoom);
+										}}>Zoom out</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<input
+										type="range"
+										bind:value={cameraZoom.value}
+										min="-3"
+										step=".01"
+										max="3"
+										style="width: 100%; box-sizing: border-box;"
+									/>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											cameraRotation.value = 0;
+										}}>Reset Rotation</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											update(R.add(90), cameraRotation);
+										}}>Rotate Clockwise</button
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										onclick={() => {
+											update(R.add(-90), cameraRotation);
+										}}>Rotate Counter-Clockwise</button
+									>
+								</li>
+
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={lockRotation.value} />
+										Lock rotation</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<input
+										disabled={lockRotation.value}
+										type="range"
+										bind:value={cameraRotation.value}
+										min="-180"
+										step="5"
+										max="180"
+										style="width: 100%; box-sizing: border-box;"
+									/>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showGrid.value} />
+										Show Grid</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<input
+										disabled={!showGrid.value}
+										type="range"
+										bind:value={gridDistanceExp.value}
+										min="2"
+										step="1"
+										max="10"
+										style="width: 100%; box-sizing: border-box;"
+									/>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showMinimap.value} />
+										Show Minimap</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showInstances.value} />
+										Show Instances</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showLog.value} />
+										Show Log</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showDebug.value} />
+										Show Debug</label
 									>
 								</li>
 							</ul>
@@ -237,34 +389,32 @@
 						{/if}
 					</div>
 				</div>
+				{#await data.shadow_net_system then sns}
+					{@const doc = view(
+						(id) => R.find((n) => n.id === id, sns.nets)?.document,
+						current_net_id
+					)}
 
-				<div class="body">
-					{#await data.shadow_net_system then sns}
-						{@const doc = view(
-							(id) => R.find((n) => n.id === id, sns.nets)?.document,
-							current_net_id
-						)}
-
-						{@const layersInOrder = view(L.reread(walkDocument), doc)}
-						{@const extension = view(
-							[
-								'viewbox',
-								L.pick({
-									minX: 'x',
-									minY: 'y',
-									maxX: L.reread(({ x, width }) => x + width),
-									maxY: L.reread(({ y, height }) => y + height)
-								}),
-								L.valueOr({
-									minX: 0,
-									minY: 0,
-									maxX: 0,
-									maxY: 0
-								})
-							],
-							doc
-						)}
-
+					{@const layersInOrder = view(L.reread(walkDocument), doc)}
+					{@const extension = view(
+						[
+							'viewbox',
+							L.pick({
+								minX: 'x',
+								minY: 'y',
+								maxX: L.reread(({ x, width }) => x + width),
+								maxY: L.reread(({ y, height }) => y + height)
+							}),
+							L.valueOr({
+								minX: 0,
+								minY: 0,
+								maxX: 0,
+								maxY: 0
+							})
+						],
+						doc
+					)}
+					<div class="body">
 						{#if doc.value}
 							<CameraScroller bind:this={cameraScroller.value} {camera} {extension}>
 								<SVGViewport {camera}>
@@ -641,56 +791,104 @@
 												cast('init');
 											}}>init</button
 										>
+
+										<div style="margin: 1em auto">
+											<label>
+												<input type="checkbox" bind:checked={showLog.value} />
+												Show Log</label
+											>
+										</div>
 									</div>
 								{/if}
 							</div>
 						{/if}
-					{/await}
-				</div>
-
-				<div class="sidebar right">
-					<div class="toolbar vertical">
-						<label>
-							Net Instances:
-							<select
-								bind:value={currentInstance.value}
-								size="10"
-								style="height: 12em; width: 100%;"
+					</div>
+					<div class="sidebar right">
+						{#if doc.value}
+							<Minimap
+								visible={showMinimap}
+								{extension}
+								{frameBoxPath}
+								{rotationInverseTransform}
+								{cameraFocus}
 							>
-								{#each nets.value as nt}
-									{@const this_instances = view(
-										L.filter(R.pathEq(nt.id, ['links', 'shadow_net', 'id'])),
-										net_instances
-									)}
-									<optgroup label={nt.name}>
-										{#each this_instances.value as ni}
-											<option value={ni.id}>{ni.label}</option>
+								<rect
+									x={doc.value.viewbox.x}
+									y={doc.value.viewbox.y}
+									width={doc.value.viewbox.width}
+									height={doc.value.viewbox.height}
+									fill="white"
+									opacity="0.8"
+								/>
+
+								<use href="#full-document-{current_net_id}" opacity="0.8" />
+
+								<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
+							</Minimap>
+						{/if}
+						{#if showInstances.value}
+							<div class="toolbar vertical">
+								<label>
+									Net Instances:
+									<select
+										bind:value={currentInstance.value}
+										size="10"
+										style="height: 12em; width: 100%;"
+									>
+										{#each nets.value as nt}
+											{@const this_instances = view(
+												L.filter(R.pathEq(nt.id, ['links', 'shadow_net', 'id'])),
+												net_instances
+											)}
+											<optgroup label={nt.name}>
+												{#each this_instances.value as ni}
+													<option value={ni.id}>{ni.label}</option>
+												{/each}
+											</optgroup>
 										{/each}
-									</optgroup>
-								{/each}
-							</select>
-						</label>
+									</select>
+								</label>
+							</div>
+						{/if}
+						{#if showDebug.value}
+							<div class="toolbar vertical">
+								<details>
+									<summary>Debug Simulation </summary>
+									<textarea>{JSON.stringify(simulation.value, null, '  ')}</textarea>
+								</details>
+
+								<details>
+									<summary>Debug SNS </summary>
+
+									{#await data.shadow_net_system then sns}
+										{@const currentDoc = view(
+											(id) => R.find((n) => n.id === id, sns.nets)?.document,
+											current_net_id
+										)}
+										<textarea> {JSON.stringify(currentDoc.value, null, '  ')}</textarea>
+									{/await}
+								</details>
+							</div>
+						{/if}
+						{#if showLog.value}
+							<div class="toolbar vertical log">
+								{#await data.log_entries then entries}
+									<LiveResource socket={data.live_socket} resource={entries}>
+										{#snippet children(log)}
+											<ol
+												style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1ex;"
+											>
+												{#each log.value.log_entries as l}
+													<li>{l.content}</li>
+												{/each}
+											</ol>
+										{/snippet}
+									</LiveResource>
+								{/await}
+							</div>
+						{/if}
 					</div>
-					<div class="toolbar vertical">
-						<details>
-							<summary>Debug Simulation </summary>
-							<textarea>{JSON.stringify(simulation.value, null, '  ')}</textarea>
-						</details>
-
-						<details>
-							<summary>Debug SNS </summary>
-
-							{#await data.shadow_net_system then sns}
-								{@const currentDoc = view(
-									(id) => R.find((n) => n.id === id, sns.nets)?.document,
-									current_net_id
-								)}
-								<textarea> {JSON.stringify(currentDoc.value, null, '  ')}</textarea>
-							{/await}
-						</details>
-					</div>
-				</div>
-
+				{/await}
 				<div class="sidebar left">
 					<div class="toolbar vertical">
 						Time: {simulation.value.timestep}
@@ -714,6 +912,18 @@
 	textarea {
 		width: 100%;
 	}
+	.toolbar.vertical.log {
+		background: #111;
+		color: #fff;
+		max-height: 20em;
+		overflow: auto;
+	}
+
+	.toolbar.vertical.log * {
+		user-select: text !important;
+		-webkit-user-select: text !important;
+	}
+
 	.full-page {
 		position: absolute;
 		inset: 0;

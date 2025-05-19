@@ -10,8 +10,8 @@ export default function(fetchFn, routes, token) {
 			return fetchJson(fetchFn, routes.document.href.replace(':id', id), 'delete', {"Authorization" : token})
 		},
 
-		simulateDocument(id) {
-			return fetchJson(fetchFn, routes.create_simulation.href, routes.create_simulation.method, {"Authorization" : token}, {document_ids: [id]})
+		simulateDocument(id, formalism) {
+			return fetchJson(fetchFn, routes.create_simulation.href, routes.create_simulation.method, {"Authorization" : token}, {document_ids: [id], formalism})
 		},
 
 		callJson({href, method}) {

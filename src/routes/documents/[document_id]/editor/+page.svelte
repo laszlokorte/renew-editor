@@ -268,7 +268,7 @@
 		evt.preventDefault();
 		startingSimulation = true;
 		data.commands
-			.simulateDocument()
+			.simulateDocument(currentFormalism.value)
 			.catch((e) => {
 				console.error(e);
 				update((errs) => [...errs, e.message], errors);
@@ -324,6 +324,8 @@
 			return prevResult;
 		};
 	}
+
+	const currentFormalism = atom();
 </script>
 
 <div class="full-page">
@@ -875,6 +877,22 @@
 						<li class="menu-bar-item" tabindex="-1">
 							Simulate
 							<ul class="menu-bar-menu" class:open={startingSimulation}>
+								{#await data.formalisms then formalisms}
+
+								<li class="menu-bar-menu-item">
+									<label class="pretty-select" style="width: 100%; max-width: none">
+										<span class="pretty-select-label">Formalism</span>
+											<span class="pretty-select-value"
+												>{L.get([L.find(R.propEq(currentFormalism.value, 'id')), 'label'], formalisms)}</span
+											>
+											{console.log(formalisms)}
+											<select class="pretty-select-control" bind:value={currentFormalism.value}>
+												{#each formalisms as {id, label} (id)}
+													<option value={id}>{label}</option>
+												{/each}
+											</select>
+									</label>
+								</li>
 								<li class="menu-bar-menu-item">
 									<button
 										disabled={startingSimulation}
@@ -888,6 +906,23 @@
 										{/if}
 									</button>
 								</li>
+
+								{:catch e}
+										<li class="menu-bar-menu-item">
+									<label class="pretty-select" style="width: 100%; max-width: none">
+										<span class="pretty-select-label">Formalism</span>
+											<span class="pretty-select-value">Error loading formalisms</span>
+										</label></li>
+
+								<li class="menu-bar-menu-item">
+									<button
+										disabled={true}
+										class="menu-bar-item-button"
+									>
+										New Simulation
+									</button>
+								</li>
+								{/await}
 								<li class="menu-bar-menu-item">
 									<a class="menu-bar-item-button" href="{base}/simulations" target="_blank"
 										>Show all Simulations</a
@@ -4305,7 +4340,7 @@
 												'application/json+renewex-layer-id'
 											);
 											if (!sourceId || sourceId === id) {
-											evt.currentTarget.style.backgroundColor = '#333';
+												evt.currentTarget.style.backgroundColor = '#333';
 												return;
 											}
 
@@ -4392,7 +4427,7 @@
 												);
 
 												if (!sourceId || sourceId === p) {
-											evt.currentTarget.style.backgroundColor = '#333';
+													evt.currentTarget.style.backgroundColor = '#333';
 													return;
 												}
 
@@ -5267,6 +5302,7 @@
 		max-width: 12em;
 		padding: 0.1ex;
 		gap: 0.1ex;
+		flex-grow: 1;
 	}
 
 	.pretty-select::after {

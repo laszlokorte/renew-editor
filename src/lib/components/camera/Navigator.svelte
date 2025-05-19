@@ -14,15 +14,7 @@
 	} from './lenses';
 	import { zoomWithPivot, zoomIntoFrame } from './navigation';
 
-	const {
-		camera,
-		frameBoxPath,
-		children,
-		errorHandler,
-		onworldcursor,
-		onpointerleave,
-		lockRotation
-	} = $props();
+	const { camera, frameBoxPath, children, onworldcursor, onpointerleave, lockRotation } = $props();
 
 	const svgElement = atom(null);
 	const thisElement = view(

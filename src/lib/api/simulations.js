@@ -5,6 +5,9 @@ export default function(fetchFn, routes, token) {
 		listSimulations() {
 			return fetchJson(fetchFn, routes.simulations.href, 'get', {"Authorization" : token})
 		},
+		listFormalisms() {
+			return fetchJson(fetchFn, routes.formalisms.href, 'get', {"Authorization" : token}).then(r => (console.log(r.formalisms), r.formalisms))
+		},
 		loadJson(url) {
 			return fetchJson(fetchFn, url, 'get', {"Authorization" : token})
 		},
@@ -13,8 +16,8 @@ export default function(fetchFn, routes, token) {
 			return fetchJson(fetchFn, href, method, {"Authorization" : token})
 		},
 
-		createSimulation(document_ids, main_net_name) {
-			return fetchJson(fetchFn, routes.create_simulation.href, routes.create_simulation.method, {"Authorization" : token}, {document_ids, main_net_name})
+		createSimulation(document_ids, main_net_name, formalism) {
+			return fetchJson(fetchFn, routes.create_simulation.href, routes.create_simulation.method, {"Authorization" : token}, {document_ids, main_net_name, formalism})
 		},
 
 		loadUrl(url) {

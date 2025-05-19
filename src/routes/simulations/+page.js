@@ -11,9 +11,9 @@ export const ssr = false;
 
 function createCommands(api, fetchFn) {
 	return {
-		createSimulation(doc_ids, main_net_name) {
+		createSimulation(doc_ids, main_net_name, formalism) {
 			return api
-				.createSimulation(doc_ids, main_net_name)
+				.createSimulation(doc_ids, main_net_name, formalism)
 				.then((r) => {
 					return goto(`${base}/simulations/${r.id}/observer`)
 				})
@@ -44,7 +44,8 @@ export async function load({fetch}) {
 		return api.listSimulations().then(j => ({
 			simulations: j,
 			commands: createCommands(api, fetch),
-			documents: docApi.listDocuments()
+			documents: docApi.listDocuments(),
+			formalisms: api.listFormalisms()
 		})).catch((e) => {
 			if(e.error == "http") {
 				return error(e.status, {
