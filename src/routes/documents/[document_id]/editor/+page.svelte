@@ -329,7 +329,7 @@
 </script>
 
 <div class="full-page">
-	<AppBar projectId={"fooo"} authState={data.authState} {errors} connectionState={data.connectionState} />
+	<AppBar title={`Document Editor`} projectId={"fooo"} authState={data.authState} {errors} connectionState={data.connectionState} />
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}

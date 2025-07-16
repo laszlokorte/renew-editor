@@ -131,7 +131,7 @@
 	ondragleave={onDragLeave}
 	ondrop={onDrop}
 >
-	<AppBar projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
+	<AppBar title={`Project Foooo Documents`} projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
 
 	<Modal bind:visible={uploadFormVisible} closeLabel="Cancel">
 		<h2>Upload Renew File</h2>
@@ -182,7 +182,7 @@
 
 	<header class:offline={!online}>
 		<div>
-			<a href="{base}/projects" title="Back">Back</a>
+			<a href="{base}/projects/fooo" title="Back">Back</a>
 
 			<h2>Documents</h2>
 		</div>

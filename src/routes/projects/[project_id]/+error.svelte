@@ -6,7 +6,7 @@
 	const { data } = $props();
 </script>
 
-<AppBar projectId={"fooo"} authState={data.authState} />
+<AppBar title={`Error ${$page.status}: ${$page.error.message}`} projectId={"fooo"} authState={data.authState} />
 
 <section>
 	<h1 class="center">Error {$page.status}: {$page.error.message}</h1>

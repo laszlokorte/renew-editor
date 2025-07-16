@@ -20,7 +20,7 @@
 	}
 </script>
 
-<AppBar authState={data.authState} connectionState={data.connectionState} />
+<AppBar title={data.authState.isAuthenticated ? 'Account' : 'Login'} authState={data.authState} connectionState={data.connectionState} />
 
 <section class="content">
 	<div>

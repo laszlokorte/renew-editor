@@ -126,7 +126,7 @@
 </script>
 
 <div class="full-page">
-	<AppBar projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
+	<AppBar title={`Simulatation Observer`} projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
 
 	<LiveResource socket={data.live_socket} resource={data.simulation}>
 		{#snippet children(simulation, presence, { dispatch, cast })}

@@ -25,7 +25,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="full-page">
-	<AppBar  projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
+	<AppBar title={`Project Fooo Simulations`} projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
 
 	<Modal bind:visible={createFormVisible} canClose={!importing} closeLabel="Cancel">
 		<form
@@ -128,7 +128,7 @@
 
 	<header>
 		<div>
-			<a href="{base}/projects" title="Back">Back</a>
+			<a href="{base}/projects/fooo" title="Back">Back</a>
 
 			<h2>Simulations</h2>
 		</div>

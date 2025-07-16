@@ -8,12 +8,17 @@
 
 	const appTitle = env.APP_NAME;
 
-	const { projectId, authState, errors = atom([]), connectionState = atom(undefined) } = $props();
+	const { projectId, authState, errors = atom([]), connectionState = atom(undefined), title } = $props();
 
 	function discardError() {
 		update((e) => e.slice(1), errors);
 	}
 </script>
+
+<svelte:head>
+	<title>{[title, appTitle].filter(x => x).join(" - ")}</title>
+</svelte:head>
+
 
 <SplashScreen icon="{base}/favicon.svg" color="white" />
 

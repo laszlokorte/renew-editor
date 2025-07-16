@@ -34,11 +34,11 @@
 <div
 	class="full-page"
 >
-	<AppBar authState={data.authState} connectionState={data.connectionState} />
+	<AppBar title={`Projects`} authState={data.authState} connectionState={data.connectionState} />
 
 	<header class:offline={!online}>
 		<div>
-			<a href="{base}/projects" title="Back">Back</a>
+			<a href="{base}/" title="Back">Back</a>
 
 			<h2>Projects</h2>
 		</div>
