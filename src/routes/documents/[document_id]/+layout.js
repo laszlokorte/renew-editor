@@ -16,7 +16,7 @@ function createCommands(fetchFn, doc) {
 			return api
 				.deleteDocument(doc.id)
 				.then((r) => {
-					return goto(`${base}/documents`)
+					return goto(`${base}/projects/fooo/documents`)
 				})
 		},
 

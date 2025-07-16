@@ -1,12 +1,12 @@
 <script>
 	import { base } from '$app/paths';
 	import { page } from '$app/stores';
-	import AppBar from '../AppBar.svelte';
+	import AppBar from '../../../AppBar.svelte';
 
 	const { data } = $props();
 </script>
 
-<AppBar authState={data.authState} />
+<AppBar projectId={"fooo"} authState={data.authState} />
 
 <section>
 	<h1 class="center">Error {$page.status}: {$page.error.message}</h1>
@@ -16,7 +16,7 @@
 	{/if}
 
 	<p class="center">
-		<a href="{base}/documents">Back to Document list</a>
+		<a href="{base}/projects/fooo/simulations">Back to Simulation list</a>
 	</p>
 </section>
 

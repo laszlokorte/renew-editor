@@ -1,14 +1,14 @@
 <script>
 	import { base } from '$app/paths';
-	import AppBar from './AppBar.svelte';
-	import * as env from '../env';
+	import AppBar from '../../AppBar.svelte';
+	import * as env from '../../../env';
 
 	const appTitle = env.APP_NAME;
 
 	const { data } = $props();
 </script>
 
-<AppBar authState={data.authState} connectionState={data.connectionState} />
+<AppBar projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
 
 <section class="hero">
 	<img style="max-width: 5em; margin: 1em auto" src="{base}/favicon.svg" alt="Renew" class="icon" />
@@ -18,7 +18,8 @@
 	<p>Welcome to the {appTitle} Web Editor</p>
 
 	<div style="display: flex; margin: 1ex; gap: 1ex">
-		<a href="{base}/projects" class="action">View Your Projects</a>
+		<a href="{base}/projects/fooo/documents" class="action">View Documents</a>
+		<a href="{base}/projects/fooo/simulations" class="action">View Simulations</a>
 	</div>
 	<div style="display: flex; margin: 1ex; gap: 1ex">
 		<a href="mailto:petristation@laszlokorte.de?subject=Petristation%20Feedback" class="action"

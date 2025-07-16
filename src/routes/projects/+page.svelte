@@ -8,7 +8,7 @@
 
 	const { data } = $props();
 
-	const { createDocument, importDocuments, downloadFile } = $derived(data.commands);
+	const { createProject, downloadFile } = $derived(data.commands);
 
 	let uploadFormVisible = $state(false);
 	let online = $state(true);
@@ -18,173 +18,29 @@
 	let filesToUpload = $state();
 
 	/** @type {(evt: SubmitEvent) => void} */
-	function onNewDocument(evt) {
+	function onNewProject(evt) {
 		evt.preventDefault();
 
-		createDocument().then(({ id, content: { name } }) => {
+		createProject().then(({ id, content: { name } }) => {
 			renamingId = id;
 			renamingOrigName = name;
 			renamingNewName = name;
 		});
 	}
 
-	/** @type {(evt: SubmitEvent) => void} */
-	function showUploadForm(evt) {
-		evt.preventDefault();
-
-		uploadFormVisible = true;
-	}
-
-	let dragging = $state(false);
-
-	function onDragEnter(evt) {
-		if (uploadFormVisible) {
-			return;
-		}
-
-		if (evt.dataTransfer.types.indexOf('Files') < 0) {
-			return;
-		}
-
-		evt.preventDefault();
-		dragging = true;
-	}
-
-	function onDragOver(evt) {
-		if (uploadFormVisible) {
-			return;
-		}
-
-		if (evt.dataTransfer.types.indexOf('Files') < 0) {
-			return;
-		}
-
-		evt.preventDefault();
-		dragging = true;
-	}
-
-	function onDragLeave(evt) {
-		evt.preventDefault();
-		dragging = false;
-	}
-
-	function onDrop(evt) {
-		evt.preventDefault();
-		dragging = false;
-
-		if (!evt.dataTransfer.files.length) {
-			return;
-		}
-
-		importDocuments(evt.dataTransfer.files).then(() => {
-			uploadFormVisible = false;
-		});
-	}
-
-	let draggingZone = $state(false);
-	function onDragEnterZone(evt) {
-		evt.preventDefault();
-
-		if (evt.dataTransfer.types.indexOf('Files') < 0) {
-			return;
-		}
-
-		draggingZone = true;
-	}
-
-	function onDragOverZone(evt) {
-		evt.preventDefault();
-
-		if (evt.dataTransfer.types.indexOf('Files') < 0) {
-			return;
-		}
-
-		draggingZone = true;
-	}
-
-	function onDragLeaveZone(evt) {
-		evt.preventDefault();
-		draggingZone = false;
-	}
-
-	function onDropZone(evt) {
-		evt.preventDefault();
-		evt.stopPropagation();
-		draggingZone = false;
-
-		if (!evt.dataTransfer.files.length) {
-			return;
-		}
-
-		importDocuments(evt.dataTransfer.files).then(() => {
-			uploadFormVisible = false;
-		});
-	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="full-page"
-	class:dragging={dragging && !uploadFormVisible}
-	ondragenter={onDragEnter}
-	ondragover={onDragOver}
-	ondragleave={onDragLeave}
-	ondrop={onDrop}
 >
 	<AppBar authState={data.authState} connectionState={data.connectionState} />
 
-	<Modal bind:visible={uploadFormVisible} closeLabel="Cancel">
-		<h2>Upload Renew File</h2>
-
-		<label
-			class="drop-zone"
-			class:invitation={dragging}
-			class:ready={draggingZone}
-			ondragenter={onDragEnterZone}
-			ondragover={onDragOverZone}
-			ondragleave={onDragLeaveZone}
-			ondrop={onDropZone}
-		>
-			Drop .rnw File Here
-			<input type="file" multiple />
-		</label>
-
-		<div class="labeled-ruler">or</div>
-
-		<form
-			class="upload-form"
-			onsubmit={(evt) => {
-				evt.preventDefault();
-
-				importDocuments(filesToUpload).then(() => {
-					uploadFormVisible = false;
-				});
-			}}
-		>
-			<div class="center">
-				<label for="upload_file">Select a file from your device:</label>
-			</div>
-
-			<div class="file-selector">
-				<input
-					accept=".rnw"
-					id="upload_file"
-					class="text-input"
-					type="file"
-					name="upload_file"
-					required
-					bind:files={filesToUpload}
-					multiple
-				/> <button class="upload-button">Upload</button>
-			</div>
-		</form>
-	</Modal>
-
 	<header class:offline={!online}>
 		<div>
-			<a href="{base}/" title="Back">Back</a>
+			<a href="{base}/projects" title="Back">Back</a>
 
-			<h2>Documents</h2>
+			<h2>Projects</h2>
 		</div>
 
 		<div class="button-group">
@@ -194,13 +50,10 @@
 				</div>
 			{/if}
 
-			<form onsubmit={onNewDocument}>
-				<button disabled={!online} type="submit">New Document</button>
+			<form onsubmit={onNewProject}>
+				<button disabled={!online} type="submit">New Project</button>
 			</form>
 
-			<form onsubmit={showUploadForm}>
-				<button disabled={!online} type="submit">Import&hellip;</button>
-			</form>
 		</div>
 	</header>
 
@@ -209,11 +62,11 @@
 			<strong>Name</strong>
 		</div>
 
-		<LiveResource socket={data.live_socket} resource={data.documents}>
-			{#snippet children(documents, _presence, { dispatch })}
+		<LiveResource socket={data.live_socket} resource={data.projects}>
+			{#snippet children(projects, _presence, { dispatch })}
 				<ul>
-					{#each documents.value.items as d (d.id)}
-						<li class="document-list-item">
+					{#each projects.value.items as d (d.id)}
+						<li class="project-list-item">
 							{#if renamingId == d.id}
 								<div
 									onclick={() => {
@@ -226,7 +79,7 @@
 									style="display: contents;"
 									onsubmit={(evt) => {
 										evt.preventDefault();
-										dispatch('rename_document', { id: d.id, name: renamingNewName }).then(() => {
+										dispatch('rename_project', { id: d.id, name: renamingNewName }).then(() => {
 											renamingId = null;
 											renamingNewName = null;
 										});
@@ -234,14 +87,14 @@
 								>
 									<div
 										style="display: grid; grid-template-columns: 1fr auto;flex-grow: 1; z-index: 100;background: #fff;"
-										class="document-list-pop"
+										class="project-list-pop"
 									>
 										<input
 											id="rename_{renamingId}"
 											bind:value={renamingNewName}
 											autocomplete="off"
 											use:autofocusIf={{ focus: true, select: true }}
-											class="document-list-input"
+											class="project-list-input"
 											type="text"
 											onkeydown={(evt) => {
 												if (evt.key === 'Escape') {
@@ -251,7 +104,7 @@
 											}}
 											class:warn={renamingOrigName !== d.name}
 										/>
-										<div class="document-list-pop-actions">
+										<div class="project-list-pop-actions">
 											<button class="action-confirm" type="submit">Confirm</button>
 											<button
 												class="action-cancel"
@@ -262,34 +115,34 @@
 											>
 										</div>
 									</div>
-									<div class="document-list-actions">
+									<div class="project-list-actions">
 										<button
 											class="action-export"
 											onclick={() => {
 												downloadFile(d.links.export.href, d.name);
-											}}>Export .rnw</button
+											}}>Download</button
 										>
 										<button
 											class="action-duplicate"
 											onclick={() => {
-												dispatch('duplicate_document', { id: d.id });
+												dispatch('duplicate_project', { id: d.id });
 											}}>Duplicate</button
 										>
 										<button
 											class="action-delete"
 											onclick={() => {
-												dispatch('delete_document', { id: d.id });
+												dispatch('delete_project', { id: d.id });
 											}}>Delete</button
 										>
 									</div>
 								</form>
 							{:else}
 								<a
-									class="document-list-link"
-									href="{base}/documents/{d.id}/editor"
-									title="Document #{d.id}">{d.name}</a
+									class="project-list-link"
+									href="{base}/projects/{d.id}/documents"
+									title="Project #{d.id}">{d.name}</a
 								>
-								<div class="document-list-actions">
+								<div class="project-list-actions">
 									<button
 										class="action-rename"
 										onclick={() => {
@@ -302,18 +155,18 @@
 										class="action-export"
 										onclick={() => {
 											downloadFile(d.links.export.href, d.name);
-										}}>Export .rnw</button
+										}}>Download</button
 									>
 									<button
 										class="action-duplicate"
 										onclick={() => {
-											dispatch('duplicate_document', { id: d.id });
+											dispatch('duplicate_project', { id: d.id });
 										}}>Duplicate</button
 									>
 									<button
 										class="action-delete"
 										onclick={() => {
-											dispatch('delete_document', { id: d.id });
+											dispatch('delete_project', { id: d.id });
 										}}>Delete</button
 									>
 								</div>
@@ -336,24 +189,6 @@
 		z-index: -1;
 		grid-template-rows: auto auto;
 		grid-auto-rows: 1fr;
-	}
-
-	.full-page.dragging * {
-		pointer-events: none;
-	}
-
-	.full-page.dragging::after {
-		content: 'Drop Here';
-		font-size: 3vw;
-		color: #44aa77;
-		display: grid;
-		place-content: center;
-		place-items: center;
-		position: fixed;
-		inset: 0;
-		border: 1vw solid #88ffaa;
-		background: #88ffaa33;
-		pointer-events: none;
 	}
 
 	.scrollable {
@@ -544,7 +379,7 @@
 		background: #333;
 	}
 
-	.document-list-item {
+	.project-list-item {
 		display: grid;
 		justify-content: stretch;
 		gap: 0.5ex;
@@ -553,13 +388,13 @@
 		align-content: stretch;
 	}
 
-	.document-list-link {
+	.project-list-link {
 		grid-column: 1 / span 2;
 		grid-row: 1;
 		touch-action: pan-x pan-y;
 	}
 
-	.document-list-input {
+	.project-list-input {
 		grid-column: 1 / span 1;
 		grid-row: 1;
 		box-sizing: border-box;
@@ -570,14 +405,14 @@
 		font: inherit;
 	}
 
-	.document-list-pop {
+	.project-list-pop {
 		grid-column: 1 / span 1;
 		grid-row: 1;
 		box-sizing: border-box;
 		margin-right: -1.5ex;
 	}
 
-	.document-list-actions {
+	.project-list-actions {
 		grid-column: 2 / span 1;
 		grid-row: 1;
 		padding: 1ex;
@@ -593,7 +428,7 @@
 		-webkit-highlight: none;
 	}
 
-	.document-list-pop-actions {
+	.project-list-pop-actions {
 		grid-column: 2 / span 1;
 		grid-row: 1;
 		padding: 1ex;
@@ -610,7 +445,7 @@
 	}
 
 	@media (max-width: 40em) {
-		.document-list-actions {
+		.project-list-actions {
 			grid-column: 1 / span 2;
 			grid-row: 2 / span 1;
 		}

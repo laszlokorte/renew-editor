@@ -1,7 +1,7 @@
 <script>
 	import { base } from '$app/paths';
 	import { onMount } from 'svelte';
-	import AppBar from '../AppBar.svelte';
+	import AppBar from '../../../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	import { atom } from '$lib/reactivity/atom.svelte';
@@ -25,7 +25,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="full-page">
-	<AppBar authState={data.authState} connectionState={data.connectionState} />
+	<AppBar  projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
 
 	<Modal bind:visible={createFormVisible} canClose={!importing} closeLabel="Cancel">
 		<form
@@ -128,7 +128,7 @@
 
 	<header>
 		<div>
-			<a href="{base}/" title="Back">Back</a>
+			<a href="{base}/projects" title="Back">Back</a>
 
 			<h2>Simulations</h2>
 		</div>

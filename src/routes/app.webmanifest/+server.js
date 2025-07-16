@@ -27,12 +27,8 @@ export function GET() {
     "background_color": "#23875d",
     "shortcuts": [
       {
-        "name": "Documents",
-        "url": `${base}/documents`
-      },
-      {
-        "name": "Simulations",
-        "url": `${base}/simulations`
+        "name": "Projects",
+        "url": `${base}/projects`
       }
     ]
   }

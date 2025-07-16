@@ -329,7 +329,7 @@
 </script>
 
 <div class="full-page">
-	<AppBar authState={data.authState} {errors} connectionState={data.connectionState} />
+	<AppBar projectId={"fooo"} authState={data.authState} {errors} connectionState={data.connectionState} />
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}
@@ -514,7 +514,7 @@
 
 			<header class="header">
 				<div class="header-titel">
-					<a href="{base}/documents" title="Back" class="nav-link">Back</a>
+					<a href="{base}/projects/fooo/documents" title="Back" class="nav-link">Back</a>
 
 					<h2>Document: {doc.value.name}</h2>
 				</div>
@@ -887,7 +887,6 @@
 													formalisms
 												)}</span
 											>
-											{console.log(formalisms)}
 											<select class="pretty-select-control" bind:value={currentFormalism.value}>
 												{#each formalisms as { id, label } (id)}
 													<option value={id}>{label}</option>
