@@ -1,5 +1,5 @@
 import LiveState from '$lib/api/livestate';
-import {atom, update} from '$lib/reactivity/atom.svelte.js';
+import { atom, update } from '$lib/reactivity/atom.svelte.js';
 
 export default function makeLive(socket, resource) {
 	let currentValue = atom(resource.content);
@@ -8,17 +8,17 @@ export default function makeLive(socket, resource) {
 	const livestate = new LiveState(socket, { topic: resource.topic });
 
 	const updater = (serverState) => {
-		if(serverState.detail.patch) {
-			update(serverState.detail.patch, currentValue)
+		if (serverState.detail.patch) {
+			update(serverState.detail.patch, currentValue);
 		} else {
-			currentValue.value = serverState.detail.state
+			currentValue.value = serverState.detail.state;
 		}
 	};
 
 	livestate.subscribe(updater);
 
-	livestate.addEventListener('presence-changed', function({detail}) {
-		currentPresence.value = detail
+	livestate.addEventListener('presence-changed', function ({ detail }) {
+		currentPresence.value = detail;
 	});
 
 	livestate.join();
@@ -33,11 +33,11 @@ export default function makeLive(socket, resource) {
 		},
 
 		send(action, payload) {
-			return livestate.sendAction(action, payload)
+			return livestate.sendAction(action, payload);
 		},
 
 		cast(action, payload) {
-			livestate.castAction(action, payload)
+			livestate.castAction(action, payload);
 		},
 
 		unsubscribe() {
