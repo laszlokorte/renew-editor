@@ -887,7 +887,6 @@
 													formalisms
 												)}</span
 											>
-											{console.log(formalisms)}
 											<select class="pretty-select-control" bind:value={currentFormalism.value}>
 												{#each formalisms as { id, label } (id)}
 													<option value={id}>{label}</option>
