@@ -48,7 +48,7 @@
 	import * as R from 'ramda';
 	import Minimap from '$lib/components/editor/overlays/minimap/Minimap.svelte';
 	import * as Geo from '$lib/math/geometry';
-	import MenuBarButton from './MenuBarButton.svelte';
+	import MenuBarButton from '$lib/components/menubar/MenuBarButton.svelte';
 
 	import {
 		frameBoxLens,

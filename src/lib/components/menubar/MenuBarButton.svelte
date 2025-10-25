@@ -1,6 +1,12 @@
 <script>
 	import { on } from 'svelte/events';
-	const { className, disabled, onclick, children, shortcut } = $props();
+	const {
+		className = null,
+		disabled = false,
+		onclick = null,
+		children = null,
+		shortcut = null
+	} = $props();
 
 	const isMac = navigator.userAgent.indexOf('Mac') != -1;
 	function normalize(short) {
