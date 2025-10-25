@@ -35,13 +35,22 @@
 	$effect(() => {
 		if (normalizedShortcut) {
 			return on(document, 'keydown', (evt) => {
+				const el = document.activeElement;
+				const isFormControl =
+					el &&
+					(el.tagName === 'INPUT' ||
+						el.tagName === 'TEXTAREA' ||
+						el.tagName === 'SELECT' ||
+						el.isContentEditable);
+
+				if (isFormControl) {
+					return;
+				}
 				const keys = Object.entries(normalizedShortcut);
 				const matches = keys.length && keys.every(([k, v]) => evt[k] === v);
 				if (matches) {
 					evt.preventDefault();
 					btn.click();
-				} else {
-					console.log(evt);
 				}
 			});
 		}
