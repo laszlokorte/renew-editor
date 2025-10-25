@@ -6,7 +6,8 @@
 	function normalize(short) {
 		return (
 			short && {
-				...short,
+				key: short.key,
+				shiftKey: short.shiftKey ? true : false,
 				metaKey: isMac ? short.ctrlKey : false,
 				ctrlKey: !isMac ? short.ctrlKey : false
 			}
@@ -14,7 +15,6 @@
 	}
 
 	const normalizedShortcut = normalize(shortcut);
-	console.log(normalizedShortcut);
 	let shortcutLabel = $derived(
 		[
 			normalizedShortcut?.ctrlKey || normalizedShortcut?.metaKey ? 'ctrl' : false,
@@ -23,15 +23,14 @@
 			normalizedShortcut?.key ?? false
 		]
 			.filter((x) => x)
-			.join('+')
+			.join(' + ')
 	);
 	let btn = null;
 	$effect(() => {
 		if (normalizedShortcut) {
-			return on(document, 'keypress', (evt) => {
+			return on(document, 'keydown', (evt) => {
 				const keys = Object.entries(normalizedShortcut);
 				const matches = keys.length && keys.every(([k, v]) => evt[k] === v);
-				console.log(evt);
 				if (matches) {
 					evt.preventDefault();
 					btn.click();
@@ -45,7 +44,7 @@
 	bind:this={btn}
 	class={[className, 'menu-bar-item-button']}
 	disabled={disabled || false}
-	{onclick}>{@render children()} <span>{shortcutLabel}</span></button
+	{onclick}>{@render children()} <kbd>{shortcutLabel}</kbd></button
 >
 
 <style>

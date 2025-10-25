@@ -526,59 +526,52 @@
 							File
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											alert('the document is saved automatically');
-										}}>Save</button
+										}}>Save</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											showRename.value = true;
-										}}>Rename</button
+										}}>Rename</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											data.commands.duplicateDocument();
-										}}>Duplicate</button
+										}}>Duplicate</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											data.commands.downloadJson();
-										}}>Download JSON</button
+										}}>Download JSON</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
+									<MenuBarButton
 										class="menu-bar-item-button"
 										onclick={() => {
 											data.commands.downloadStruct();
-										}}>Download Struct</button
+										}}>Download Struct</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
-											data.commands.exportRenew();
-										}}>Export .rnw</button
+											data.commands.exportrenew();
+										}}>export .rnw</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
-										onclick={deleteThisDocument}
-										style="color: #aa0000">Delete</button
+									<MenuBarButton onclick={deleteThisDocument} style="color: #aa0000"
+										>delete</MenuBarButton
 									>
 								</li>
 								<!--
@@ -597,7 +590,6 @@
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
-										class="menu-bar-item-button"
 										disabled={doc.value.snapshot.prev_id == doc.value.snapshot.current_id}
 										shortcut={{ ctrlKey: true, key: 'z' }}
 										onclick={(evt) => {
@@ -619,10 +611,8 @@
 											}}>Redo</MenuBarButton
 										>
 									{:else}
-										<MenuBarButton
-											shortcut={{ ctrlKey: true, key: 'y' }}
-											disabled
-											class="menu-bar-item-button">Redo</MenuBarButton
+										<MenuBarButton shortcut={{ ctrlKey: true, key: 'y' }} disabled
+											>Redo</MenuBarButton
 										>
 									{/if}
 								</li>
@@ -647,8 +637,7 @@
 								<li class="menu-bar-menu-item"><div style="padding: 1ex">Reorder:</div></li>
 								{#each [{ target_rel: 'before_parent', label: 'Below Parent' }, { target_rel: 'after_parent', label: 'Above Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
 									<li class="menu-bar-menu-item">
-										<button
-											class="menu-bar-item-button"
+										<MenuBarButton
 											disabled={!singleSelectedLayer.value}
 											onclick={(evt) => {
 												evt.preventDefault();
@@ -662,15 +651,14 @@
 														cast('select', id);
 													}
 												});
-											}}>{label}</button
+											}}>{label}</MenuBarButton
 										>
 									</li>
 								{/each}
 
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										disabled={!singleSelectedLayer.value}
 										onclick={(evt) => {
 											evt.preventDefault();
@@ -683,18 +671,18 @@
 													cast('select', id);
 												}
 											});
-										}}>Wrap in Group</button
+										}}>Wrap in Group</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
+									<MenuBarButton
 										disabled={!singleSelectedLayerType.value}
 										onclick={(evt) => {
 											evt.preventDefault();
 											cast('delete_layer', selectedLayers.value[0]);
 										}}
-										class="menu-bar-item-button menu-bar-item-danger">Delete</button
+										class="menu-bar-item-button menu-bar-item-danger">Delete</MenuBarButton
 									>
 								</li>
 							</ul>
@@ -703,21 +691,19 @@
 							Selection
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										disabled={!singleSelectedHyperinkedId.value}
 										onclick={(evt) => {
 											evt.preventDefault();
 											const id = singleSelectedHyperinkedId.value;
 											selectedLayers.value = [id];
 											cast('select', id);
-										}}>Select Linked</button
+										}}>Select Linked</MenuBarButton
 									>
 								</li>
 								{#each [{ label: 'Parent', rel: 'parent' }, { label: 'First Sibling', rel: 'sibling_first' }, { label: 'Last Sibling', rel: 'sibling_last' }, { label: 'Sibling Below', rel: 'sibling_prev' }, { label: 'Sibling Above', rel: 'sibling_next' }, { label: 'First Child', rel: 'child_first' }, { label: 'Last Child', rel: 'child_last' }] as { label, rel }}
 									<li class="menu-bar-menu-item">
-										<button
-											class="menu-bar-item-button"
+										<MenuBarButton
 											disabled={!singleSelectedLayer.value}
 											onclick={(evt) => {
 												evt.preventDefault();
@@ -731,7 +717,7 @@
 														cast('select', id);
 													}
 												});
-											}}>Select {label}</button
+											}}>Select {label}</MenuBarButton
 										>
 									</li>
 								{/each}
@@ -742,38 +728,37 @@
 
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											call((c) => {
 												c && c.resetCamera();
 											}, cameraScroller);
-										}}>Fit into Camera</button
+										}}>Fit into Camera</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '0' }}
 										onclick={() => {
 											cameraZoom.value = 0;
-										}}>Reset Zoom</button
+										}}>Reset Zoom</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '+' }}
 										onclick={() => {
 											update(R.add(0.2), cameraZoom);
-										}}>Zoom in</button
+										}}>Zoom in</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '-' }}
 										onclick={() => {
 											update(R.add(-0.2), cameraZoom);
-										}}>Zoom out</button
+										}}>Zoom out</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
@@ -788,27 +773,24 @@
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											cameraRotation.value = 0;
-										}}>Reset Rotation</button
+										}}>Reset Rotation</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											update(R.add(90), cameraRotation);
-										}}>Rotate Clockwise</button
+										}}>Rotate Clockwise</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											update(R.add(-90), cameraRotation);
-										}}>Rotate Counter-Clockwise</button
+										}}>Rotate Counter-Clockwise</MenuBarButton
 									>
 								</li>
 
@@ -901,7 +883,8 @@
 										</label>
 									</li>
 									<li class="menu-bar-menu-item">
-										<button
+										<MenuBarButton
+											shortcut={{ ctrlKey: true, key: 'i' }}
 											disabled={startingSimulation}
 											class="menu-bar-item-button new-sim-action"
 											onclick={simulateThisDocument}
@@ -911,7 +894,7 @@
 											{:else}
 												New Simulation
 											{/if}
-										</button>
+										</MenuBarButton>
 									</li>
 									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								{:catch e}

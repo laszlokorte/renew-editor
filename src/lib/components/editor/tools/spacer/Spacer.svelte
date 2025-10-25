@@ -187,7 +187,7 @@
 		}
 	}}
 	onpointerdown={(evt) => {
-		if (!evt.isPrimary) {
+		if (!evt.isPrimary || !E.isLeftButton(evt)) {
 			isActive.value = false;
 			return;
 		}
