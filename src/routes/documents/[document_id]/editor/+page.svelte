@@ -48,6 +48,7 @@
 	import * as R from 'ramda';
 	import Minimap from '$lib/components/editor/overlays/minimap/Minimap.svelte';
 	import * as Geo from '$lib/math/geometry';
+	import MenuBarButton from './MenuBarButton.svelte';
 
 	import {
 		frameBoxLens,
@@ -595,41 +596,46 @@
 							Edit
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
+									<MenuBarButton
 										class="menu-bar-item-button"
 										disabled={doc.value.snapshot.prev_id == doc.value.snapshot.current_id}
+										shortcut={{ ctrlKey: true, key: 'z' }}
 										onclick={(evt) => {
 											evt.preventDefault();
 											cast('restore_snapshot', doc.value.snapshot.prev_id);
-										}}>Undo</button
+										}}>Undo</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
 									{#if doc.value.snapshot.next_ids.length > 1}
 										<hr class="menu-bar-menu-ruler" />
 									{:else if doc.value.snapshot.next_ids.length > 0}
-										<button
-											class="menu-bar-item-button"
+										<MenuBarButton
 											disabled={doc.value.snapshot.next_ids[0] == doc.value.snapshot.current_id}
+											shortcut={{ ctrlKey: true, key: 'y' }}
 											onclick={(evt) => {
 												evt.preventDefault();
 												cast('restore_snapshot', doc.value.snapshot.next_ids[0]);
-											}}>Redo</button
+											}}>Redo</MenuBarButton
 										>
 									{:else}
-										<button disabled class="menu-bar-item-button">Redo</button>
+										<MenuBarButton
+											shortcut={{ ctrlKey: true, key: 'y' }}
+											disabled
+											class="menu-bar-item-button">Redo</MenuBarButton
+										>
 									{/if}
 								</li>
 								{#if doc.value.snapshot.next_ids.length > 1}
 									{#each doc.value.snapshot.next_ids as nid, i}
 										{#if nid !== doc.value.snapshot.current_id}
 											<li class="menu-bar-menu-item">
-												<button
-													class="menu-bar-item-button"
+												<MenuBarButton
+													shortcut={i == 0 ? { ctrlKey: true, key: 'y' } : null}
 													onclick={(evt) => {
 														evt.preventDefault();
 														cast('restore_snapshot', nid);
-													}}>Redo ({i})</button
+													}}>redo ({i})</MenuBarButton
 												>
 											</li>
 										{/if}
@@ -2876,7 +2882,7 @@
 									/></label
 								>
 							{/each}
-							<hr />
+							<hr class="tool-spacer" />
 						</div>
 
 						{#snippet edgeProps()}
@@ -4174,7 +4180,7 @@
 						<hr />
 						<!-- <input style="" type="search" name="" placeholder="search" /> -->
 						<div
-							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
+							style="scrollbar-width: thin; max-height: 100%; min-height: 10em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
 							use:polyfillDragDrop={{
 								dropArea: document,
 								options: { dragThresholdPixels: 0 }
@@ -4248,7 +4254,7 @@
 										evt.preventDefault();
 										evt.currentTarget.style.backgroundColor = 'white';
 									}}
-									style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
+									style="background: white; height: 5px; flex-shrink: 0;"
 									ondragover={(evt) => {
 										if (evt.currentTarget === evt.relatedTarget) {
 											return;
@@ -4390,7 +4396,7 @@
 											<span>{elSemantic.value}</span>
 										</div>
 										<small
-											style="color: #aaa; display: block; max-width: 100%; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: normal; white-space: nowrap; box-sizing: border-box;"
+											style="color: #aaa; display: block; max-width: 10em; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: normal; white-space: nowrap; box-sizing: border-box;"
 											>({el.value.z_index}/{elId.value})</small
 										>
 									</div>
@@ -4453,7 +4459,7 @@
 												evt.preventDefault();
 												evt.dataTransfer.dropEffect = 'move';
 											}}
-											style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
+											style="background: white; height: 5px;flex-shrink: 0;"
 										></div>
 									{/each}
 								{/if}
@@ -4663,7 +4669,8 @@
 										-
 									{:then bp}
 										<div
-											style="display: grid; align-content: center; justify-content: center; grid-template-columns: max-content;  grid-template-rows: max-content; align-items: stretch; justify-items: stretch; width: 2em;"
+											title={bp.get(selectedBlueprint.value)?.name ?? '-'}
+											style="display: grid; align-content: center; justify-content: center; grid-template-columns: 1fr; grid-template-rows: 1fr; align-items: stretch; justify-items: stretch; width: 2em; overflow: hidden;"
 										>
 											<div
 												style="grid-area: 1 / 1 / span 1 / span 1; align-self: center; width: 100%; overflow: hidden"
@@ -4677,7 +4684,7 @@
 											</div>
 											<select
 												bind:value={selectedBlueprint.value}
-												style="width: 3em; max-width: 100%; height: 3em; opacity: 0;grid-area: 1 / 1 / span 1 / span 1;"
+												style="-webkit-appearance: none; width: 3em; max-width: 100%; height: 3em; opacity: 0;grid-area: 1 / 1 / span 1 / span 1;"
 											>
 												<option value={null}></option>
 												{#each bp.entries() as [id, s]}
@@ -5362,6 +5369,7 @@
 		width: 100%;
 		opacity: 0;
 		min-width: 10em;
+		-webkit-appearance: none;
 	}
 
 	.pretty-number {
@@ -5601,5 +5609,10 @@
 
 	:global(.droparea) * {
 		pointer-events: none;
+	}
+
+	.tool-spacer {
+		border: none;
+		background: #aaa;
 	}
 </style>
