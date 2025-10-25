@@ -678,6 +678,7 @@
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
 										disabled={!singleSelectedLayerType.value}
+										shortcut={{ ctrlKey: true, key: 'Backspace' }}
 										onclick={(evt) => {
 											evt.preventDefault();
 											cast('delete_layer', selectedLayers.value[0]);

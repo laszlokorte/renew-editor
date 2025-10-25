@@ -40,6 +40,8 @@
 				if (matches) {
 					evt.preventDefault();
 					btn.click();
+				} else {
+					console.log(evt);
 				}
 			});
 		}
