@@ -329,7 +329,13 @@
 </script>
 
 <div class="full-page">
-	<AppBar title={`Document Editor`} projectId={"fooo"} authState={data.authState} {errors} connectionState={data.connectionState} />
+	<AppBar
+		title={`Document Editor`}
+		projectId={data.document.links.project.id}
+		authState={data.authState}
+		{errors}
+		connectionState={data.connectionState}
+	/>
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
 		{#snippet children(doc, presence, { dispatch, cast })}
@@ -514,7 +520,11 @@
 
 			<header class="header">
 				<div class="header-titel">
-					<a href="{base}/projects/fooo/documents" title="Back" class="nav-link">Back</a>
+					<a
+						href="{base}/projects/{data.doc.links.project.id}/documents"
+						title="Back"
+						class="nav-link">Back</a
+					>
 
 					<h2>Document: {doc.value.name}</h2>
 				</div>

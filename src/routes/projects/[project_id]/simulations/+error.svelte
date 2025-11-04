@@ -4,9 +4,14 @@
 	import AppBar from '../../../AppBar.svelte';
 
 	const { data } = $props();
+	const { project } = data;
 </script>
 
-<AppBar title={`Error ${$page.status}: ${$page.error.message}`} projectId={"fooo"} authState={data.authState} />
+<AppBar
+	title={`Error ${$page.status}: ${$page.error.message}`}
+	projectId={project.id}
+	authState={data.authState}
+/>
 
 <section>
 	<h1 class="center">Error {$page.status}: {$page.error.message}</h1>
@@ -16,7 +21,7 @@
 	{/if}
 
 	<p class="center">
-		<a href="{base}/projects/fooo/simulations">Back to Simulation list</a>
+		<a href="{base}/projects/{project.id}/simulations">Back to Simulation list</a>
 	</p>
 </section>
 

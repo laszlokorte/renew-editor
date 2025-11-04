@@ -5,8 +5,6 @@
 
 	const liveState = makeLive(socket, resource);
 
-	console.log(resource);
-
 	function dispatch(action, payload) {
 		if (debug) {
 			console.log('dispatch', action, payload);

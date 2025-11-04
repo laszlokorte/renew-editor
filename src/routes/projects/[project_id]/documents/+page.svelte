@@ -8,6 +8,7 @@
 
 	const { data } = $props();
 
+	const { project } = data;
 	const { createDocument, importDocuments, downloadFile } = $derived(data.commands);
 
 	let uploadFormVisible = $state(false);
@@ -131,7 +132,12 @@
 	ondragleave={onDragLeave}
 	ondrop={onDrop}
 >
-	<AppBar title={`Project Foooo Documents`} projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
+	<AppBar
+		title="Project {project.name} Documents"
+		projectId={project.id}
+		authState={data.authState}
+		connectionState={data.connectionState}
+	/>
 
 	<Modal bind:visible={uploadFormVisible} closeLabel="Cancel">
 		<h2>Upload Renew File</h2>
@@ -182,7 +188,7 @@
 
 	<header class:offline={!online}>
 		<div>
-			<a href="{base}/projects/fooo" title="Back">Back</a>
+			<a href="{base}/projects/{project.id}" title="Back">Back</a>
 
 			<h2>Documents</h2>
 		</div>

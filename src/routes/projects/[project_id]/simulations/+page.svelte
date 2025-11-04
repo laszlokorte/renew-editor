@@ -8,6 +8,7 @@
 	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
 
 	const { data } = $props();
+	const { project } = data;
 
 	const { createSimulation, downloadFile, callJSON } = $derived(data.commands);
 
@@ -25,7 +26,12 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="full-page">
-	<AppBar title={`Project Fooo Simulations`} projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
+	<AppBar
+		title="Project {project.name} Simulations`"
+		projectId={project.id}
+		authState={data.authState}
+		connectionState={data.connectionState}
+	/>
 
 	<Modal bind:visible={createFormVisible} canClose={!importing} closeLabel="Cancel">
 		<form
@@ -128,7 +134,7 @@
 
 	<header>
 		<div>
-			<a href="{base}/projects/fooo" title="Back">Back</a>
+			<a href="{base}/projects/{project.id}" title="Back">Back</a>
 
 			<h2>Simulations</h2>
 		</div>

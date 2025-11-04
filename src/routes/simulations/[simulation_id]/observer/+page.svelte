@@ -126,7 +126,12 @@
 </script>
 
 <div class="full-page">
-	<AppBar title={`Simulatation Observer`} projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
+	<AppBar
+		title={`Simulatation Observer`}
+		projectId={data.simulation.links.project.id}
+		authState={data.authState}
+		connectionState={data.connectionState}
+	/>
 
 	<LiveResource socket={data.live_socket} resource={data.simulation}>
 		{#snippet children(simulation, presence, { dispatch, cast })}
@@ -143,7 +148,11 @@
 
 			<header class="header">
 				<div class="header-titel">
-					<a href="{base}/projects/fooo/simulations" title="Back" class="nav-link">Back</a>
+					<a
+						href="{base}/projects/{data.simulation.links.project.id}/simulations"
+						title="Back"
+						class="nav-link">Back</a
+					>
 
 					<h2>Simulation: {simulation.value.name}</h2>
 				</div>

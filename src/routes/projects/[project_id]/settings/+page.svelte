@@ -6,12 +6,17 @@
 	const appTitle = env.APP_NAME;
 
 	const { data } = $props();
+	const { project } = data;
 </script>
 
-<AppBar title={`Project Settings`} projectId={"fooo"} authState={data.authState} connectionState={data.connectionState} />
+<AppBar
+	title={`Project Settings`}
+	projectId={project.id}
+	authState={data.authState}
+	connectionState={data.connectionState}
+/>
 
 <section class="hero">
-
 	<h2>Settings</h2>
 
 	<fieldset>
@@ -48,7 +53,6 @@
 		<input type="text" />
 		<button>Invite</button>
 	</fieldset>
-
 </section>
 
 <style>

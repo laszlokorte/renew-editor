@@ -35,6 +35,8 @@ export async function load({ fetch, params }) {
 							project: j
 						};
 					});
+				} else {
+					throw error(404, 'Not Found');
 				}
 			});
 	} else {

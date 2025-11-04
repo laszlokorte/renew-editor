@@ -41,7 +41,6 @@ function createCommands(api, fetchFn) {
 
 export async function load({ params, fetch, parent }) {
 	const { project } = await parent();
-	console.log(project);
 	if (authState.isAuthenticated) {
 		const api = documentApi(fetch, authState.routes, authState.authHeader);
 

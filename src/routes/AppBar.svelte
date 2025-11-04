@@ -8,7 +8,13 @@
 
 	const appTitle = env.APP_NAME;
 
-	const { projectId, authState, errors = atom([]), connectionState = atom(undefined), title } = $props();
+	const {
+		title,
+		projectId,
+		authState,
+		errors = atom([]),
+		connectionState = atom(undefined)
+	} = $props();
 
 	function discardError() {
 		update((e) => e.slice(1), errors);
@@ -16,9 +22,8 @@
 </script>
 
 <svelte:head>
-	<title>{[title, appTitle].filter(x => x).join(" - ")}</title>
+	<title>{[title, appTitle].filter((x) => x).join(' - ')}</title>
 </svelte:head>
-
 
 <SplashScreen icon="{base}/favicon.svg" color="white" />
 
@@ -50,21 +55,45 @@
 	>
 		{#if authState.isAuthenticated}
 			{#if projectId}
-			<a href="{base}/projects" class="nav-button" title="Project Overview">
-				<svg viewBox="0 0 150 128" class="nav-icon" xmlns="http://www.w3.org/2000/svg" fill="currentColor" preserveAspectRatio="xMidYMid meet">
-					<path d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"/><path d="M8.453 66.109 0 55.24 73.52 0l72.58 54.872-8.107 10.867-64.474-48.49L8.453 66.11Z"/>
-
-				</svg>
-			</a>
-			<a href="{base}/projects/{projectId}/documents" class="nav-button" title="Documents List">Documents</a>
-			<a href="{base}/projects/{projectId}/simulations" class="nav-button" title="Simulations List">Simulations</a>
+				<a href="{base}/projects" class="nav-button" title="Project Overview">
+					<svg
+						viewBox="0 0 150 128"
+						class="nav-icon"
+						xmlns="http://www.w3.org/2000/svg"
+						fill="currentColor"
+						preserveAspectRatio="xMidYMid meet"
+					>
+						<path
+							d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"
+						/><path
+							d="M8.453 66.109 0 55.24 73.52 0l72.58 54.872-8.107 10.867-64.474-48.49L8.453 66.11Z"
+						/>
+					</svg>
+				</a>
+				<a href="{base}/projects/{projectId}/documents" class="nav-button" title="Documents List"
+					>Documents</a
+				>
+				<a
+					href="{base}/projects/{projectId}/simulations"
+					class="nav-button"
+					title="Simulations List">Simulations</a
+				>
 			{:else}
-			<a href="{base}/projects" class="nav-button" title="Project Overview">
-				<svg viewBox="0 0 150 128" class="nav-icon" xmlns="http://www.w3.org/2000/svg" fill="currentColor" preserveAspectRatio="xMidYMid meet">
-					<path d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"/><path d="M8.453 66.109 0 55.24 73.52 0l72.58 54.872-8.107 10.867-64.474-48.49L8.453 66.11Z"/>
-
-				</svg>
-			</a>
+				<a href="{base}/projects" class="nav-button" title="Project Overview">
+					<svg
+						viewBox="0 0 150 128"
+						class="nav-icon"
+						xmlns="http://www.w3.org/2000/svg"
+						fill="currentColor"
+						preserveAspectRatio="xMidYMid meet"
+					>
+						<path
+							d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"
+						/><path
+							d="M8.453 66.109 0 55.24 73.52 0l72.58 54.872-8.107 10.867-64.474-48.49L8.453 66.11Z"
+						/>
+					</svg>
+				</a>
 			{/if}
 		{/if}
 	</div>
@@ -194,6 +223,5 @@
 		display: block;
 		height: 1.2em;
 		color: #fffe;
-
 	}
 </style>
