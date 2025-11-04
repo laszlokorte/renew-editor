@@ -23,13 +23,11 @@
 	const normalizedShortcut = normalize(shortcut);
 	let shortcutLabel = $derived(
 		[
-			normalizedShortcut?.ctrlKey || normalizedShortcut?.metaKey ? 'ctrl' : false,
+			normalizedShortcut?.ctrlKey || normalizedShortcut?.metaKey ? (isMac ? '⌘' : 'ctrl') : false,
 			normalizedShortcut?.shiftKey ? 'shift' : false,
 			normalizedShortcut?.altKey ? 'alt' : false,
 			normalizedShortcut?.key ?? false
-		]
-			.filter((x) => x)
-			.join(' + ')
+		].filter((x) => x)
 	);
 	let btn = null;
 	$effect(() => {
@@ -61,10 +59,28 @@
 	bind:this={btn}
 	class={[className, 'menu-bar-item-button']}
 	disabled={disabled || false}
-	{onclick}>{@render children()} <kbd>{shortcutLabel}</kbd></button
+	{onclick}
+	>{@render children()}
+	<span class={'shortcut'}
+		>{#each shortcutLabel as key, i}{#if i}+{/if}<kbd>{key}</kbd>{/each}</span
+	></button
 >
 
 <style>
+	.shortcut {
+		display: flex;
+		gap: 0.5ex;
+		align-items: baseline;
+		color: #333;
+	}
+
+	kbd {
+		background-color: #fff;
+		border: 1px solid #eee;
+		border-radius: 3px;
+		padding: 1px;
+	}
+
 	.menu-bar-item-button {
 		text-align: left;
 		border: none;

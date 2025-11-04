@@ -134,7 +134,7 @@
 
 	<header>
 		<div>
-			<a href="{base}/projects/{project.id}" title="Back">Back</a>
+			<a href="{base}/projects" title="Back">Back</a>
 
 			<h2>Simulations</h2>
 		</div>

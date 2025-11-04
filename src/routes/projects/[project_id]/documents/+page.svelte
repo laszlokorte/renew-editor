@@ -188,7 +188,7 @@
 
 	<header class:offline={!online}>
 		<div>
-			<a href="{base}/projects/{project.id}" title="Back">Back</a>
+			<a href="{base}/projects" title="Back">Back</a>
 
 			<h2>Documents</h2>
 		</div>

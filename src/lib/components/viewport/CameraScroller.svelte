@@ -169,6 +169,7 @@
 	export function resetCamera() {
 		const plane = camera.value.plane;
 		const bounds = cameraBounds.value;
+
 		update(
 			L.set(['focus', L.props('z', 'x', 'y', 'w')], {
 				x: (bounds.maxX + bounds.minX) / 2,

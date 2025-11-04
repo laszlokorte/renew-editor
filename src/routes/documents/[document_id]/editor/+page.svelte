@@ -922,8 +922,10 @@
 									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								{/await}
 								<li class="menu-bar-menu-item">
-									<a class="menu-bar-item-button" href="{base}/simulations" target="_blank"
-										>Show all Simulations</a
+									<a
+										class="menu-bar-item-button"
+										href="{base}/projects/{data.document.links.project.id}/simulations"
+										target="_blank">Show all Simulations</a
 									>
 								</li>
 								{#await data.linked_simulations then links}
@@ -1081,7 +1083,9 @@
 										}
 									}}
 									onpointerleave={(evt) => {
-										cast('cursor', null);
+										if (showCursors.value) {
+											cast('cursor', null);
+										}
 									}}
 									{camera}
 									{lockRotation}
@@ -2844,9 +2848,11 @@
 
 										<MountTrigger
 											onMount={() => {
-												call((c) => {
-													c && c.resetCamera();
-												}, cameraScroller);
+												requestAnimationFrame(() => {
+													call((c) => {
+														c && c.resetCamera();
+													}, cameraScroller);
+												});
 											}}
 										/>
 									{/snippet}
