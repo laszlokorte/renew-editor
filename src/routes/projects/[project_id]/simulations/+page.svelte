@@ -153,6 +153,9 @@
 
 		<LiveResource socket={data.live_socket} resource={data.simulations}>
 			{#snippet children(simulations, _presence, { dispatch, cast })}
+				{#if simulations.value.items.length == 0}
+					<div style="padding: 2em; text-align: center;">No Simulations yet</div>
+				{/if}
 				<ul>
 					{#each simulations.value.items as sim (sim.id)}
 						<li class="list-item">

@@ -21,19 +21,16 @@
 	function onNewProject(evt) {
 		evt.preventDefault();
 
-		createProject().then(({ id, content: { name } }) => {
+		createProject(null, false).then(({ id, content: { name } }) => {
 			renamingId = id;
 			renamingOrigName = name;
 			renamingNewName = name;
 		});
 	}
-
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-	class="full-page"
->
+<div class="full-page">
 	<AppBar title={`Projects`} authState={data.authState} connectionState={data.connectionState} />
 
 	<header class:offline={!online}>
@@ -53,7 +50,6 @@
 			<form onsubmit={onNewProject}>
 				<button disabled={!online} type="submit">New Project</button>
 			</form>
-
 		</div>
 	</header>
 
@@ -64,6 +60,9 @@
 
 		<LiveResource socket={data.live_socket} resource={data.projects}>
 			{#snippet children(projects, _presence, { dispatch })}
+				{#if projects.value.items.length == 0}
+					<div style="padding: 2em; text-align: center;">No Projects yet</div>
+				{/if}
 				<ul>
 					{#each projects.value.items as d (d.id)}
 						<li class="project-list-item">

@@ -217,6 +217,9 @@
 
 		<LiveResource socket={data.live_socket} resource={data.documents}>
 			{#snippet children(documents, _presence, { dispatch })}
+				{#if documents.value.items.length == 0}
+					<div style="padding: 2em; text-align: center;">No Documents yet</div>
+				{/if}
 				<ul>
 					{#each documents.value.items as d (d.id)}
 						<li class="document-list-item">

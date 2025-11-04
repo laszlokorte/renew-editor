@@ -78,6 +78,9 @@
 					class="nav-button"
 					title="Simulations List">Simulations</a
 				>
+				<a href="{base}/projects/{projectId}/settings" class="nav-button" title="Simulations List"
+					>Settings</a
+				>
 			{:else}
 				<a href="{base}/projects" class="nav-button" title="Project Overview">
 					<svg
