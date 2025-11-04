@@ -4,7 +4,7 @@
 	import * as E from '$lib/dom/events';
 	import * as Geo from '$lib/math/geometry';
 	import { numberSvgFormat } from '$lib/svg/formatter';
-	import { atom, view, read, combine, readCombined } from '$lib/reactivity/atom.svelte.js';
+	import { atom, view, read, readCombined } from '$lib/reactivity/atom.svelte.js';
 
 	const minDragDistance = 5;
 
