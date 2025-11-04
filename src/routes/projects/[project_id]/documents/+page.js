@@ -8,10 +8,10 @@ import { downloadFile } from '$lib/io/download';
 
 export const ssr = false;
 
-function createCommands(api, fetchFn) {
+function createCommands(api, project, fetchFn) {
 	return {
 		createDocument: (redirect = false) => {
-			return api.createDocument().then((d) => {
+			return api.createDocument(project).then((d) => {
 				if (redirect) {
 					goto(`${base}/documents/${d.id}/editor`);
 				} else {
@@ -48,7 +48,7 @@ export async function load({ params, fetch, parent }) {
 			.listDocuments(project.links.documents.href)
 			.then((j) => ({
 				documents: j,
-				commands: createCommands(api, fetch)
+				commands: createCommands(api, project, fetch)
 			}))
 			.catch((e) => {
 				if (e.error == 'http') {

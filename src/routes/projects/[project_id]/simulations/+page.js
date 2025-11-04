@@ -9,10 +9,10 @@ import { downloadFile } from '$lib/io/download';
 
 export const ssr = false;
 
-function createCommands(api, fetchFn) {
+function createCommands(project, api, fetchFn) {
 	return {
 		createSimulation(doc_ids, main_net_name, formalism) {
-			return api.createSimulation(doc_ids, main_net_name, formalism).then((r) => {
+			return api.createSimulation(project, doc_ids, main_net_name, formalism).then((r) => {
 				return goto(`${base}/simulations/${r.id}/observer`);
 			});
 		},
@@ -47,7 +47,8 @@ export async function load({ fetch, params, parent }) {
 			.listSimulations(project.links.simulations.href)
 			.then((j) => ({
 				simulations: j,
-				commands: createCommands(api, fetch),
+				documents: docApi.listDocuments(project.links.documents.href),
+				commands: createCommands(project, api, fetch),
 				formalisms: api.listFormalisms()
 			}))
 			.catch((e) => {

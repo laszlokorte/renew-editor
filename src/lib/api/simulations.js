@@ -18,14 +18,19 @@ export default function (fetchFn, routes, token) {
 			return fetchJson(fetchFn, href, method, { Authorization: token });
 		},
 
-		createSimulation(document_ids, main_net_name, formalism) {
-			return fetchJson(
-				fetchFn,
-				routes.create_simulation.href,
-				routes.create_simulation.method,
-				{ Authorization: token },
-				{ document_ids, main_net_name, formalism }
-			);
+		createSimulation(project, document_ids, main_net_name, formalism) {
+			console.log(project);
+			return new Promise((resolve) => {
+				resolve(
+					fetchJson(
+						fetchFn,
+						project.links.simulations.href,
+						'post',
+						{ Authorization: token },
+						{ document_ids, main_net_name, formalism }
+					)
+				);
+			});
 		},
 
 		loadUrl(url) {

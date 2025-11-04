@@ -28,8 +28,8 @@ export default function (fetchFn, routes, token) {
 			return fetchJson(fetchFn, href, method, { Authorization: token });
 		},
 
-		createDocument() {
-			return fetchJson(fetchFn, routes.documents.href, 'post', { Authorization: token });
+		createDocument(project) {
+			return fetchJson(fetchFn, project.links.documents.href, 'post', { Authorization: token });
 		},
 
 		loadSyntaxes() {
