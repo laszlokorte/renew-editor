@@ -32,6 +32,7 @@
 	import { edgeAngle, edgePath } from '$lib/components/renew/edges.js';
 	import { walkDocument } from '$lib/components/renew/document.js';
 
+	import MenuBarButton from '$lib/components/menubar/MenuBarButton.svelte';
 	import {
 		frameBoxLens,
 		panMovementLens,
@@ -185,38 +186,37 @@
 
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											call((c) => {
 												c && c.resetCamera();
 											}, cameraScroller);
-										}}>Fit into Camera</button
+										}}>Fit into Camera</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '0' }}
 										onclick={() => {
 											cameraZoom.value = 0;
-										}}>Reset Zoom</button
+										}}>Reset Zoom</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '+' }}
 										onclick={() => {
 											update(R.add(0.2), cameraZoom);
-										}}>Zoom in</button
+										}}>Zoom in</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '-' }}
 										onclick={() => {
 											update(R.add(-0.2), cameraZoom);
-										}}>Zoom out</button
+										}}>Zoom out</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
@@ -231,27 +231,24 @@
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											cameraRotation.value = 0;
-										}}>Reset Rotation</button
+										}}>Reset Rotation</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											update(R.add(90), cameraRotation);
-										}}>Rotate Clockwise</button
+										}}>Rotate Clockwise</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											update(R.add(-90), cameraRotation);
-										}}>Rotate Counter-Clockwise</button
+										}}>Rotate Counter-Clockwise</MenuBarButton
 									>
 								</li>
 
@@ -313,6 +310,62 @@
 									<label>
 										<input type="checkbox" bind:checked={showDebug.value} />
 										Show Debug</label
+									>
+								</li>
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							Simulation
+
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: 'i' }}
+										disabled={simulation.value.running}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('init');
+										}}>Init</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: 'i' }}
+										disabled={!simulation.value.running}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('step');
+										}}>Step</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: 'p' }}
+										disabled={!simulation.value.running || simulation.value.is_playing === true}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('play');
+										}}>Play</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!simulation.value.running || simulation.value.is_playing !== true}
+										shortcut={{ ctrlKey: true, key: 'p' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('pause');
+										}}>Pause</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!simulation.value.running}
+										shortcut={{ ctrlKey: true, key: 'x' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('terminate');
+										}}>Terminate</MenuBarButton
 									>
 								</li>
 							</ul>

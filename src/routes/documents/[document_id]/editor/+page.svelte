@@ -48,6 +48,7 @@
 	import * as R from 'ramda';
 	import Minimap from '$lib/components/editor/overlays/minimap/Minimap.svelte';
 	import * as Geo from '$lib/math/geometry';
+	import MenuBarButton from '$lib/components/menubar/MenuBarButton.svelte';
 
 	import {
 		frameBoxLens,
@@ -521,7 +522,7 @@
 			<header class="header">
 				<div class="header-titel">
 					<a
-						href="{base}/projects/{data.doc.links.project.id}/documents"
+						href="{base}/projects/{data.document.links.project.id}/documents"
 						title="Back"
 						class="nav-link">Back</a
 					>
@@ -535,59 +536,52 @@
 							File
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											alert('the document is saved automatically');
-										}}>Save</button
+										}}>Save</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											showRename.value = true;
-										}}>Rename</button
+										}}>Rename</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											data.commands.duplicateDocument();
-										}}>Duplicate</button
+										}}>Duplicate</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											data.commands.downloadJson();
-										}}>Download JSON</button
+										}}>Download JSON</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
+									<MenuBarButton
 										class="menu-bar-item-button"
 										onclick={() => {
 											data.commands.downloadStruct();
-										}}>Download Struct</button
+										}}>Download Struct</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
-											data.commands.exportRenew();
-										}}>Export .rnw</button
+											data.commands.exportrenew();
+										}}>export .rnw</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
-										onclick={deleteThisDocument}
-										style="color: #aa0000">Delete</button
+									<MenuBarButton onclick={deleteThisDocument} style="color: #aa0000"
+										>delete</MenuBarButton
 									>
 								</li>
 								<!--
@@ -605,41 +599,43 @@
 							Edit
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										disabled={doc.value.snapshot.prev_id == doc.value.snapshot.current_id}
+										shortcut={{ ctrlKey: true, key: 'z' }}
 										onclick={(evt) => {
 											evt.preventDefault();
 											cast('restore_snapshot', doc.value.snapshot.prev_id);
-										}}>Undo</button
+										}}>Undo</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
 									{#if doc.value.snapshot.next_ids.length > 1}
 										<hr class="menu-bar-menu-ruler" />
 									{:else if doc.value.snapshot.next_ids.length > 0}
-										<button
-											class="menu-bar-item-button"
+										<MenuBarButton
 											disabled={doc.value.snapshot.next_ids[0] == doc.value.snapshot.current_id}
+											shortcut={{ ctrlKey: true, key: 'y' }}
 											onclick={(evt) => {
 												evt.preventDefault();
 												cast('restore_snapshot', doc.value.snapshot.next_ids[0]);
-											}}>Redo</button
+											}}>Redo</MenuBarButton
 										>
 									{:else}
-										<button disabled class="menu-bar-item-button">Redo</button>
+										<MenuBarButton shortcut={{ ctrlKey: true, key: 'y' }} disabled
+											>Redo</MenuBarButton
+										>
 									{/if}
 								</li>
 								{#if doc.value.snapshot.next_ids.length > 1}
 									{#each doc.value.snapshot.next_ids as nid, i}
 										{#if nid !== doc.value.snapshot.current_id}
 											<li class="menu-bar-menu-item">
-												<button
-													class="menu-bar-item-button"
+												<MenuBarButton
+													shortcut={i == 0 ? { ctrlKey: true, key: 'y' } : null}
 													onclick={(evt) => {
 														evt.preventDefault();
 														cast('restore_snapshot', nid);
-													}}>Redo ({i})</button
+													}}>redo ({i})</MenuBarButton
 												>
 											</li>
 										{/if}
@@ -651,8 +647,7 @@
 								<li class="menu-bar-menu-item"><div style="padding: 1ex">Reorder:</div></li>
 								{#each [{ target_rel: 'before_parent', label: 'Below Parent' }, { target_rel: 'after_parent', label: 'Above Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
 									<li class="menu-bar-menu-item">
-										<button
-											class="menu-bar-item-button"
+										<MenuBarButton
 											disabled={!singleSelectedLayer.value}
 											onclick={(evt) => {
 												evt.preventDefault();
@@ -666,15 +661,14 @@
 														cast('select', id);
 													}
 												});
-											}}>{label}</button
+											}}>{label}</MenuBarButton
 										>
 									</li>
 								{/each}
 
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										disabled={!singleSelectedLayer.value}
 										onclick={(evt) => {
 											evt.preventDefault();
@@ -687,18 +681,19 @@
 													cast('select', id);
 												}
 											});
-										}}>Wrap in Group</button
+										}}>Wrap in Group</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
+									<MenuBarButton
 										disabled={!singleSelectedLayerType.value}
+										shortcut={{ ctrlKey: true, key: 'Backspace' }}
 										onclick={(evt) => {
 											evt.preventDefault();
 											cast('delete_layer', selectedLayers.value[0]);
 										}}
-										class="menu-bar-item-button menu-bar-item-danger">Delete</button
+										class="menu-bar-item-button menu-bar-item-danger">Delete</MenuBarButton
 									>
 								</li>
 							</ul>
@@ -707,21 +702,19 @@
 							Selection
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										disabled={!singleSelectedHyperinkedId.value}
 										onclick={(evt) => {
 											evt.preventDefault();
 											const id = singleSelectedHyperinkedId.value;
 											selectedLayers.value = [id];
 											cast('select', id);
-										}}>Select Linked</button
+										}}>Select Linked</MenuBarButton
 									>
 								</li>
 								{#each [{ label: 'Parent', rel: 'parent' }, { label: 'First Sibling', rel: 'sibling_first' }, { label: 'Last Sibling', rel: 'sibling_last' }, { label: 'Sibling Below', rel: 'sibling_prev' }, { label: 'Sibling Above', rel: 'sibling_next' }, { label: 'First Child', rel: 'child_first' }, { label: 'Last Child', rel: 'child_last' }] as { label, rel }}
 									<li class="menu-bar-menu-item">
-										<button
-											class="menu-bar-item-button"
+										<MenuBarButton
 											disabled={!singleSelectedLayer.value}
 											onclick={(evt) => {
 												evt.preventDefault();
@@ -735,7 +728,7 @@
 														cast('select', id);
 													}
 												});
-											}}>Select {label}</button
+											}}>Select {label}</MenuBarButton
 										>
 									</li>
 								{/each}
@@ -746,38 +739,37 @@
 
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											call((c) => {
 												c && c.resetCamera();
 											}, cameraScroller);
-										}}>Fit into Camera</button
+										}}>Fit into Camera</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '0' }}
 										onclick={() => {
 											cameraZoom.value = 0;
-										}}>Reset Zoom</button
+										}}>Reset Zoom</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '+' }}
 										onclick={() => {
 											update(R.add(0.2), cameraZoom);
-										}}>Zoom in</button
+										}}>Zoom in</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: '-' }}
 										onclick={() => {
 											update(R.add(-0.2), cameraZoom);
-										}}>Zoom out</button
+										}}>Zoom out</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
@@ -792,27 +784,24 @@
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											cameraRotation.value = 0;
-										}}>Reset Rotation</button
+										}}>Reset Rotation</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											update(R.add(90), cameraRotation);
-										}}>Rotate Clockwise</button
+										}}>Rotate Clockwise</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
-									<button
-										class="menu-bar-item-button"
+									<MenuBarButton
 										onclick={() => {
 											update(R.add(-90), cameraRotation);
-										}}>Rotate Counter-Clockwise</button
+										}}>Rotate Counter-Clockwise</MenuBarButton
 									>
 								</li>
 
@@ -905,7 +894,8 @@
 										</label>
 									</li>
 									<li class="menu-bar-menu-item">
-										<button
+										<MenuBarButton
+											shortcut={{ ctrlKey: true, key: 'i' }}
 											disabled={startingSimulation}
 											class="menu-bar-item-button new-sim-action"
 											onclick={simulateThisDocument}
@@ -915,7 +905,7 @@
 											{:else}
 												New Simulation
 											{/if}
-										</button>
+										</MenuBarButton>
 									</li>
 									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								{:catch e}
@@ -2886,7 +2876,7 @@
 									/></label
 								>
 							{/each}
-							<hr />
+							<hr class="tool-spacer" />
 						</div>
 
 						{#snippet edgeProps()}
@@ -4184,7 +4174,7 @@
 						<hr />
 						<!-- <input style="" type="search" name="" placeholder="search" /> -->
 						<div
-							style="scrollbar-width: thin; max-height: 15em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
+							style="scrollbar-width: thin; max-height: 100%; min-height: 10em; padding:1px; overflow: auto; display: flex; flex-direction: column;"
 							use:polyfillDragDrop={{
 								dropArea: document,
 								options: { dragThresholdPixels: 0 }
@@ -4258,7 +4248,7 @@
 										evt.preventDefault();
 										evt.currentTarget.style.backgroundColor = 'white';
 									}}
-									style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
+									style="background: white; height: 5px; flex-shrink: 0;"
 									ondragover={(evt) => {
 										if (evt.currentTarget === evt.relatedTarget) {
 											return;
@@ -4400,7 +4390,7 @@
 											<span>{elSemantic.value}</span>
 										</div>
 										<small
-											style="color: #aaa; display: block; max-width: 100%; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: normal; white-space: nowrap; box-sizing: border-box;"
+											style="color: #aaa; display: block; max-width: 10em; width:100%; overflow: hidden; text-overflow: ellipsis; word-break: normal; white-space: nowrap; box-sizing: border-box;"
 											>({el.value.z_index}/{elId.value})</small
 										>
 									</div>
@@ -4463,7 +4453,7 @@
 												evt.preventDefault();
 												evt.dataTransfer.dropEffect = 'move';
 											}}
-											style="background: white; height: 5px; width: 100%; flex-shrink: 0;"
+											style="background: white; height: 5px;flex-shrink: 0;"
 										></div>
 									{/each}
 								{/if}
@@ -4673,7 +4663,8 @@
 										-
 									{:then bp}
 										<div
-											style="display: grid; align-content: center; justify-content: center; grid-template-columns: max-content;  grid-template-rows: max-content; align-items: stretch; justify-items: stretch; width: 2em;"
+											title={bp.get(selectedBlueprint.value)?.name ?? '-'}
+											style="display: grid; align-content: center; justify-content: center; grid-template-columns: 1fr; grid-template-rows: 1fr; align-items: stretch; justify-items: stretch; width: 2em; overflow: hidden;"
 										>
 											<div
 												style="grid-area: 1 / 1 / span 1 / span 1; align-self: center; width: 100%; overflow: hidden"
@@ -4687,7 +4678,7 @@
 											</div>
 											<select
 												bind:value={selectedBlueprint.value}
-												style="width: 3em; max-width: 100%; height: 3em; opacity: 0;grid-area: 1 / 1 / span 1 / span 1;"
+												style="-webkit-appearance: none; width: 3em; max-width: 100%; height: 3em; opacity: 0;grid-area: 1 / 1 / span 1 / span 1;"
 											>
 												<option value={null}></option>
 												{#each bp.entries() as [id, s]}
@@ -5372,6 +5363,7 @@
 		width: 100%;
 		opacity: 0;
 		min-width: 10em;
+		-webkit-appearance: none;
 	}
 
 	.pretty-number {
@@ -5611,5 +5603,10 @@
 
 	:global(.droparea) * {
 		pointer-events: none;
+	}
+
+	.tool-spacer {
+		border: none;
+		background: #aaa;
 	}
 </style>

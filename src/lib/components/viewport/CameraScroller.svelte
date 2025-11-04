@@ -9,12 +9,6 @@
 
 	const { camera, extension, children } = $props();
 
-	// This is needed to prevent a ceil/floor feedback loop between integer scroll positions of scrollbars and camera position
-	const integerLens = L.lens(
-		(x) => Math.floor(x),
-		(newV, oldV) => Math.ceil(newV) + (oldV - Math.floor(oldV))
-	);
-
 	const scrollWindowSize = view(
 		[
 			L.lens(R.prop('frame'), (newSize) => ({
@@ -146,7 +140,7 @@
 
 	const scrollPosition = view(
 		[
-			L.pick({ x: ['x', integerLens], y: ['y', integerLens] }),
+			L.props('x', 'y'),
 			L.setter((newScroll, old) => ({
 				x:
 					(newScroll.atMinX && old.x < newScroll.x) || (newScroll.atMaxX && old.x > newScroll.x)
