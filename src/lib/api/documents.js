@@ -88,26 +88,30 @@ export default function (fetchFn, routes, token) {
 			});
 		},
 
-		uploadSvg(_doc_id, svgDocument) {
-			const formData = new FormData();
+		uploadSvg(document, svgDocument) {
+			return new Promise((resolve) => {
+				const formData = new FormData();
 
-			formData.append('svg[width]', svgDocument.documentElement.width.baseVal.value);
-			formData.append('svg[height]', svgDocument.documentElement.height.baseVal.value);
-			formData.append(
-				'svg[xml]',
-				new XMLSerializer().serializeToString(svgDocument.documentElement)
-			);
+				formData.append('svg[width]', svgDocument.documentElement.width.baseVal.value);
+				formData.append('svg[height]', svgDocument.documentElement.height.baseVal.value);
+				formData.append(
+					'svg[xml]',
+					new XMLSerializer().serializeToString(svgDocument.documentElement)
+				);
 
-			return fetch(routes.upload_svg.href, {
-				method: 'post',
-				headers: { Authorization: token },
-				body: formData
-			}).then((r) => {
-				if (r.ok) {
-					return r.json();
-				} else {
-					throw r;
-				}
+				return resolve(formData);
+			}).then((formData) => {
+				return fetch(document.links.upload_svg.href, {
+					method: document.links.upload_svg.method,
+					headers: { Authorization: token },
+					body: formData
+				}).then((r) => {
+					if (r.ok) {
+						return r.json();
+					} else {
+						throw r;
+					}
+				});
 			});
 		}
 	};

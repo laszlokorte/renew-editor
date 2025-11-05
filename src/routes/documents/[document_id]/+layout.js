@@ -143,7 +143,7 @@ function createCommands(fetchFn, doc) {
 				});
 		},
 		uploadSvg(svg) {
-			return api.uploadSvg(doc.id, svg);
+			return api.uploadSvg(doc, svg);
 		}
 	};
 }

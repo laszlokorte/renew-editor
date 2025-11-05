@@ -1032,24 +1032,32 @@
 						onDropFile={(file, pos) => {
 							const reader = new FileReader();
 							reader.onload = function (event) {
-								const parser = new DOMParser();
-								const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
+								new Promise((res) => {
+									const parser = new DOMParser();
+									const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
 
-								data.commands.uploadSvg(svgDoc).then((j) => {
-									dispatch('create_layer', {
-										base_layer_id: L.get('id', singleSelectedLayer.value),
-										pos: {
-											x: -svgDoc.documentElement.width.baseVal.value / 2 + pos.x,
-											y: -svgDoc.documentElement.height.baseVal.value / 2 + pos.y,
-											width: svgDoc.documentElement.width.baseVal.value,
-											height: svgDoc.documentElement.height.baseVal.value
-										},
-										image: j.url
-									}).then((l) => {
-										selectedLayers.value = [l.id];
-										cast('select', l.id);
+									res(svgDoc);
+								})
+									.then((svgDoc) => {
+										return data.commands.uploadSvg(svgDoc).then((j) => {
+											dispatch('create_layer', {
+												base_layer_id: L.get('id', singleSelectedLayer.value),
+												pos: {
+													x: -svgDoc.documentElement.width.baseVal.value / 2 + pos.x,
+													y: -svgDoc.documentElement.height.baseVal.value / 2 + pos.y,
+													width: svgDoc.documentElement.width.baseVal.value,
+													height: svgDoc.documentElement.height.baseVal.value
+												},
+												image: j.url
+											}).then((l) => {
+												selectedLayers.value = [l.id];
+												cast('select', l.id);
+											});
+										});
+									})
+									.catch((e) => {
+										errors.value = ['Can not insert file'];
 									});
-								});
 							};
 							reader.readAsText(file);
 						}}
@@ -4610,6 +4618,7 @@
 									{#each g.items as item}
 										<div
 											role="application"
+											style="display: grid; justify-content: center; align-content: center;"
 											draggable={!item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value}
 											style:touch-action="none"
 											ondragstart={(evt) => {
