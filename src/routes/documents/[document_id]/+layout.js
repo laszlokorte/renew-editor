@@ -84,7 +84,7 @@ function createCommands(fetchFn, doc) {
 				}
 			});
 
-			const sim = api.simulateDocument(doc.id, formalism);
+			const sim = api.simulateDocument(doc, formalism);
 
 			return simWindow
 				.then((w) => {

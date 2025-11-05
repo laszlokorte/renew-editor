@@ -123,7 +123,7 @@
 						</label>
 					</p>
 					<p>
-						<button disabled={importing} type="submit" style="opacity: 1; background: #009;"
+						<button disabled={importing} type="submit" style="opacity: 1; background-color: #009;"
 							>Create</button
 						>
 					</p>
@@ -136,7 +136,10 @@
 		<div>
 			<a href="{base}/projects" title="Back">Back</a>
 
-			<h2>Simulations</h2>
+			<h2>
+				<img src="{base}/icon-simulation.svg" class="icon" alt="" />
+				Simulations
+			</h2>
 		</div>
 
 		<div class="button-group">
@@ -158,7 +161,7 @@
 				{/if}
 				<ul>
 					{#each simulations.value.items as sim (sim.id)}
-						<li class="list-item">
+						<li class="list-item" style:background-image="url({base}/icon-simulation.svg)">
 							<a
 								class="list-link"
 								href="{base}/simulations/{sim.id}/observer"
@@ -244,7 +247,7 @@
 
 	.title {
 		position: sticky;
-		background: #fff;
+		background-color: #fff;
 		top: 0;
 		left: 0;
 		display: block;
@@ -257,7 +260,7 @@
 	}
 
 	header {
-		background: #23875d;
+		background-color: #23875d;
 		color: #fff;
 		display: flex;
 		align-items: center;
@@ -266,7 +269,7 @@
 	}
 
 	header.offline {
-		background: #70030d;
+		background-color: #70030d;
 	}
 
 	ul {
@@ -287,7 +290,7 @@
 		padding: 1em 2em;
 
 		&:hover {
-			background: #fafafa;
+			background-color: #fafafa;
 		}
 	}
 
@@ -296,7 +299,7 @@
 	}
 
 	button {
-		background: #0005;
+		background-color: #0005;
 		color: #fff;
 		padding: 1ex 1em;
 		border: none;
@@ -312,11 +315,11 @@
 
 	@media (pointer: fine) {
 		button:not(:disabled):hover {
-			background: #0004;
+			background-color: #0004;
 		}
 
 		button:not(:disabled):active {
-			background: #0007;
+			background-color: #0007;
 		}
 	}
 
@@ -337,7 +340,7 @@
 
 	dl button {
 		border: 0;
-		background: #333;
+		background-color: #333;
 		color: #fff;
 		font: inherit;
 		padding: 1ex;
@@ -372,12 +375,12 @@
 
 	.drop-zone.invitation {
 		color: #ffcc00;
-		background: #fffeed;
+		background-color: #fffeed;
 	}
 
 	.drop-zone.ready {
 		color: #00bb55;
-		background: #efe;
+		background-color: #efe;
 	}
 
 	.labeled-ruler {
@@ -417,7 +420,7 @@
 	}
 
 	.upload-button {
-		background: #333;
+		background-color: #333;
 	}
 
 	.list-item {
@@ -427,12 +430,17 @@
 		grid-template-columns: 1fr auto auto;
 		align-items: stretch;
 		align-content: stretch;
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
 	}
 
 	.list-link {
 		grid-column: 1 / span 3;
 		grid-row: 1;
 		touch-action: pan-x pan-y;
+		background: inherit;
+		padding-left: 5em;
 	}
 
 	.list-input {
@@ -444,6 +452,8 @@
 		padding: 1em 2em;
 		border: none;
 		font: inherit;
+		background: inherit;
+		padding-left: 5em;
 	}
 
 	.list-pop {
@@ -451,6 +461,7 @@
 		grid-row: 1;
 		box-sizing: border-box;
 		margin-right: -1.5ex;
+		background: inherit;
 	}
 
 	.list-details {
@@ -525,13 +536,13 @@
 	}
 	@media (pointer: fine) {
 		.action-delete:not(:disabled):hover {
-			background: #a55;
+			background-color: #a55;
 			color: #fff;
 		}
 	}
 
 	.action-delete:not(:disabled):active {
-		background: #a22;
+		background-color: #a22;
 		color: #fff;
 	}
 
@@ -541,10 +552,10 @@
 	}
 	@media (pointer: fine) {
 		.action-cancel:not(:disabled):hover {
-			background: #fdd;
+			background-color: #fdd;
 		}
 		.action-cancel:not(:disabled):active {
-			background: #faa;
+			background-color: #faa;
 		}
 	}
 
@@ -554,21 +565,21 @@
 	}
 	@media (pointer: fine) {
 		.action-confirm:not(:disabled):hover {
-			background: #dfd;
+			background-color: #dfd;
 		}
 		.action-confirm:not(:disabled):active {
-			background: #afa;
+			background-color: #afa;
 		}
 	}
 
 	@media (pointer: fine) {
 		.action-export:not(:disabled):hover {
-			background: #333;
+			background-color: #333;
 			color: #fff;
 		}
 
 		.action-export:not(:disabled):active {
-			background: #333;
+			background-color: #333;
 			color: #fff;
 		}
 	}
@@ -579,12 +590,12 @@
 	}
 	@media (pointer: fine) {
 		.action-export:not(:disabled):hover {
-			background: #55e;
+			background-color: #55e;
 			color: #fff;
 		}
 
 		.action-export:not(:disabled):active {
-			background: #55a;
+			background-color: #55a;
 			color: #fff;
 		}
 	}
@@ -595,17 +606,23 @@
 	}
 	@media (pointer: fine) {
 		.action-duplicate:not(:disabled):hover {
-			background: #5a5;
+			background-color: #5a5;
 			color: #fff;
 		}
 
 		.action-duplicate:not(:disabled):active {
-			background: #2a2;
+			background-color: #2a2;
 			color: #fff;
 		}
 	}
 
 	.warn {
 		outline: 3px solid orange;
+	}
+	.icon {
+		width: 1em;
+		height: 1em;
+		vertical-align: middle;
+		opacity: 0.5;
 	}
 </style>

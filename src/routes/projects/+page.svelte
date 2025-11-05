@@ -37,7 +37,10 @@
 		<div>
 			<a href="{base}/" title="Back">Back</a>
 
-			<h2>Projects</h2>
+			<h2>
+				<img src="{base}/icon-project.svg" class="icon" alt="" />
+				Projects
+			</h2>
 		</div>
 
 		<div class="button-group">
@@ -65,7 +68,7 @@
 				{/if}
 				<ul>
 					{#each projects.value.items as d (d.id)}
-						<li class="project-list-item">
+						<li class="project-list-item" style:background-image="url({base}/icon-project.svg)">
 							{#if renamingId == d.id}
 								<div
 									onclick={() => {
@@ -75,7 +78,7 @@
 									style="background:#0005;position: absolute; left:0;right:0;bottom:0;top: 0;"
 								></div>
 								<form
-									style="display: contents;"
+									style="display: contents; background: inherit;"
 									onsubmit={(evt) => {
 										evt.preventDefault();
 										dispatch('rename_project', { id: d.id, name: renamingNewName }).then(() => {
@@ -85,7 +88,7 @@
 									}}
 								>
 									<div
-										style="display: grid; grid-template-columns: 1fr auto;flex-grow: 1; z-index: 100;background: #fff;"
+										style="display: grid; grid-template-columns: 1fr auto;flex-grow: 1; z-index: 100;background-color: #fff;"
 										class="project-list-pop"
 									>
 										<input
@@ -139,7 +142,9 @@
 								<a
 									class="project-list-link"
 									href="{base}/projects/{d.id}/documents"
-									title="Project #{d.id}">{d.name}</a
+									title="Project #{d.id}"
+								>
+									{d.name}</a
 								>
 								<div class="project-list-actions">
 									<button
@@ -198,7 +203,7 @@
 
 	.title {
 		position: sticky;
-		background: #fff;
+		background-color: #fff;
 		top: 0;
 		left: 0;
 		display: block;
@@ -211,7 +216,7 @@
 	}
 
 	header {
-		background: #23875d;
+		background-color: #23875d;
 		color: #fff;
 		display: flex;
 		align-items: center;
@@ -220,7 +225,7 @@
 	}
 
 	header.offline {
-		background: #70030d;
+		background-color: #70030d;
 	}
 
 	ul {
@@ -241,7 +246,7 @@
 		padding: 1em 2em;
 
 		&:hover {
-			background: #fafafa;
+			background-color: #fafafa;
 		}
 	}
 
@@ -250,7 +255,7 @@
 	}
 
 	button {
-		background: #0005;
+		background-color: #0005;
 		color: #fff;
 		padding: 1ex 1em;
 		border: none;
@@ -266,11 +271,11 @@
 
 	@media (pointer: fine) {
 		button:not(:disabled):hover {
-			background: #0004;
+			background-color: #0004;
 		}
 
 		button:not(:disabled):active {
-			background: #0007;
+			background-color: #0007;
 		}
 	}
 
@@ -291,7 +296,7 @@
 
 	dl button {
 		border: 0;
-		background: #333;
+		background-color: #333;
 		color: #fff;
 		font: inherit;
 		padding: 1ex;
@@ -326,7 +331,7 @@
 
 	.drop-zone.invitation {
 		color: #ffcc00;
-		background: #fffeed;
+		background-color: #fffeed;
 	}
 
 	.drop-zone.invitation * {
@@ -335,7 +340,7 @@
 
 	.drop-zone.ready {
 		color: #00bb55;
-		background: #efe;
+		background-color: #efe;
 	}
 
 	.labeled-ruler {
@@ -375,7 +380,7 @@
 	}
 
 	.upload-button {
-		background: #333;
+		background-color: #333;
 	}
 
 	.project-list-item {
@@ -385,12 +390,17 @@
 		grid-template-columns: 1fr auto;
 		align-items: center;
 		align-content: stretch;
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
 	}
 
 	.project-list-link {
 		grid-column: 1 / span 2;
 		grid-row: 1;
 		touch-action: pan-x pan-y;
+		padding-left: 5em;
+		background: inherit;
 	}
 
 	.project-list-input {
@@ -402,6 +412,8 @@
 		padding: 1em 2em;
 		border: none;
 		font: inherit;
+		padding-left: 5em;
+		background: inherit;
 	}
 
 	.project-list-pop {
@@ -409,6 +421,7 @@
 		grid-row: 1;
 		box-sizing: border-box;
 		margin-right: -1.5ex;
+		background: inherit;
 	}
 
 	.project-list-actions {
@@ -455,13 +468,13 @@
 	}
 	@media (pointer: fine) {
 		.action-delete:not(:disabled):hover {
-			background: #a55;
+			background-color: #a55;
 			color: #fff;
 		}
 	}
 
 	.action-delete:not(:disabled):active {
-		background: #a22;
+		background-color: #a22;
 		color: #fff;
 	}
 
@@ -471,10 +484,10 @@
 	}
 	@media (pointer: fine) {
 		.action-cancel:not(:disabled):hover {
-			background: #fdd;
+			background-color: #fdd;
 		}
 		.action-cancel:not(:disabled):active {
-			background: #faa;
+			background-color: #faa;
 		}
 	}
 
@@ -484,10 +497,10 @@
 	}
 	@media (pointer: fine) {
 		.action-confirm:not(:disabled):hover {
-			background: #dfd;
+			background-color: #dfd;
 		}
 		.action-confirm:not(:disabled):active {
-			background: #afa;
+			background-color: #afa;
 		}
 	}
 
@@ -497,12 +510,12 @@
 	}
 	@media (pointer: fine) {
 		.action-export:not(:disabled):hover {
-			background: #333;
+			background-color: #333;
 			color: #fff;
 		}
 
 		.action-export:not(:disabled):active {
-			background: #333;
+			background-color: #333;
 			color: #fff;
 		}
 	}
@@ -513,12 +526,12 @@
 	}
 	@media (pointer: fine) {
 		.action-export:not(:disabled):hover {
-			background: #55e;
+			background-color: #55e;
 			color: #fff;
 		}
 
 		.action-export:not(:disabled):active {
-			background: #55a;
+			background-color: #55a;
 			color: #fff;
 		}
 	}
@@ -529,17 +542,24 @@
 	}
 	@media (pointer: fine) {
 		.action-duplicate:not(:disabled):hover {
-			background: #5a5;
+			background-color: #5a5;
 			color: #fff;
 		}
 
 		.action-duplicate:not(:disabled):active {
-			background: #2a2;
+			background-color: #2a2;
 			color: #fff;
 		}
 	}
 
 	.warn {
 		outline: 3px solid orange;
+	}
+
+	.icon {
+		width: 1em;
+		height: 1em;
+		vertical-align: middle;
+		opacity: 0.5;
 	}
 </style>

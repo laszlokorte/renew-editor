@@ -4186,6 +4186,13 @@
 								options: { dragThresholdPixels: 0 }
 							}}
 						>
+							{#if !layersInOrder.value.length}
+								<div
+									style="color: #aaa; font-style: italic; display: grid; align-content: center; justify-content: center; flex-grow: 1;border: 2px dashed #aaa;"
+								>
+									Document is empty
+								</div>
+							{/if}
 							{#each layersInOrder.value as { index, id, depth, hidden, isLast, parents } (id)}
 								{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 								{@const elId = view('id', el)}

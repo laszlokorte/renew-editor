@@ -3,56 +3,70 @@
 	import AppBar from '../../../AppBar.svelte';
 	import * as env from '../../../../env';
 
+	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	const appTitle = env.APP_NAME;
 
 	const { data } = $props();
-	const { project } = data;
 </script>
 
 <AppBar
 	title={`Project Settings`}
-	projectId={project.id}
+	projectId={data.project.id}
 	authState={data.authState}
 	connectionState={data.connectionState}
 />
 
 <section class="hero">
-	<h2>Settings</h2>
+	<h2>
+		<img src="{base}/icon-gear.svg" class="icon" alt="" />
+		Settings
+	</h2>
 
-	<fieldset>
-		<legend>Rename Project</legend>
+	<LiveResource socket={data.live_socket} resource={data.project}>
+		{#snippet children(project, _presence, { dispatch, cast })}
+			<fieldset>
+				<legend>Rename Project</legend>
 
-		<input type="text" />
-		<button>Save</button>
-	</fieldset>
+				<input type="text" value={project.value.name} />
+				<button>Save</button>
+			</fieldset>
 
-	<h3>Members</h3>
-	<table>
-		<thead>
-			<tr>
-				<th>E-Mail</th>
-				<th>Role</th>
-				<th></th>
-			</tr>
-		</thead>
+			<h3>Members</h3>
+			<table>
+				<thead>
+					<tr>
+						<th>E-Mail</th>
+						<th>Role</th>
+						<th></th>
+					</tr>
+				</thead>
 
-		<tbody>
-			<tr>
-				<td>foo@bar.de</td>
-				<td>Editor</td>
-				<td><button>Remove from project</button></td>
-			</tr>
-		</tbody>
-	</table>
+				<tbody>
+					{#if !project.value.members.items.length}
+						<tr>
+							<td colspan="3"> No members yet </td>
+						</tr>
+					{/if}
+					{#each project.value.members.items as mem}
+						<tr>
+							<td>{mem.email}</td>
+							<td>{mem.role}</td>
+							<td><button>Remove from project</button></td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
 
-	<h3>Invite for Collaboration</h3>
+			<h3>Invite for Collaboration</h3>
 
-	<fieldset>
-		<legend>Add Editor</legend>
+			<fieldset>
+				<legend>Add Editor</legend>
 
-		<input type="text" />
-		<button>Invite</button>
-	</fieldset>
+				<input type="text" />
+				<button>Invite</button>
+			</fieldset>
+		{/snippet}
+	</LiveResource>
 </section>
 
 <style>
@@ -71,5 +85,11 @@
 		background: #333;
 		color: #fff;
 		text-decoration: none;
+	}
+	.icon {
+		width: 1em;
+		height: 1em;
+		vertical-align: middle;
+		opacity: 0.5;
 	}
 </style>

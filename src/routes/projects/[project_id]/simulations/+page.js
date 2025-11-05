@@ -4,7 +4,6 @@ import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
 import simulationApi from '$lib/api/simulations.js';
 import documentApi from '$lib/api/documents.js';
-import LiveState from '$lib/api/livestate';
 import { downloadFile } from '$lib/io/download';
 
 export const ssr = false;

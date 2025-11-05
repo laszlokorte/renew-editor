@@ -14,13 +14,13 @@ export default function (fetchFn, routes, token) {
 			});
 		},
 
-		simulateDocument(id, formalism) {
+		simulateDocument(document, formalism) {
 			return fetchJson(
 				fetchFn,
-				routes.create_simulation.href,
-				routes.create_simulation.method,
+				document.links.create_simulation.href,
+				document.links.create_simulation.method,
 				{ Authorization: token },
-				{ document_ids: [id], formalism }
+				{ document_ids: [document.id], formalism }
 			);
 		},
 
