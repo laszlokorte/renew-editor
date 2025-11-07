@@ -687,6 +687,19 @@
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
+										disabled={!singleSelectedLayer.value}
+										onclick={(evt) => {
+											evt.preventDefault();
+
+											dispatch('set_thumbnail', {
+												layer_id: singleSelectedLayer.value.id
+											});
+										}}>Mark Layer as Thumbnail</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
 										disabled={!singleSelectedLayerType.value}
 										shortcut={{ ctrlKey: true, key: 'Backspace' }}
 										onclick={(evt) => {
@@ -4408,6 +4421,9 @@
 											<span
 												>{#if hyperlink.value}🔗{/if}</span
 											>
+											<span
+												>{#if elId.value == doc.value.thumbnail_layer}🖼️{/if}</span
+											>
 											<span>{elSemantic.value}</span>
 										</div>
 										<small
@@ -4874,6 +4890,12 @@
 		box-shadow: 0 -1px 4px -1px #0006;
 	}
 
+	.menu-bar-menu:has(.menu-bar-menu:focus) {
+		background: #fff;
+		color: #000;
+		box-shadow: 0 -1px 4px -1px #0006;
+	}
+
 	.menu-bar-menu {
 		pointer-events: all;
 		z-index: 10000;
@@ -4893,6 +4915,13 @@
 		box-shadow: 0 6px 10px -6px #0006;
 	}
 
+	.menu-bar:focus-within > .menu-bar-menu {
+		display: flex;
+	}
+
+	.menu-bar-menu:has(:hover, :focus) {
+		display: flex;
+	}
 	.menu-bar:focus-within .menu-bar-item:hover > .menu-bar-menu {
 		display: flex;
 	}

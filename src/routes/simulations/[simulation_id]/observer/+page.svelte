@@ -710,17 +710,17 @@
 																[place_id, L.defaults(false)],
 																expandedPlaces
 															)}
-															<text
-																{...pos.value}
-																text-anchor="middle"
-																class="place-tokens"
-																onclick={(evt) => {
-																	evt.preventDefault();
-																	update((x) => !x, expanded);
-																}}
-																class:tokenCount={!expanded.value}
-															>
-																{#if expanded.value}
+															{#if expanded.value}
+																<text
+																	{...pos.value}
+																	text-anchor="middle"
+																	class="place-tokens"
+																	onclick={(evt) => {
+																		evt.preventDefault();
+																		update((x) => !x, expanded);
+																	}}
+																	class:tokenCount={!expanded.value}
+																>
 																	{#each tokens as token, ti (token.id)}
 																		{#if ti > 0}
 																			<tspan>; </tspan>
@@ -747,10 +747,64 @@
 																			<tspan>{token.value}</tspan>
 																		{/if}
 																	{/each}
-																{:else}
+																</text>
+
+																{#each tokens as token, ti (token.id)}
+																	{@const match = R.match(/^(\w+)\[\d+\]$/, token.value)}
+																	{@const thumbnail = view(
+																		[L.whereEq({ name: match[1] }), 'thumbnail'],
+																		nets
+																	)}
+																	{#if match.length && thumbnail.value}
+																		<svg
+																			{...pos.value}
+																			width="30"
+																			height="30"
+																			transform="translate({-70 + (ti % 4) * 35},{-70 +
+																				(ti >> 2) * 35})"
+																			viewBox="0 0 100 100"
+																			cursor="pointer"
+																			text-decoration="underline"
+																			onclick={(evt) => {
+																				evt.preventDefault();
+
+																				currentInstance.value = L.get(
+																					[
+																						'net_instances',
+																						L.find(R.propEq(token.value, 'label')),
+																						'id'
+																					],
+																					simulation.value
+																				);
+																			}}
+																		>
+																			<rect
+																				x="0"
+																				y="0"
+																				width="100"
+																				height="100"
+																				fill="brown"
+																				rx="10"
+																				ry="10"
+																				opacity="0.2"
+																			/>
+																		</svg>
+																	{/if}
+																{/each}
+															{:else}
+																<text
+																	{...pos.value}
+																	text-anchor="middle"
+																	class="place-tokens"
+																	onclick={(evt) => {
+																		evt.preventDefault();
+																		update((x) => !x, expanded);
+																	}}
+																	class:tokenCount={!expanded.value}
+																>
 																	{tokens.length || 0}
-																{/if}
-															</text>
+																</text>
+															{/if}
 														{/each}
 													{/snippet}
 												</LiveResource>

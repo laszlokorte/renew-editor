@@ -48,7 +48,7 @@
 					<tr>
 						<th>Role</th>
 						<th>E-Mail</th>
-						<th></th>
+						<th width="100%"></th>
 					</tr>
 				</thead>
 
@@ -61,10 +61,10 @@
 					{#each project.value.members.items as mem}
 						<tr>
 							<td><span class="role">{mem.role}</span></td>
-							<td>{mem.email}</td>
-							<td
+							<td width="100%">{mem.email}</td>
+							<td align="right"
 								><button
-									class="action"
+									class="action remove"
 									onclick={(evt) => {
 										evt.preventDefault();
 										dispatch('remove_member', { member_id: mem.id });
@@ -81,7 +81,7 @@
 				<thead>
 					<tr>
 						<th>Role</th>
-						<th>E-Mail</th>
+						<th width="100%">E-Mail</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -89,16 +89,16 @@
 				<tbody>
 					{#if !project.value.invitations.items.length}
 						<tr>
-							<td colspan="3"> No open invitations </td>
+							<td colspan="3" align="center"> No open invitations </td>
 						</tr>
 					{/if}
 					{#each project.value.invitations.items as inv}
 						<tr>
 							<td><span class="role">{inv.role}</span></td>
-							<td>{inv.email}</td>
-							<td
+							<td width="100%">{inv.email}</td>
+							<td align="right"
 								><button
-									class="action"
+									class="action remove"
 									onclick={(evt) => {
 										evt.preventDefault();
 										dispatch('revoke_invitation', { invitation_id: inv.id });
@@ -147,6 +147,21 @@
 	section {
 		margin: 1ex 1.5em;
 	}
+	table {
+		width: 100%;
+		max-width: 60em;
+	}
+	form {
+		display: contents;
+	}
+	fieldset {
+		width: 100%;
+		max-width: 60em;
+	}
+	th {
+		text-align: left;
+		border-bottom: 1px solid gray;
+	}
 
 	.hero {
 		display: grid;
@@ -161,9 +176,13 @@
 		text-decoration: none;
 		border: none;
 		cursor: pointer;
+		white-space: nowrap;
 	}
 	.action:active {
 		background: #222;
+	}
+	.action.remove {
+		background-color: #aa0000;
 	}
 	.icon {
 		width: 1em;
