@@ -55,12 +55,45 @@
 			</form>
 		</div>
 	</header>
-
+	<div></div>
 	<div class="scrollable">
 		<div class="title">
 			<strong>Name</strong>
 		</div>
 
+		{#await data.invitations then inv}
+			<LiveResource socket={data.live_socket} resource={inv}>
+				{#snippet children(invitations, _presence, { dispatch })}
+					{#each invitations.value.items as invitation}
+						<li class="invitation-list-item" style:background-image="url({base}/icon-project.svg)">
+							<span class="invitation-name" title="Project #{invitation.project_id}">
+								<strong>Invitation:</strong>
+								{invitation.project_name}
+							</span>
+							<div class="invitation-actions">
+								<button
+									class="action-duplicate"
+									onclick={() => {
+										dispatch('accept', {
+											project_id: invitation.project_id,
+											invitation_id: invitation.id
+										});
+									}}>Accept</button
+								>
+								<button
+									class="action-delete"
+									onclick={() => {
+										dispatch('reject', {
+											project_id: invitation.project_id
+										});
+									}}>Reject</button
+								>
+							</div>
+						</li>
+					{/each}
+				{/snippet}
+			</LiveResource>
+		{/await}
 		<LiveResource socket={data.live_socket} resource={data.projects}>
 			{#snippet children(projects, _presence, { dispatch })}
 				{#if projects.value.items.length == 0}
@@ -191,7 +224,7 @@
 		place-content: stretch;
 		place-items: stretch;
 		z-index: -1;
-		grid-template-rows: auto auto;
+		grid-template-rows: auto auto auto;
 		grid-auto-rows: 1fr;
 	}
 
@@ -561,5 +594,41 @@
 		height: 1em;
 		vertical-align: middle;
 		opacity: 0.5;
+	}
+	.invitation-list-item {
+		background-color: #ffffee;
+		display: grid;
+		justify-content: stretch;
+		gap: 0.5ex;
+		grid-template-columns: 1fr auto;
+		align-items: center;
+		align-content: stretch;
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
+	}
+
+	.invitation-name {
+		grid-column: 1 / span 2;
+		grid-row: 1;
+		touch-action: pan-x pan-y;
+		padding-left: 5em;
+		background: inherit;
+		color: #000;
+	}
+	.invitation-actions {
+		grid-column: 2 / span 1;
+		grid-row: 1;
+		padding: 1ex;
+		user-select: none;
+		touch-action: pan-x pan-y;
+		-webkit-user-select: none;
+
+		-webkit-touch-callout: none;
+		-webkit-user-callout: none;
+		-webkit-user-select: none;
+		-webkit-user-drag: none;
+		-webkit-user-modify: none;
+		-webkit-highlight: none;
 	}
 </style>

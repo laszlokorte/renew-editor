@@ -17,26 +17,37 @@
 />
 
 <section class="hero">
-	<h2>
-		<img src="{base}/icon-gear.svg" class="icon" alt="" />
-		Settings
-	</h2>
-
 	<LiveResource socket={data.live_socket} resource={data.project}>
 		{#snippet children(project, _presence, { dispatch, cast })}
-			<fieldset>
-				<legend>Rename Project</legend>
+			<h2>
+				<img src="{base}/icon-gear.svg" class="icon" alt="" />
+				Project Settings
+				<br />
+				<small>Name: {project.value.name}</small>
+			</h2>
+			<form
+				onsubmit={(evt) => {
+					evt.preventDefault();
 
-				<input type="text" value={project.value.name} />
-				<button>Save</button>
-			</fieldset>
+					const formData = new FormData(evt.currentTarget);
+					const name = formData.get('project_name');
+					dispatch('rename', { name });
+				}}
+			>
+				<fieldset>
+					<legend>Rename Project</legend>
+
+					<input type="text" name="project_name" value={project.value.name} />
+					<button type="submit" class="action">Rename Project</button>
+				</fieldset>
+			</form>
 
 			<h3>Members</h3>
 			<table>
 				<thead>
 					<tr>
-						<th>E-Mail</th>
 						<th>Role</th>
+						<th>E-Mail</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -49,22 +60,85 @@
 					{/if}
 					{#each project.value.members.items as mem}
 						<tr>
+							<td><span class="role">{mem.role}</span></td>
 							<td>{mem.email}</td>
-							<td>{mem.role}</td>
-							<td><button>Remove from project</button></td>
+							<td
+								><button
+									class="action"
+									onclick={(evt) => {
+										evt.preventDefault();
+										dispatch('remove_member', { member_id: mem.id });
+									}}>Remove from project</button
+								></td
+							>
 						</tr>
 					{/each}
 				</tbody>
 			</table>
 
 			<h3>Invite for Collaboration</h3>
+			<table>
+				<thead>
+					<tr>
+						<th>Role</th>
+						<th>E-Mail</th>
+						<th></th>
+					</tr>
+				</thead>
 
-			<fieldset>
-				<legend>Add Editor</legend>
+				<tbody>
+					{#if !project.value.invitations.items.length}
+						<tr>
+							<td colspan="3"> No open invitations </td>
+						</tr>
+					{/if}
+					{#each project.value.invitations.items as inv}
+						<tr>
+							<td><span class="role">{inv.role}</span></td>
+							<td>{inv.email}</td>
+							<td
+								><button
+									class="action"
+									onclick={(evt) => {
+										evt.preventDefault();
+										dispatch('revoke_invitation', { invitation_id: inv.id });
+									}}>Revoke</button
+								></td
+							>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+			<form
+				onsubmit={(evt) => {
+					evt.preventDefault();
+					const form = evt.currentTarget;
 
-				<input type="text" />
-				<button>Invite</button>
-			</fieldset>
+					const formData = new FormData(form);
+					const email = formData.get('email');
+					const role = formData.get('role');
+					dispatch('invite', { email, role }).then(() => {
+						form.reset();
+					});
+				}}
+			>
+				<fieldset>
+					<legend>Add Editor</legend>
+
+					<label>
+						Role:
+						<select name="role">
+							<option>reader</option>
+							<option>editor</option>
+						</select>
+					</label>
+					<label>
+						E-Mail:
+						<input name="email" type="email" required />
+					</label>
+					<button class="action">Invite</button>
+				</fieldset>
+			</form>
 		{/snippet}
 	</LiveResource>
 </section>
@@ -82,14 +156,25 @@
 
 	.action {
 		padding: 1ex;
-		background: #333;
+		background: #444;
 		color: #fff;
 		text-decoration: none;
+		border: none;
+		cursor: pointer;
+	}
+	.action:active {
+		background: #222;
 	}
 	.icon {
 		width: 1em;
 		height: 1em;
 		vertical-align: middle;
 		opacity: 0.5;
+	}
+	.role {
+		background-color: #333;
+		color: #fff;
+		padding: 4px;
+		border-radius: 2px;
 	}
 </style>

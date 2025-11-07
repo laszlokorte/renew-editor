@@ -3,12 +3,14 @@ import { fetchJson } from './json';
 export default function (fetchFn, routes, token) {
 	return {
 		listProjects(project_id) {
-			return new Promise((r) => r(routes.projects.href.replace(':id', project_id)))
-				.then((href) => fetchJson(fetchFn, href, 'get', { Authorization: token }))
-				.catch((_) => ({
-					href: 'https://fooo',
-					content: { items: [{ id: 'fooo', name: 'Example Project' }] }
-				}));
+			return new Promise((r) => r(routes.projects.href.replace(':id', project_id))).then((href) =>
+				fetchJson(fetchFn, href, 'get', { Authorization: token })
+			);
+		},
+		listInvitations() {
+			return new Promise((r) => r(routes.invitations.href)).then((href) =>
+				fetchJson(fetchFn, href, 'get', { Authorization: token })
+			);
 		},
 
 		deleteProject(id) {

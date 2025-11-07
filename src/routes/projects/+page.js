@@ -46,6 +46,7 @@ export async function load({ fetch }) {
 			.listProjects()
 			.then((j) => ({
 				projects: j,
+				invitations: api.listInvitations(),
 				commands: createCommands(api, fetch)
 			}))
 			.catch((e) => {
