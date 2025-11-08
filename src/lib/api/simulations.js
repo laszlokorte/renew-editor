@@ -19,7 +19,6 @@ export default function (fetchFn, routes, token) {
 		},
 
 		createSimulation(project, document_ids, main_net_name, formalism) {
-			console.log(project);
 			return new Promise((resolve) => {
 				resolve(
 					fetchJson(

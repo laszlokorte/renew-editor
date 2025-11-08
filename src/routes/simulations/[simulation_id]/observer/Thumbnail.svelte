@@ -8,7 +8,6 @@
 
 	const textBounds = atom({});
 	const { document, symbols } = $props();
-	console.log(document.layers);
 </script>
 
 <svg

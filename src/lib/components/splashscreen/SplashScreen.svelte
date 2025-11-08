@@ -44,8 +44,6 @@
 			const iconSizew = iconImage.width / (3 / pixelRatio) || defaultSize;
 			const iconSizeh = iconImage.height / (3 / pixelRatio) || defaultSize;
 
-			console.log(iconSizew);
-
 			canvas.width = deviceWidth * pixelRatio;
 			canvas2.height = canvas.width;
 			canvas.height = deviceHeight * pixelRatio;

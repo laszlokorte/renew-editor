@@ -37,7 +37,6 @@ function createCommands(project, api, fetchFn) {
 
 export async function load({ fetch, params, parent }) {
 	const { project } = await parent();
-	console.log(project.links.simulations.href);
 	if (authState.isAuthenticated) {
 		const api = simulationApi(fetch, authState.routes, authState.authHeader);
 		const docApi = documentApi(fetch, authState.routes, authState.authHeader);
