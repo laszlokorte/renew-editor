@@ -365,6 +365,12 @@
 					cast('cursor', pos);
 				}
 			}, 20)}
+			{@const stopCursor = throttle((pos) => {
+				const psum = L.sum([L.elems, 'count'], presence.value);
+				if (psum > 1) {
+					cast('cursor', null);
+				}
+			}, 20)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
 			{@const extension = view(
 				[
@@ -1106,7 +1112,7 @@
 									}}
 									onpointerleave={(evt) => {
 										if (showCursors.value) {
-											cast('cursor', null);
+											stopCursor();
 										}
 									}}
 									{camera}
