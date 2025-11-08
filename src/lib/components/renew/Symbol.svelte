@@ -1,6 +1,6 @@
 <script>
 	import { buildPath } from './symbols';
-	const { symbols, symbolId, box, background_url } = $props();
+	const { symbols, symbolId, box, background_url = null } = $props();
 
 	let error = $state(false);
 </script>

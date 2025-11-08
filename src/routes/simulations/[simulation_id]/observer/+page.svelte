@@ -42,6 +42,7 @@
 	import Navigator from '$lib/components/camera/Navigator.svelte';
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
 	import { preventDefault } from 'svelte/legacy';
+	import Thumbnail from './Thumbnail.svelte';
 
 	const { data } = $props();
 
@@ -749,48 +750,46 @@
 																	{/each}
 																</text>
 
-																{#each tokens as token, ti (token.id)}
-																	{@const match = R.match(/^(\w+)\[\d+\]$/, token.value)}
-																	{@const thumbnail = view(
-																		[L.whereEq({ name: match[1] }), 'thumbnail'],
-																		nets
-																	)}
-																	{#if match.length && thumbnail.value}
-																		<svg
-																			{...pos.value}
-																			width="30"
-																			height="30"
-																			transform="translate({-70 + (ti % 4) * 35},{-70 +
-																				(ti >> 2) * 35})"
-																			viewBox="0 0 100 100"
-																			cursor="pointer"
-																			text-decoration="underline"
-																			onclick={(evt) => {
-																				evt.preventDefault();
+																{#await data.shadow_net_system.then((sns) => {
+																	return new Map(sns.nets.map((s) => [s.name, s.thumbnail]));
+																}) then thumb}
+																	{#each tokens as token, ti (token.id)}
+																		{@const match = R.match(/^(\w+)\[\d+\]$/, token.value)}
+																		{@const thumbnail = thumb.get(match[1])}
+																		{#if thumbnail}
+																			<svg
+																				{...pos.value}
+																				width="30"
+																				height="30"
+																				transform="translate({-70 + (ti % 4) * 35},{-70 +
+																					(ti >> 2) * 35})"
+																				viewBox="{thumbnail.viewbox.x} {thumbnail.viewbox
+																					.y} {thumbnail.viewbox.width} {thumbnail.viewbox.height}"
+																				cursor="pointer"
+																				onclick={(evt) => {
+																					evt.preventDefault();
 
-																				currentInstance.value = L.get(
-																					[
-																						'net_instances',
-																						L.find(R.propEq(token.value, 'label')),
-																						'id'
-																					],
-																					simulation.value
-																				);
-																			}}
-																		>
-																			<rect
-																				x="0"
-																				y="0"
-																				width="100"
-																				height="100"
-																				fill="brown"
-																				rx="10"
-																				ry="10"
-																				opacity="0.2"
-																			/>
-																		</svg>
-																	{/if}
-																{/each}
+																					currentInstance.value = L.get(
+																						[
+																							'net_instances',
+																							L.find(R.propEq(token.value, 'label')),
+																							'id'
+																						],
+																						simulation.value
+																					);
+																				}}
+																			>
+																				<Thumbnail document={thumbnail} symbols={data.symbols} />
+
+																				<rect
+																					fill="none"
+																					pointer-events="all"
+																					{...thumbnail.viewbox}
+																				></rect>
+																			</svg>
+																		{/if}
+																	{/each}
+																{/await}
 															{:else}
 																<text
 																	{...pos.value}
