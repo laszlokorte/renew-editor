@@ -133,6 +133,7 @@
 	ondrop={onDrop}
 >
 	<AppBar
+		active="documents"
 		title="Project {project.name} Documents"
 		projectId={project.id}
 		authState={data.authState}

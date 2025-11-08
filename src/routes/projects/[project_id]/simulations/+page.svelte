@@ -27,6 +27,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="full-page">
 	<AppBar
+		active="simulations"
 		title="Project {project.name} Simulations`"
 		projectId={project.id}
 		authState={data.authState}

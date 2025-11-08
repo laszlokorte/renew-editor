@@ -331,6 +331,7 @@
 
 <div class="full-page">
 	<AppBar
+		active="documents"
 		title={`Document Editor`}
 		projectId={data.document.links.project.id}
 		authState={data.authState}

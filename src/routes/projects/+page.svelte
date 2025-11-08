@@ -31,7 +31,12 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="full-page">
-	<AppBar title={`Projects`} authState={data.authState} connectionState={data.connectionState} />
+	<AppBar
+		active="projects"
+		title={`Projects`}
+		authState={data.authState}
+		connectionState={data.connectionState}
+	/>
 
 	<header class:offline={!online}>
 		<div>

@@ -13,7 +13,8 @@
 		projectId,
 		authState,
 		errors = atom([]),
-		connectionState = atom(undefined)
+		connectionState = atom(undefined),
+		active = null
 	} = $props();
 
 	function discardError() {
@@ -55,7 +56,11 @@
 	>
 		{#if authState.isAuthenticated}
 			{#if projectId}
-				<a href="{base}/projects" class="nav-button" title="Project Overview">
+				<a
+					href="{base}/projects"
+					class={['nav-button', active == 'projects' && 'active']}
+					title="Project Overview"
+				>
 					<svg
 						viewBox="0 0 150 128"
 						class="nav-icon"
@@ -70,19 +75,27 @@
 						/>
 					</svg>
 				</a>
-				<a href="{base}/projects/{projectId}/documents" class="nav-button" title="Documents List"
-					>Documents</a
+				<a
+					href="{base}/projects/{projectId}/documents"
+					class={['nav-button', active == 'documents' && 'active']}
+					title="Documents List">Documents</a
 				>
 				<a
 					href="{base}/projects/{projectId}/simulations"
-					class="nav-button"
+					class={['nav-button', active == 'simulations' && 'active']}
 					title="Simulations List">Simulations</a
 				>
-				<a href="{base}/projects/{projectId}/settings" class="nav-button" title="Simulations List"
-					>Settings</a
+				<a
+					href="{base}/projects/{projectId}/settings"
+					class={['nav-button', active == 'settings' && 'active']}
+					title="Simulations List">Settings</a
 				>
 			{:else}
-				<a href="{base}/projects" class="nav-button" title="Project Overview">
+				<a
+					href="{base}/projects"
+					class={['nav-button', active == 'projects' && 'active']}
+					title="Project Overview"
+				>
 					<svg
 						viewBox="0 0 150 128"
 						class="nav-icon"
@@ -183,6 +196,12 @@
 		max-width: 10vw;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		border-top: 2px solid transparent;
+		border-bottom: 2px solid transparent;
+	}
+
+	.nav-button.active {
+		border-bottom-color: #aca;
 	}
 
 	a {

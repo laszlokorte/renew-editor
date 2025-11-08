@@ -10,6 +10,7 @@
 </script>
 
 <AppBar
+	active="projects"
 	title="Project {project.id} Overview"
 	projectId={project.id}
 	authState={data.authState}

@@ -129,6 +129,7 @@
 
 <div class="full-page">
 	<AppBar
+		active="simulations"
 		title={`Simulatation Observer`}
 		projectId={data.simulation.links.project.id}
 		authState={data.authState}

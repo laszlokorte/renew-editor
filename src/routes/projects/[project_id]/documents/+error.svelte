@@ -8,6 +8,7 @@
 </script>
 
 <AppBar
+	active="documents"
 	title={`Error ${$page.status}: ${$page.error.message}`}
 	projectId={project.id}
 	authState={data.authState}
