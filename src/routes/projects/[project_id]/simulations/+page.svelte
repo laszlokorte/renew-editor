@@ -184,7 +184,7 @@
 										onclick={(evt) => {
 											evt.preventDefault();
 											cast('stop', { id: sim.id });
-										}}>Stop</button
+										}}>Terminate</button
 									>
 								{:else}
 									<button
@@ -193,7 +193,7 @@
 										onclick={(evt) => {
 											evt.preventDefault();
 											cast('start', { id: sim.id });
-										}}>Start</button
+										}}>Initialize</button
 									>
 								{/if}
 								<button

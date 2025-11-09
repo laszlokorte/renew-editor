@@ -327,7 +327,7 @@
 										onclick={(evt) => {
 											evt.preventDefault();
 											cast('init');
-										}}>Init</MenuBarButton
+										}}>Initialize</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
@@ -448,7 +448,7 @@
 									evt.preventDefault();
 
 									cast('init');
-								}}>init</button
+								}}>Initialize</button
 							>
 						{/if}
 					</div>
