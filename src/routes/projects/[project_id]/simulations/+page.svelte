@@ -1,11 +1,9 @@
 <script>
 	import { base } from '$app/paths';
-	import { onMount } from 'svelte';
 	import AppBar from '../../../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	import { atom } from '$lib/reactivity/atom.svelte';
-	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
 
 	const { data } = $props();
 	const { project } = data;
@@ -24,11 +22,10 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="full-page">
 	<AppBar
 		active="simulations"
-		title="Project {project.name} Simulations`"
+		title="Project {project.name} Simulations"
 		projectId={project.id}
 		authState={data.authState}
 		connectionState={data.connectionState}
