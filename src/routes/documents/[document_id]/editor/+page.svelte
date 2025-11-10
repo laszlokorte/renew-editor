@@ -581,7 +581,7 @@
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
 										onclick={() => {
-											data.commands.exportrenew();
+											data.commands.exportRenew();
 										}}>export .rnw</MenuBarButton
 									>
 								</li>
@@ -1053,27 +1053,42 @@
 							const reader = new FileReader();
 							reader.onload = function (event) {
 								new Promise((res) => {
-									const parser = new DOMParser();
-									const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
+									try {
+										const parser = new DOMParser();
+										const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
 
-									res(svgDoc);
+										var failed = doc.documentElement.nodeName.indexOf('parsererror') > -1;
+										if (failed) throw 'invalid svg';
+										res({ type: 'svg', svg: svgDoc });
+									} catch (e) {
+										res({ type: 'other', data: event.target.result });
+									}
 								})
-									.then((svgDoc) => {
-										return data.commands.uploadSvg(svgDoc).then((j) => {
-											dispatch('create_layer', {
-												base_layer_id: L.get('id', singleSelectedLayer.value),
-												pos: {
-													x: -svgDoc.documentElement.width.baseVal.value / 2 + pos.x,
-													y: -svgDoc.documentElement.height.baseVal.value / 2 + pos.y,
-													width: svgDoc.documentElement.width.baseVal.value,
-													height: svgDoc.documentElement.height.baseVal.value
-												},
-												image: j.url
-											}).then((l) => {
-												selectedLayers.value = [l.id];
-												cast('select', l.id);
+									.then((doc) => {
+										if (doc.type == 'svg') {
+											return data.commands.uploadSvg(doc.svg).then((j) => {
+												dispatch('create_layer', {
+													base_layer_id: L.get('id', singleSelectedLayer.value),
+													pos: {
+														x: -svgDoc.documentElement.width.baseVal.value / 2 + pos.x,
+														y: -svgDoc.documentElement.height.baseVal.value / 2 + pos.y,
+														width: svgDoc.documentElement.width.baseVal.value,
+														height: svgDoc.documentElement.height.baseVal.value
+													},
+													image: j.url
+												}).then((l) => {
+													selectedLayers.value = [l.id];
+													cast('select', l.id);
+												});
 											});
-										});
+										} else {
+											return cast('insert_file', {
+												content: doc.data,
+												file_name: file.name,
+												x: pos.x,
+												y: pos.y
+											});
+										}
 									})
 									.catch((e) => {
 										errors.value = ['Can not insert file'];

@@ -38,8 +38,13 @@
 				<fieldset>
 					<legend>Rename Project</legend>
 
-					<input type="text" name="project_name" value={project.value.name} />
-					<button type="submit" class="action">Rename Project</button>
+					<div class="short-form">
+						<label
+							><span>Name:</span>
+							<input id="project-name" type="text" name="project_name" value={project.value.name} />
+						</label>
+						<button type="submit" class="action">Rename Project</button>
+					</div>
 				</fieldset>
 			</form>
 
@@ -63,21 +68,23 @@
 						<tr>
 							<td><span class="role">{mem.role}</span></td>
 							<td width="100%">{mem.email}</td>
-							<td align="right"
-								><button
-									class="action remove"
-									onclick={(evt) => {
-										evt.preventDefault();
-										dispatch('remove_member', { member_id: mem.id });
-									}}>Remove from project</button
-								></td
-							>
+							<td align="right">
+								{#if mem.role != 'owner'}
+									<button
+										class="action remove"
+										onclick={(evt) => {
+											evt.preventDefault();
+											dispatch('remove_member', { member_id: mem.id });
+										}}>Remove from project</button
+									>
+								{/if}
+							</td>
 						</tr>
 					{/each}
 				</tbody>
 			</table>
 
-			<h3>Invite for Collaboration</h3>
+			<h3>Open Invitations</h3>
 			<table>
 				<thead>
 					<tr>
@@ -126,18 +133,20 @@
 				<fieldset>
 					<legend>Add Editor</legend>
 
-					<label>
-						Role:
-						<select name="role">
-							<option>reader</option>
-							<option>editor</option>
-						</select>
-					</label>
-					<label>
-						E-Mail:
-						<input name="email" type="email" required />
-					</label>
-					<button class="action">Invite</button>
+					<div class="short-form">
+						<label>
+							<span>Role:</span>
+							<select name="role">
+								<option>reader</option>
+								<option>editor</option>
+							</select>
+						</label>
+						<label>
+							<span>E-Mail:</span>
+							<input name="email" type="email" required />
+						</label>
+						<button class="action">Invite</button>
+					</div>
 				</fieldset>
 			</form>
 		{/snippet}
@@ -156,6 +165,7 @@
 		display: contents;
 	}
 	fieldset {
+		margin-top: 2em;
 		width: 100%;
 		max-width: 60em;
 	}
@@ -164,6 +174,9 @@
 		border-bottom: 1px solid gray;
 	}
 
+	td {
+		padding: 0.5ex;
+	}
 	.hero {
 		display: grid;
 		justify-content: center;
@@ -196,5 +209,40 @@
 		color: #fff;
 		padding: 4px;
 		border-radius: 2px;
+	}
+	fieldset {
+		border: 2px solid #eee;
+	}
+	legend {
+		background-color: #111;
+		color: #fff;
+		padding: 0.5ex 1ex;
+	}
+	.short-form {
+		display: flex;
+		justify-content: stretch;
+		align-items: stretch;
+		gap: 1ex;
+		flex-wrap: wrap;
+	}
+	.short-form label {
+		flex-grow: 1;
+		display: flex;
+		align-items: baseline;
+		gap: 1ex;
+	}
+	.short-form button,
+	.short-form select,
+	.short-form input {
+		align-self: stretch;
+		height: 100%;
+		box-sizing: border-box;
+	}
+	.short-form input {
+		align-self: stretch;
+		flex-grow: 1;
+	}
+	.short-form span {
+		align-self: center;
 	}
 </style>

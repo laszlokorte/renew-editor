@@ -51,9 +51,7 @@
 		</h2></a
 	>
 
-	<div
-		style="margin-right: auto;padding: 0 1em; display: flex; gap: 1ex; margin-left: 1em; border-left: 1px solid #555;"
-	>
+	<div class="nav-row">
 		{#if authState.isAuthenticated}
 			{#if projectId}
 				<a
@@ -147,17 +145,6 @@
 
 	.short-label {
 		display: none;
-	}
-	@media (max-width: 600px) {
-		.titel {
-			display: none;
-		}
-		.long-label {
-			display: none;
-		}
-		.short-label {
-			display: initial;
-		}
 	}
 	.app-bar {
 		display: flex;
@@ -262,5 +249,31 @@
 		display: block;
 		height: 1.2em;
 		color: #fffe;
+	}
+	.nav-row {
+		margin-right: auto;
+		padding: 0 1em;
+		display: flex;
+		gap: 1ex;
+		margin-left: 1em;
+		border-left: 1px solid #555;
+	}
+	@media (max-width: 600px) {
+		.nav-row {
+			margin-left: 0;
+		}
+		.titel {
+			display: none;
+		}
+		.long-label {
+			display: none;
+		}
+		.short-label {
+			display: initial;
+		}
+
+		.nav-button {
+			padding: 1ex 0.5ex;
+		}
 	}
 </style>
