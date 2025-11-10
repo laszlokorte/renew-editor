@@ -70,7 +70,10 @@
 			<LiveResource socket={data.live_socket} resource={inv}>
 				{#snippet children(invitations, _presence, { dispatch })}
 					{#each invitations.value.items as invitation}
-						<li class="invitation-list-item" style:background-image="url({base}/icon-project.svg)">
+						<li
+							class="invitation-list-item"
+							style:--background-image="url({base}/icon-project.svg)"
+						>
 							<span class="invitation-name" title="Project #{invitation.project_id}">
 								<strong>Invitation:</strong>
 								{invitation.project_name}
@@ -106,7 +109,7 @@
 				{/if}
 				<ul>
 					{#each projects.value.items as d (d.id)}
-						<li class="project-list-item" style:background-image="url({base}/icon-project.svg)">
+						<li class="project-list-item" style:--background-image="url({base}/icon-project.svg)">
 							{#if renamingId == d.id}
 								<div
 									onclick={() => {
@@ -116,7 +119,7 @@
 									style="background:#0005;position: absolute; left:0;right:0;bottom:0;top: 0;"
 								></div>
 								<form
-									style="display: contents; background: inherit;"
+									style="display: contents; "
 									onsubmit={(evt) => {
 										evt.preventDefault();
 										dispatch('rename_project', { id: d.id, name: renamingNewName }).then(() => {
@@ -438,7 +441,10 @@
 		grid-row: 1;
 		touch-action: pan-x pan-y;
 		padding-left: 5em;
-		background: inherit;
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
+		background-image: var(--background-image);
 	}
 
 	.project-list-input {
@@ -450,8 +456,13 @@
 		padding: 1em 2em;
 		border: none;
 		font: inherit;
+		-webkit-appearance: none;
+		appearance: none;
 		padding-left: 5em;
-		background: inherit;
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
+		background-image: var(--background-image);
 	}
 
 	.project-list-pop {
@@ -618,7 +629,7 @@
 		grid-row: 1;
 		touch-action: pan-x pan-y;
 		padding-left: 5em;
-		background: inherit;
+		background-image: var(--background-image);
 		color: #000;
 	}
 	.invitation-actions {

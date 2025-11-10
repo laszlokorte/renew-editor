@@ -159,7 +159,7 @@
 				{/if}
 				<ul>
 					{#each simulations.value.items as sim (sim.id)}
-						<li class="list-item" style:background-image="url({base}/icon-simulation.svg)">
+						<li class="list-item" style:--background-image="url({base}/icon-simulation.svg)">
 							<a
 								class="list-link"
 								href="{base}/simulations/{sim.id}/observer"
@@ -437,7 +437,10 @@
 		grid-column: 1 / span 3;
 		grid-row: 1;
 		touch-action: pan-x pan-y;
-		background: inherit;
+		background-image: var(--background-image);
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
 		padding-left: 5em;
 	}
 
@@ -450,8 +453,13 @@
 		padding: 1em 2em;
 		border: none;
 		font: inherit;
-		background: inherit;
+		background-image: var(--background-image);
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
 		padding-left: 5em;
+		-webkit-appearance: none;
+		appearance: none;
 	}
 
 	.list-pop {
@@ -459,7 +467,10 @@
 		grid-row: 1;
 		box-sizing: border-box;
 		margin-right: -1.5ex;
-		background: inherit;
+		background-image: var(--background-image);
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
 	}
 
 	.list-details {
@@ -477,6 +488,7 @@
 		-webkit-user-drag: none;
 		-webkit-user-modify: none;
 		-webkit-highlight: none;
+		background-color: white;
 	}
 
 	.list-actions {
@@ -494,6 +506,7 @@
 		-webkit-user-drag: none;
 		-webkit-user-modify: none;
 		-webkit-highlight: none;
+		background-color: white;
 	}
 
 	.list-pop-actions {
@@ -512,7 +525,7 @@
 		-webkit-highlight: none;
 	}
 
-	@media (max-width: 40em) {
+	@media (max-width: 50em) {
 		.list-actions {
 			grid-column: 1 / span 2;
 			grid-row: 2 / span 1;
@@ -521,6 +534,9 @@
 		.list-details {
 			grid-column: 3 / span 1;
 			grid-row: 2 / span 1;
+			white-space: wrap;
+			line-break: break;
+			width: 100%;
 		}
 
 		.list-link {

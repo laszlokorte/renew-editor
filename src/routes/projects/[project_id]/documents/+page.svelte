@@ -226,17 +226,17 @@
 				{/if}
 				<ul>
 					{#each documents.value.items as d (d.id)}
-						<li class="document-list-item" style:background-image="url({base}/icon-document.svg)">
+						<li class="document-list-item" style:--background-image="url({base}/icon-document.svg)">
 							{#if renamingId == d.id}
 								<div
 									onclick={() => {
 										renamingId = null;
 										renamingNewName = null;
 									}}
-									style="background:#0005;position: absolute; left:0;right:0;bottom:0;top: 0;"
+									style="background-color:#0005;position: absolute; left:0;right:0;bottom:0;top: 0;"
 								></div>
 								<form
-									style="display: contents; background: inherit;"
+									style="display: contents; "
 									onsubmit={(evt) => {
 										evt.preventDefault();
 										dispatch('rename_document', { id: d.id, name: renamingNewName }).then(() => {
@@ -573,7 +573,10 @@
 		grid-column: 1 / span 2;
 		grid-row: 1;
 		touch-action: pan-x pan-y;
-		background: inherit;
+		background-image: var(--background-image);
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
 		padding-left: 5em;
 	}
 
@@ -586,8 +589,13 @@
 		padding: 1em 2em;
 		border: none;
 		font: inherit;
-		background: inherit;
+		background-image: var(--background-image);
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
 		padding-left: 5em;
+		-webkit-appearance: none;
+		appearance: none;
 	}
 
 	.document-list-pop {
@@ -595,7 +603,10 @@
 		grid-row: 1;
 		box-sizing: border-box;
 		margin-right: -1.5ex;
-		background: inherit;
+		background-image: var(--background-image);
+		background-repeat: no-repeat;
+		background-position: 2em center;
+		background-size: 1.5em 1.5em;
 	}
 
 	.document-list-actions {

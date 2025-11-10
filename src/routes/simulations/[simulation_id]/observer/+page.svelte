@@ -921,36 +921,34 @@
 					</div>
 					<div class="sidebar right">
 						{#if doc.value}
-							<Minimap
-								visible={showMinimap}
-								{extension}
-								{frameBoxPath}
-								{rotationInverseTransform}
-								{cameraFocus}
-							>
-								<rect
-									x={doc.value.viewbox.x}
-									y={doc.value.viewbox.y}
-									width={doc.value.viewbox.width}
-									height={doc.value.viewbox.height}
-									fill="white"
-									opacity="0.8"
-								/>
+							<div class="minimap">
+								<Minimap
+									visible={showMinimap}
+									{extension}
+									{frameBoxPath}
+									{rotationInverseTransform}
+									{cameraFocus}
+								>
+									<rect
+										x={doc.value.viewbox.x}
+										y={doc.value.viewbox.y}
+										width={doc.value.viewbox.width}
+										height={doc.value.viewbox.height}
+										fill="white"
+										opacity="0.8"
+									/>
 
-								<use href="#full-document-{current_net_id}" opacity="0.8" />
+									<use href="#full-document-{current_net_id}" opacity="0.8" />
 
-								<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
-							</Minimap>
+									<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
+								</Minimap>
+							</div>
 						{/if}
 						{#if showInstances.value}
-							<div class="toolbar vertical">
+							<div class="toolbar vertical net-instance-panel">
 								<label>
 									Net Instances:
-									<select
-										bind:value={currentInstance.value}
-										size="10"
-										style="height: 12em; width: 100%;"
-									>
+									<select class="net-instances" bind:value={currentInstance.value} size="10">
 										{#each nets.value as nt}
 											{@const this_instances = view(
 												L.filter(R.pathEq(nt.id, ['links', 'shadow_net', 'id'])),
@@ -1204,9 +1202,11 @@
 		z-index: 100;
 		display: grid;
 		grid-template-columns:
-			[body-start] 0.5ex [top-start left-start] auto [left-end] 1fr[right-start] max(30vw)
+			[body-start] 0.5ex [top-start left-start bottom-start] auto [bottom-end left-end] 1fr[right-start] max(
+				30vw
+			)
 			[right-end top-end] 1em [body-end];
-		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start] 1fr auto [left-end right-end] 1em [body-end];
+		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start] 1fr [bottom-start] auto [bottom-end left-end right-end] 1em [body-end];
 		gap: 0.5em;
 		overflow: hidden;
 		width: 100vw;
@@ -1276,7 +1276,23 @@
 
 	.sidebar.right {
 		grid-area: right;
-		justify-self: stretch;
+	}
+
+	@media (max-width: 500px) {
+		.sidebar.right {
+			grid-area: right;
+			justify-self: stretch;
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			justify-content: end;
+		}
+
+		.minimap {
+			justify-self: start;
+			margin-bottom: auto;
+			max-height: 40vmin;
+		}
 	}
 
 	a {
@@ -1397,5 +1413,11 @@
 		to {
 			opacity: 0;
 		}
+	}
+	.net-instance-panel {
+	}
+	.net-instances {
+		height: 5em;
+		width: 100%;
 	}
 </style>

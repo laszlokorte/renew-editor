@@ -37,7 +37,7 @@
 		><h2 class="app-name">
 			<img style="grid-row: 1; grid-column: 1;" src="{base}/favicon.svg" alt="Renew" class="icon" />
 
-			<span style="grid-row: 1; grid-column: 2;">{appTitle}</span>
+			<span class="titel" style="grid-row: 1; grid-column: 2;">{appTitle}</span>
 
 			{#if connectionState.value === false}
 				<button
@@ -52,7 +52,7 @@
 	>
 
 	<div
-		style="margin-right: auto;padding: 0 1em; display: flex; gap: 1ex; margin-left: 2em; border-left: 1px solid #555;"
+		style="margin-right: auto;padding: 0 1em; display: flex; gap: 1ex; margin-left: 1em; border-left: 1px solid #555;"
 	>
 		{#if authState.isAuthenticated}
 			{#if projectId}
@@ -78,17 +78,20 @@
 				<a
 					href="{base}/projects/{projectId}/documents"
 					class={['nav-button', active == 'documents' && 'active']}
-					title="Documents List">Documents</a
+					title="Documents List"
+					><span class="long-label">Document</span><span class="short-label">/Docs</span></a
 				>
 				<a
 					href="{base}/projects/{projectId}/simulations"
 					class={['nav-button', active == 'simulations' && 'active']}
-					title="Simulations List">Simulations</a
+					title="Simulations List"
+					><span class="long-label">Simulations</span><span class="short-label">/Sims</span></a
 				>
 				<a
 					href="{base}/projects/{projectId}/settings"
 					class={['nav-button', active == 'settings' && 'active']}
-					title="Simulations List">Settings</a
+					title="Simulations List"
+					><span class="long-label">Settings</span><span class="short-label">/Ctrl</span></a
 				>
 			{:else}
 				<a
@@ -142,6 +145,20 @@
 		height: 1.5em;
 	}
 
+	.short-label {
+		display: none;
+	}
+	@media (max-width: 600px) {
+		.titel {
+			display: none;
+		}
+		.long-label {
+			display: none;
+		}
+		.short-label {
+			display: initial;
+		}
+	}
 	.app-bar {
 		display: flex;
 		flex-direction: row;
