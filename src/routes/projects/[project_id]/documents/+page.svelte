@@ -66,7 +66,9 @@
 
 	function onDragLeave(evt) {
 		evt.preventDefault();
-		dragging = false;
+		if (evt.target === evt.currentTarget) {
+			dragging = false;
+		}
 	}
 
 	function onDrop(evt) {
@@ -125,8 +127,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="full-page"
-	class:dragging={dragging && !uploadFormVisible}
+	class={['full-page', dragging && !uploadFormVisible && 'dragging']}
 	ondragenter={onDragEnter}
 	ondragover={onDragOver}
 	ondragleave={onDragLeave}
@@ -144,9 +145,11 @@
 		<h2>Upload Renew File</h2>
 
 		<label
-			class="drop-zone"
-			class:invitation={dragging}
-			class:ready={draggingZone}
+			class={{
+				'drop-zone': true,
+				invitation: dragging,
+				ready: draggingZone
+			}}
 			ondragenter={onDragEnterZone}
 			ondragover={onDragOverZone}
 			ondragleave={onDragLeaveZone}
@@ -187,7 +190,7 @@
 		</form>
 	</Modal>
 
-	<header class:offline={!online}>
+	<header class={{ offline: !online }}>
 		<div>
 			<a href="{base}/projects" title="Back">Back</a>
 
@@ -254,7 +257,7 @@
 											bind:value={renamingNewName}
 											autocomplete="off"
 											use:autofocusIf={{ focus: true, select: true }}
-											class="document-list-input"
+											class={{ 'document-list-input': true, warn: renamingOrigName !== d.name }}
 											type="text"
 											onkeydown={(evt) => {
 												if (evt.key === 'Escape') {
@@ -262,7 +265,6 @@
 													renamingNewName = null;
 												}
 											}}
-											class:warn={renamingOrigName !== d.name}
 										/>
 										<div class="document-list-pop-actions">
 											<button class="action-confirm" type="submit">Confirm</button>
@@ -355,6 +357,10 @@
 		pointer-events: none;
 	}
 
+	.full-page.dragging {
+		pointer-events: none;
+	}
+
 	.full-page.dragging::after {
 		content: 'Drop Here';
 		font-size: 3vw;
@@ -366,7 +372,8 @@
 		inset: 0;
 		border: 1vw solid #88ffaa;
 		background-color: #88ffaa33;
-		pointer-events: none;
+		pointer-events: all;
+		z-index: 10000;
 	}
 
 	.scrollable {

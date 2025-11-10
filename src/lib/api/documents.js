@@ -72,14 +72,14 @@ export default function (fetchFn, routes, token) {
 			return fetchJson(fetchFn, url, 'get', { Authorization: token });
 		},
 
-		importDocuments(files) {
+		importDocuments(project, files) {
 			let formData = new FormData();
 
 			for (let f of files) {
 				formData.append('files[]', f);
 			}
 
-			return fetchFn(routes.import_documents.href, {
+			return fetchFn(project.links.import_documents.href, {
 				headers: {
 					Authorization: token
 				},

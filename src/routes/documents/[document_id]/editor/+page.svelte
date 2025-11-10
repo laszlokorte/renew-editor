@@ -1052,28 +1052,26 @@
 						onDropFile={(file, pos) => {
 							const reader = new FileReader();
 							reader.onload = function (event) {
-								new Promise((res) => {
-									try {
-										const parser = new DOMParser();
-										const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
-
-										var failed = doc.documentElement.nodeName.indexOf('parsererror') > -1;
-										if (failed) throw 'invalid svg';
+								new Promise((res, reject) => {
+									const parser = new DOMParser();
+									const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
+									const isSvg = !svgDoc.querySelector('parsererror');
+									if (isSvg) {
 										res({ type: 'svg', svg: svgDoc });
-									} catch (e) {
+									} else {
 										res({ type: 'other', data: event.target.result });
 									}
 								})
 									.then((doc) => {
 										if (doc.type == 'svg') {
 											return data.commands.uploadSvg(doc.svg).then((j) => {
-												dispatch('create_layer', {
+												return dispatch('create_layer', {
 													base_layer_id: L.get('id', singleSelectedLayer.value),
 													pos: {
-														x: -svgDoc.documentElement.width.baseVal.value / 2 + pos.x,
-														y: -svgDoc.documentElement.height.baseVal.value / 2 + pos.y,
-														width: svgDoc.documentElement.width.baseVal.value,
-														height: svgDoc.documentElement.height.baseVal.value
+														x: -doc.svg.documentElement.width.baseVal.value / 2 + pos.x,
+														y: -doc.svg.documentElement.height.baseVal.value / 2 + pos.y,
+														width: doc.svg.documentElement.width.baseVal.value,
+														height: doc.svg.documentElement.height.baseVal.value
 													},
 													image: j.url
 												}).then((l) => {

@@ -34,7 +34,7 @@ function createCommands(api, project, fetchFn) {
 		},
 
 		importDocuments: (files) => {
-			return api.importDocuments(files);
+			return api.importDocuments(project, files);
 		}
 	};
 }
