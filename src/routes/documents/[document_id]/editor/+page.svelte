@@ -3582,10 +3582,10 @@
 									{/await}
 								</select>
 							</label>
-							{@render commonProps(L.valueOr('#70DB93'), L.valueOr('#000000'))}
+							{@render commonProps(L.valueOr('#70DB93'), L.valueOr('#000000'), L.valueOr(1))}
 						{/snippet}
 
-						{#snippet commonProps(defaultBackground, defaultStroke)}
+						{#snippet commonProps(defaultBackground, defaultStroke, defaultBorderWith)}
 							{@const backgroundColorValue = view(
 								['style', 'background_color', defaultBackground],
 								singleSelectedLayer
@@ -3810,7 +3810,7 @@
 											val: evt.currentTarget.value
 										})}
 									use:bindValue={view(
-										['style', 'border_width', L.valueOr('1')],
+										['style', 'border_width', defaultBorderWith],
 										singleSelectedLayer
 									)}
 								/>
@@ -4043,6 +4043,16 @@
 											class="pretty-checkbox-control"
 											type="radio"
 											value="left"
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'text',
+														attr: 'alignment',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
 											bind:group={alignmentValue.value}
 										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
 											><title>Left</title>
@@ -4081,6 +4091,16 @@
 											class="pretty-checkbox-control"
 											type="radio"
 											value="center"
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'text',
+														attr: 'alignment',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
 											bind:group={alignmentValue.value}
 										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
 											><title>Center</title>
@@ -4119,6 +4139,16 @@
 											class="pretty-checkbox-control"
 											type="radio"
 											value="right"
+											onchange={(evt) => {
+												if (evt.currentTarget.checked) {
+													cast('change_style', {
+														layer_id: singleSelectedLayer.value.id,
+														type: 'text',
+														attr: 'alignment',
+														val: evt.currentTarget.value
+													});
+												}
+											}}
 											bind:group={alignmentValue.value}
 										/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
 											><title>Right</title>
@@ -4154,7 +4184,11 @@
 								</div>
 							</div>
 
-							{@render commonProps(L.valueOr('transparent'), L.valueOr('transparent'))}
+							{@render commonProps(
+								L.valueOr('transparent'),
+								L.valueOr('transparent'),
+								L.valueOr(0)
+							)}
 						{/snippet}
 						<div
 							style="display: flex; gap: 1em; align-items: center; white-space: wrap; padding: 0 1ex;"
