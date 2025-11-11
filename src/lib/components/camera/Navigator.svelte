@@ -1,9 +1,8 @@
 <script>
 	import * as L from 'partial.lenses';
-	import { atom, view, read, update, viewCombined } from '$lib/reactivity/atom.svelte.js';
+	import { atom, view, update, viewCombined } from '$lib/reactivity/atom.svelte.js';
 	import { bindEvents } from './events';
 	import { constructLenses } from './live_lenses';
-	import { frameBoxLens } from './lenses';
 
 	import {
 		pivotZoomLens,
@@ -23,7 +22,6 @@
 	);
 
 	const liveLenses = constructLenses(svgElement, camera);
-	const frameBoxObject = read(frameBoxLens, camera);
 
 	const cameraFocus = view('focus', camera);
 

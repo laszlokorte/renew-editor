@@ -23,7 +23,7 @@
 {#if visible.value}
 	<svg
 		tabindex="-1"
-		class:active={isActive.value}
+		class={{ active: isActive.value }}
 		viewBox={viewBox.value}
 		role="presentation"
 		preserveAspectRatio="xMidYMid meet"
@@ -169,18 +169,5 @@
 		fill: none;
 		vector-effect: non-scaling-stroke;
 		stroke-width: 1px;
-	}
-
-	.striked-label-checkbox {
-		display: none;
-	}
-
-	.striked-label {
-		text-decoration: line-through;
-		cursor: pointer;
-	}
-
-	input:checked + .striked-label {
-		text-decoration: none;
 	}
 </style>

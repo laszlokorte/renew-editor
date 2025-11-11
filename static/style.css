@@ -2,3 +2,8 @@ a:not([class]),
 a:not([class]):visited {
 	color: #0077dd;
 }
+body {
+	margin: 0;
+	padding: 0;
+	font-family: monospace;
+}

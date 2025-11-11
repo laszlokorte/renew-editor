@@ -1,34 +1,38 @@
 <script>
-	import {
-		bindScroll,
-		bindSize,
-	} from "$lib/reactivity/bindings.svelte.js";
-	import {
-		atom,
-	} from "$lib/reactivity/atom.svelte.js";
+	import { bindScroll, bindSize } from '$lib/reactivity/bindings.svelte.js';
+	import { atom } from '$lib/reactivity/atom.svelte.js';
 
 	const {
 		children,
-		center=atom(false),
+		center = atom(false),
 		scrollPosition = atom({ x: 0, y: 0 }),
 		contentSize = atom({ x: 0, y: 0 }),
 		scrollWindowSize = atom({ x: 0, y: 0 }),
 		extraScrollPadding = atom(false),
-		allowOverscroll = atom(true),
+		allowOverscroll = atom(true)
 	} = $props();
 
-	import viewModel from './viewmodel.js'
+	import viewModel from './viewmodel.js';
 
-	const model = viewModel(center, scrollPosition, contentSize, scrollWindowSize, extraScrollPadding, allowOverscroll)
+	const model = viewModel(
+		center,
+		scrollPosition,
+		contentSize,
+		scrollWindowSize,
+		extraScrollPadding,
+		allowOverscroll
+	);
 
-	const modelValues = $derived(model.values)
-	const bindings = model.bindings
+	const modelValues = $derived(model.values);
+	const bindings = model.bindings;
 </script>
 
 <div
-	class="scroller"
-	class:overscroll-enabled={modelValues.allowOverscroll}
-	class:overscroll-disabled={!modelValues.allowOverscroll}
+	class={{
+		scroller: true,
+		'overscroll-enabled': modelValues.allowOverscroll,
+		'overscroll-disabled': !modelValues.allowOverscroll
+	}}
 	use:bindScroll={bindings.adjustedScrollPosition}
 	style:--scroll-total-x={modelValues.paddedContentSize.x}
 	style:--scroll-total-y={modelValues.paddedContentSize.y}
@@ -40,6 +44,7 @@
 	</div>
 	<div class="scroller-measure" use:bindSize={bindings.scrollWindowSize}></div>
 </div>
+
 <style>
 	.scroller {
 		contain: strict;
@@ -54,20 +59,20 @@
 		touch-action: manipulation;
 		scroll-behavior: smooth;
 		-webkit-touch-callout: none;
-        -webkit-user-callout: none;
-        -webkit-user-select: none;
-        -webkit-user-drag: none;
-        -webkit-user-modify: none;
-        -webkit-highlight: none;
+		-webkit-user-callout: none;
+		-webkit-user-select: none;
+		-webkit-user-drag: none;
+		-webkit-user-modify: none;
+		-webkit-highlight: none;
 		user-select: none;
 	}
 
 	.overscroll-enabled {
-    	overscroll-behavior: auto;
+		overscroll-behavior: auto;
 	}
 
 	.overscroll-disabled {
-    	overscroll-behavior: none;
+		overscroll-behavior: none;
 	}
 
 	.scroller > * {
@@ -89,7 +94,7 @@
 
 	.scroller::after {
 		display: block;
-		content: " ";
+		content: ' ';
 		height: calc(var(--scroll-total-y, 1) * 1px + 1px);
 		width: calc(var(--scroll-total-x, 1) * 1px + 1px);
 		position: absolute;

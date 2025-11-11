@@ -38,7 +38,7 @@
 		connectionState={data.connectionState}
 	/>
 
-	<header class:offline={!online}>
+	<header class={{ offline: !online }}>
 		<div>
 			<a href="{base}/" title="Back">Back</a>
 
@@ -111,13 +111,15 @@
 					{#each projects.value.items as d (d.id)}
 						<li class="project-list-item" style:--background-image="url({base}/icon-project.svg)">
 							{#if renamingId == d.id}
-								<div
+								<button
 									onclick={() => {
 										renamingId = null;
 										renamingNewName = null;
 									}}
-									style="background:#0005;position: absolute; left:0;right:0;bottom:0;top: 0;"
-								></div>
+									class="backdrop"
+								>
+									Cancel
+								</button>
 								<form
 									style="display: contents; "
 									onsubmit={(evt) => {
@@ -137,7 +139,7 @@
 											bind:value={renamingNewName}
 											autocomplete="off"
 											use:autofocusIf={{ focus: true, select: true }}
-											class="project-list-input"
+											class={{ 'project-list-input': true, warn: renamingOrigName !== d.name }}
 											type="text"
 											onkeydown={(evt) => {
 												if (evt.key === 'Escape') {
@@ -145,7 +147,6 @@
 													renamingNewName = null;
 												}
 											}}
-											class:warn={renamingOrigName !== d.name}
 										/>
 										<div class="project-list-pop-actions">
 											<button class="action-confirm" type="submit">Confirm</button>
@@ -335,93 +336,10 @@
 		outline: 2px solid #00aaff;
 	}
 
-	dl button {
-		border: 0;
-		background-color: #333;
-		color: #fff;
-		font: inherit;
-		padding: 1ex;
-		cursor: pointer;
-	}
-
-	.upload-form {
-		margin: 0;
-	}
-
 	.help {
 		text-decoration: underline;
 		text-decoration-style: dotted;
 		cursor: help;
-	}
-
-	.drop-zone {
-		border: 0.25ex dashed currentColor;
-		display: grid;
-		place-items: center;
-		place-content: center;
-		align-self: stretch;
-		justify-self: stretch;
-		padding: 1em;
-		font-size: 1.5em;
-		color: #aaa;
-	}
-
-	.drop-zone input {
-		display: none;
-	}
-
-	.drop-zone.invitation {
-		color: #ffcc00;
-		background-color: #fffeed;
-	}
-
-	.drop-zone.invitation * {
-		pointer-events: none;
-	}
-
-	.drop-zone.ready {
-		color: #00bb55;
-		background-color: #efe;
-	}
-
-	.labeled-ruler {
-		display: flex;
-		flex-direction: row;
-		justify-items: stretch;
-		align-items: center;
-		gap: 1em;
-		font-style: italic;
-	}
-
-	.labeled-ruler::before {
-		content: ' ';
-		border-bottom: 1px solid #ccc;
-		height: 0;
-		flex-grow: 1;
-	}
-	.labeled-ruler::after {
-		content: ' ';
-		border-bottom: 1px solid #ccc;
-		height: 0;
-		flex-grow: 1;
-	}
-
-	.file-selector {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-direction: row;
-		gap: 1em;
-		padding: 1em;
-		margin: auto;
-	}
-
-	.center {
-		text-align: center;
-	}
-
-	.upload-button {
-		background-color: #333;
 	}
 
 	.project-list-item {
@@ -646,5 +564,23 @@
 		-webkit-user-drag: none;
 		-webkit-user-modify: none;
 		-webkit-highlight: none;
+	}
+	.backdrop {
+		background: #0005;
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		top: 0;
+		color: transparent;
+		border: none;
+		appearance: none;
+		opacity: 1;
+	}
+	.backdrop:active,
+	.backdrop:hover,
+	.backdrop:focus {
+		background-color: #0005 !important;
+		opacity: 1;
 	}
 </style>

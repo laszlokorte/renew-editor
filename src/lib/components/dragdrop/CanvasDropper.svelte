@@ -83,20 +83,17 @@
 </script>
 
 <div
-	class="drop-zone"
+	class={{ 'drop-zone': true, active: dragging.value > 0 }}
 	role="application"
-	pointer-events="all"
 	ondragover={onDragOver}
 	ondragenter={onDragEnter}
 	ondragleave={onDragLeave}
 	ondrop={onDragDrop}
-	class:active={dragging.value > 0}
 	bind:this={domElement.value}
 >
 	{@render children()}
 	<div
-		class="blocker"
-		class:active={dragging.value > 0}
+		class={{ blocker: true, active: dragging.value > 0 }}
 		ondragenter={onDragEnter}
 		ondragleave={onDragLeave}
 		role="application"

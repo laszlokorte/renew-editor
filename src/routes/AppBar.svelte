@@ -29,9 +29,11 @@
 <SplashScreen icon="{base}/favicon.svg" color="white" />
 
 <div
-	class="app-bar"
-	class:offline={connectionState.value === false}
-	class:unknown={connectionState.value === undefined}
+	class={{
+		'app-bar': true,
+		offline: connectionState.value === false,
+		unknown: connectionState.value === undefined
+	}}
 >
 	<a href="{base}/"
 		><h2 class="app-name">
@@ -66,6 +68,7 @@
 						fill="currentColor"
 						preserveAspectRatio="xMidYMid meet"
 					>
+						<title>Project overview</title>
 						<path
 							d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"
 						/><path
@@ -104,6 +107,7 @@
 						fill="currentColor"
 						preserveAspectRatio="xMidYMid meet"
 					>
+						<title>Project Overview</title>
 						<path
 							d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"
 						/><path
@@ -247,7 +251,8 @@
 
 	.nav-icon {
 		display: block;
-		height: 1.2em;
+		height: 1.1em;
+		margin: 0.2ex 0;
 		color: #fffe;
 	}
 	.nav-row {

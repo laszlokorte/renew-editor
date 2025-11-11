@@ -17,8 +17,7 @@
 
 <path
 	d={frameBoxPath.value}
-	class="pan-surface"
-	class:grabbing={isActive.value}
+	class={{ 'pan-surface': true, grabbing: isActive.value }}
 	pointer-events="all"
 	fill="none"
 	role="button"

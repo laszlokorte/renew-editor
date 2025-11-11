@@ -266,23 +266,20 @@
 			fill="none"
 			stroke="black"
 			d={newGuideRayPathEdge.value}
-			class="spacer-edge"
-			class:inversed={inversed.value}
+			class={{ 'spacer-edge': true, inversed: inversed.value }}
 			pointer-events="none"
 		/>
 		<path
 			d={guidePath.value + arrowTip.value}
 			fill="none"
-			class="spacer-arrow"
-			class:inversed={inversed.value}
+			class={{ 'spacer-arrow': true, inversed: inversed.value }}
 			pointer-events="none"
 		/>
 	{:else}
 		<path
 			d={guidePath.value}
 			fill="none"
-			class="guide-handle"
-			class:valid={spacerValid.value}
+			class={{ 'guide-handle': true, valid: spacerValid.value }}
 			pointer-events="none"
 		/>
 	{/if}
@@ -293,15 +290,6 @@
 		stroke-width: 0;
 		cursor: default;
 		outline: none;
-	}
-
-	.spacer-area {
-		fill: #fffa;
-		stroke: none;
-	}
-	.spacer-area.inversed {
-		fill: #feea;
-		stroke: none;
 	}
 
 	.spacer-edge {

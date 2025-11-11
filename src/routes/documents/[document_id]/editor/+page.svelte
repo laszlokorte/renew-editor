@@ -50,6 +50,7 @@
 	import * as Geo from '$lib/math/geometry';
 	import MenuBarButton from '$lib/components/menubar/MenuBarButton.svelte';
 
+	import { colorNameToHex } from '$lib/utils';
 	import {
 		frameBoxLens,
 		panMovementLens,
@@ -61,6 +62,12 @@
 
 	const { data } = $props();
 
+	export const forceHex = L.reread((v) => {
+		if (v === 'transparent') {
+			return '#000000';
+		}
+		return colorNameToHex(v);
+	});
 	const logLens = (base) =>
 		L.lens(
 			(x) => Math.log(x) / Math.log(base),
@@ -485,7 +492,7 @@
 							/>
 						</dd>
 						<dt>Document Kind</dt>
-						<dd style="display: grid; gap: 1ex; grid-template-columns: 1fr 3fr;">
+						<dd style="display: grid; gap: 1ex; grid-auto-rows: 1fr 1fr;">
 							<select name="kind" class="form-field" bind:value={predefinedKind.value}>
 								<option value="">Other</option>
 								{#each drawingKinds as dk}
@@ -494,17 +501,14 @@
 							</select>
 							<input
 								name="kind"
-								class="form-field"
+								class={{ 'form-field': true, hidden: predefinedKind.value.length > 0 }}
 								style="width: 100%; box-sizing: border-box;"
-								class:hidden={predefinedKind.value.length > 0}
 								type="text"
 								bind:value={transientKind.value}
 							/>
 						</dd>
 						<dt>Syntax</dt>
-						<dd
-							style="display: grid; gap: 1ex; grid-template-columns: 1fr 3fr; align-items: baseline;"
-						>
+						<dd style="display: grid; gap: 1ex; grid-template-columns: 1fr; align-items: baseline;">
 							{#await data.syntaxes}
 								loading
 							{:then syntaxes}
@@ -895,7 +899,7 @@
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
 							Simulate
-							<ul class="menu-bar-menu" class:open={startingSimulation}>
+							<ul class={{ 'menu-bar-menu': true, open: startingSimulation }}>
 								{#await data.formalisms then formalisms}
 									<li class="menu-bar-menu-item">
 										<label class="pretty-select" style="width: 100%; max-width: none">
@@ -930,10 +934,10 @@
 									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								{:catch e}
 									<li class="menu-bar-menu-item">
-										<label class="pretty-select" style="width: 100%; max-width: none">
+										<span class="pretty-select" style="width: 100%; max-width: none">
 											<span class="pretty-select-label">Formalism</span>
 											<span class="pretty-select-value">Error loading formalisms</span>
-										</label>
+										</span>
 									</li>
 
 									<li class="menu-bar-menu-item">
@@ -2908,8 +2912,7 @@
 						<div class="toolbar-body">
 							{#each tools as tool (tool.id)}
 								<label
-									class="tool-selector"
-									class:active={activeTool.value === tool.id}
+									class={{ 'tool-selector': true, active: activeTool.value == tool.id }}
 									ondblclick={(evt) => {
 										evt.preventDefault();
 										tool.reset?.(cameraScroller.value, cameraFocus, extension.value);
@@ -2971,6 +2974,7 @@
 
 								<input
 									type="color"
+									alpha
 									class="pretty-color-control"
 									onchange={(evt) =>
 										cast('change_style', {
@@ -2979,7 +2983,7 @@
 											attr: 'stroke_color',
 											val: evt.currentTarget.value
 										})}
-									use:bindValue={strokeColor}
+									use:bindValue={view(forceHex, strokeColor)}
 								/>
 							</label>
 
@@ -3476,6 +3480,7 @@
 
 									<input
 										type="color"
+										alpha
 										class="pretty-color-control"
 										onchange={(evt) =>
 											cast('change_style', {
@@ -3484,7 +3489,7 @@
 												attr: 'background_color',
 												val: evt.currentTarget.value
 											})}
-										use:bindValue={backgroundColorValue}
+										use:bindValue={view(forceHex, backgroundColorValue)}
 									/>
 									<svg
 										preserveAspectRatio="xMinYMid meet"
@@ -3596,6 +3601,7 @@
 
 									<input
 										type="color"
+										alpha
 										class="pretty-color-control"
 										onchange={(evt) =>
 											cast('change_style', {
@@ -3604,7 +3610,7 @@
 												attr: 'background_color',
 												val: evt.currentTarget.value
 											})}
-										use:bindValue={backgroundColorValue}
+										use:bindValue={view(forceHex, backgroundColorValue)}
 									/>
 									<svg
 										preserveAspectRatio="xMinYMid meet"
@@ -3666,6 +3672,7 @@
 
 									<input
 										type="color"
+										alpha
 										class="pretty-color-control"
 										onchange={(evt) =>
 											cast('change_style', {
@@ -3674,7 +3681,7 @@
 												attr: 'border_color',
 												val: evt.currentTarget.value
 											})}
-										use:bindValue={borderColorValue}
+										use:bindValue={view(forceHex, borderColorValue)}
 									/>
 									<svg
 										preserveAspectRatio="xMinYMid meet"
@@ -4022,6 +4029,7 @@
 
 								<input
 									type="color"
+									alpha
 									class="pretty-color-control"
 									onchange={(evt) =>
 										cast('change_style', {
@@ -4030,7 +4038,7 @@
 											attr: 'text_color',
 											val: evt.currentTarget.value
 										})}
-									use:bindValue={textColor}
+									use:bindValue={view(forceHex, textColor)}
 								/>
 							</label>
 							{@const alignmentValue = view(['text', 'style', 'alignment'], singleSelectedLayer)}
@@ -4250,7 +4258,7 @@
 
 						<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
 					</Minimap>
-					<div class="toolbar vertical" class:hidden={!showHierarchy.value}>
+					<div class={{ toolbar: true, vertical: true, hidden: !showHierarchy.value }}>
 						Hierarchy
 						<hr />
 						<!-- <input style="" type="search" name="" placeholder="search" /> -->
@@ -4728,8 +4736,9 @@
 											}}
 										>
 											<svg
-												class:droppable={!item.data.content.hyperlink ||
-													singleSelectedIsBoxOrEdge.value}
+												class={{
+													droppable: !item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value
+												}}
 												style:opacity={!item.data.content.hyperlink ||
 												singleSelectedIsBoxOrEdge.value
 													? 1
@@ -4939,12 +4948,6 @@
 	}
 
 	.menu-bar:focus-within .menu-bar-item:hover {
-		background: #fff;
-		color: #000;
-		box-shadow: 0 -1px 4px -1px #0006;
-	}
-
-	.menu-bar-menu:has(.menu-bar-menu:focus) {
 		background: #fff;
 		color: #000;
 		box-shadow: 0 -1px 4px -1px #0006;

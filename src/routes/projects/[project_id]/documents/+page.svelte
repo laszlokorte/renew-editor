@@ -231,13 +231,13 @@
 					{#each documents.value.items as d (d.id)}
 						<li class="document-list-item" style:--background-image="url({base}/icon-document.svg)">
 							{#if renamingId == d.id}
-								<div
+								<button
 									onclick={() => {
 										renamingId = null;
 										renamingNewName = null;
 									}}
-									style="background-color:#0005;position: absolute; left:0;right:0;bottom:0;top: 0;"
-								></div>
+									class="backdrop">Cancel</button
+								>
 								<form
 									style="display: contents; "
 									onsubmit={(evt) => {
@@ -473,15 +473,6 @@
 
 	button:focus-visible {
 		outline: 2px solid #00aaff;
-	}
-
-	dl button {
-		border: 0;
-		background-color: #333;
-		color: #fff;
-		font: inherit;
-		padding: 1ex;
-		cursor: pointer;
 	}
 
 	.upload-form {
@@ -752,5 +743,23 @@
 		height: 1em;
 		vertical-align: middle;
 		opacity: 0.5;
+	}
+	.backdrop {
+		background: #0005;
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		top: 0;
+		color: transparent;
+		border: none;
+		appearance: none;
+		opacity: 1;
+	}
+	.backdrop:active,
+	.backdrop:hover,
+	.backdrop:focus {
+		background-color: #0005 !important;
+		opacity: 1;
 	}
 </style>

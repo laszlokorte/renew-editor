@@ -341,7 +341,7 @@
 	fill="none"
 	role="button"
 	tabindex="-1"
-	class:dragging={dragging.value}
+	class={{ dragging: dragging.value }}
 	onclick={(evt) => {
 		evt.stopPropagation();
 	}}
@@ -730,9 +730,8 @@
 						cx={currentDraftValue.draftBackHandle.x}
 						cy={currentDraftValue.draftBackHandle.y}
 						r={10 * cameraScaleValue}
-						class="detach"
+						class={{ detach: true, active: currentDraftValue.isDetached }}
 						pointer-events="all"
-						class:active={currentDraftValue.isDetached}
 					/>
 					<circle
 						cx={currentDraftValue.draftBackHandle.x}

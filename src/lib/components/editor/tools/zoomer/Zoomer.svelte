@@ -104,8 +104,7 @@
 
 <path
 	d={frameBoxPath.value}
-	class="rotate-surface"
-	class:zooming={isActive.value}
+	class={{ 'rotate-surface': true, zooming: isActive.value }}
 	pointer-events="all"
 	fill="none"
 	role="button"

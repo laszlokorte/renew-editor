@@ -93,8 +93,7 @@
 </script>
 
 <g
-	class="edge-container"
-	class:active={isActive.value}
+	class={{ 'edge-container': true, active: isActive.value }}
 	role="button"
 	tabindex="-1"
 	onclick={(evt) => {
@@ -215,8 +214,7 @@
 		d={frameBoxPath.value}
 		pointer-events="all"
 		fill="none"
-		class="edge-surface"
-		class:active={isActive.value || preventNextClick.value}
+		class={{ 'edge-surface': true, active: isActive.value || preventNextClick }}
 	/>
 
 	<g transform={rotationTransform.value} pointer-events="none">
@@ -224,31 +222,34 @@
 			{#if !draftSourceId.value || validEdge(draftSourceId.value, v.id)}
 				<circle
 					data-idx={JSON.stringify(v.id)}
-					class="socket-outer"
 					cx={v.x}
 					cy={v.y}
 					pointer-events="all"
 					r={snapRadiusScaled.value}
-					class:active-source={draftSourceId.value === v.id}
-					class:active-target={draftTargetId.value === v.id}
+					class={{
+						'socket-outer': true,
+						'active-source': draftSourceId.value === v.id,
+						'active-target': draftTargetId.value === v.id
+					}}
 				></circle>
 				<circle
 					data-idx={JSON.stringify(v.id)}
-					class="socket-center"
+					class={{
+						'socket-center': true,
+						'active-source': draftSourceId.value === v.id,
+						'active-target': draftTargetId.value === v.id
+					}}
 					cx={v.x}
 					cy={v.y}
 					pointer-events="all"
 					r={snapRadiusCenterScaled.value}
-					class:active-source={draftSourceId.value === v.id}
-					class:active-target={draftTargetId.value === v.id}
 				></circle>
 			{/if}
 		{/each}
 
 		{#if draftSourcePosition.value && draftTargetSnappedPosition.value}
 			<path
-				class:valid={validConnection.value}
-				class="edge"
+				class={{ edge: true, valid: validConnection.value }}
 				stroke="black"
 				pointer-events="none"
 				d="M{draftSourcePosition.value.x} {draftSourcePosition.value

@@ -716,12 +716,11 @@
 																<text
 																	{...pos.value}
 																	text-anchor="middle"
-																	class="place-tokens"
+																	class={{ 'place-tokens': true, tokenCount: !expanded.value }}
 																	onclick={(evt) => {
 																		evt.preventDefault();
 																		update((x) => !x, expanded);
 																	}}
-																	class:tokenCount={!expanded.value}
 																>
 																	{#each tokens as token, ti (token.id)}
 																		{#if ti > 0}
@@ -730,8 +729,11 @@
 
 																		{#if R.match(/^\w+\[\d+\]$/, token.value).length}
 																			<tspan
+																				role="button"
 																				cursor="pointer"
+																				tabindex="-1"
 																				text-decoration="underline"
+																				onkeydown={(evt) => evt.currentTarget.click()}
 																				onclick={(evt) => {
 																					evt.preventDefault();
 
@@ -795,12 +797,11 @@
 																<text
 																	{...pos.value}
 																	text-anchor="middle"
-																	class="place-tokens"
+																	class={{ 'place-tokens': true, tokenCount: !expanded.value }}
 																	onclick={(evt) => {
 																		evt.preventDefault();
 																		update((x) => !x, expanded);
 																	}}
-																	class:tokenCount={!expanded.value}
 																>
 																	{tokens.length || 0}
 																</text>
@@ -852,8 +853,8 @@
 																			{#each tokens as t}
 																				{#if R.match(/^\w+\[\d+\]$/, t.value).length}
 																					<li>
-																						<u
-																							style="cursor: pointer;"
+																						<button
+																							style="cursor: pointer;text-decoration: underline;"
 																							onclick={(evt) => {
 																								evt.preventDefault();
 
@@ -865,7 +866,7 @@
 																									],
 																									simulation.value
 																								);
-																							}}>{t.value}</u
+																							}}>{t.value}</button
 																						>;
 																					</li>
 																				{:else}
@@ -1415,6 +1416,8 @@
 		}
 	}
 	.net-instance-panel {
+		width: 100%;
+		box-sizing: border-box;
 	}
 	.net-instances {
 		height: 5em;

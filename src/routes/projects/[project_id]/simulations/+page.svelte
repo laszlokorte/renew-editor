@@ -266,10 +266,6 @@
 		padding: 1ex 1em 1ex 1.5em;
 	}
 
-	header.offline {
-		background-color: #70030d;
-	}
-
 	ul {
 		list-style: none;
 		margin: 0;
@@ -328,97 +324,12 @@
 		gap: 1ex;
 	}
 
-	.button-group-text {
-		padding: 0 1em;
-	}
-
 	button:focus-visible {
 		outline: 2px solid #00aaff;
 	}
 
-	dl button {
-		border: 0;
-		background-color: #333;
-		color: #fff;
-		font: inherit;
-		padding: 1ex;
-		cursor: pointer;
-	}
-
 	.upload-form {
 		margin: 0;
-	}
-
-	.help {
-		text-decoration: underline;
-		text-decoration-style: dotted;
-		cursor: help;
-	}
-
-	.drop-zone {
-		border: 0.25ex dashed currentColor;
-		display: grid;
-		place-items: center;
-		place-content: center;
-		align-self: stretch;
-		justify-self: stretch;
-		padding: 1em;
-		font-size: 1.5em;
-		color: #aaa;
-	}
-
-	.drop-zone input {
-		display: none;
-	}
-
-	.drop-zone.invitation {
-		color: #ffcc00;
-		background-color: #fffeed;
-	}
-
-	.drop-zone.ready {
-		color: #00bb55;
-		background-color: #efe;
-	}
-
-	.labeled-ruler {
-		display: flex;
-		flex-direction: row;
-		justify-items: stretch;
-		align-items: center;
-		gap: 1em;
-		font-style: italic;
-	}
-
-	.labeled-ruler::before {
-		content: ' ';
-		border-bottom: 1px solid #ccc;
-		height: 0;
-		flex-grow: 1;
-	}
-	.labeled-ruler::after {
-		content: ' ';
-		border-bottom: 1px solid #ccc;
-		height: 0;
-		flex-grow: 1;
-	}
-
-	.file-selector {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-direction: row;
-		gap: 1em;
-		padding: 1em;
-		margin: auto;
-	}
-
-	.center {
-		text-align: center;
-	}
-
-	.upload-button {
-		background-color: #333;
 	}
 
 	.list-item {
@@ -442,35 +353,6 @@
 		background-position: 2em center;
 		background-size: 1.5em 1.5em;
 		padding-left: 5em;
-	}
-
-	.list-input {
-		grid-column: 1 / span 1;
-		grid-row: 1;
-		box-sizing: border-box;
-		width: 100%;
-		height: 100%;
-		padding: 1em 2em;
-		border: none;
-		font: inherit;
-		background-image: var(--background-image);
-		background-repeat: no-repeat;
-		background-position: 2em center;
-		background-size: 1.5em 1.5em;
-		padding-left: 5em;
-		-webkit-appearance: none;
-		appearance: none;
-	}
-
-	.list-pop {
-		grid-column: 1 / span 1;
-		grid-row: 1;
-		box-sizing: border-box;
-		margin-right: -1.5ex;
-		background-image: var(--background-image);
-		background-repeat: no-repeat;
-		background-position: 2em center;
-		background-size: 1.5em 1.5em;
 	}
 
 	.list-details {
@@ -509,22 +391,6 @@
 		background-color: white;
 	}
 
-	.list-pop-actions {
-		grid-column: 2 / span 1;
-		grid-row: 1;
-		padding: 1ex;
-		user-select: none;
-		touch-action: pan-x pan-y;
-		-webkit-user-select: none;
-
-		-webkit-touch-callout: none;
-		-webkit-user-callout: none;
-		-webkit-user-select: none;
-		-webkit-user-drag: none;
-		-webkit-user-modify: none;
-		-webkit-highlight: none;
-	}
-
 	@media (max-width: 50em) {
 		.list-actions {
 			grid-column: 1 / span 2;
@@ -558,19 +424,6 @@
 	.action-delete:not(:disabled):active {
 		background-color: #a22;
 		color: #fff;
-	}
-
-	.action-cancel {
-		background: transparent;
-		color: #900;
-	}
-	@media (pointer: fine) {
-		.action-cancel:not(:disabled):hover {
-			background-color: #fdd;
-		}
-		.action-cancel:not(:disabled):active {
-			background-color: #faa;
-		}
 	}
 
 	.action-confirm {
@@ -630,9 +483,6 @@
 		}
 	}
 
-	.warn {
-		outline: 3px solid orange;
-	}
 	.icon {
 		width: 1em;
 		height: 1em;

@@ -1,61 +1,60 @@
-import * as R from "ramda";
-import {tick, untrack} from "svelte";
-import {enableDragDropTouch} from '../io/drag-drop-touch'
+import * as R from 'ramda';
+import { tick, untrack } from 'svelte';
+import { enableDragDropTouch } from '../io/drag-drop-touch';
 
 export function throttled(fn) {
 	let ticking = false;
 
 	return (...args) => {
 		if (!ticking) {
-		    window.requestAnimationFrame(() => {
-		      fn(...args);
-		      ticking = false;
-		    });
+			window.requestAnimationFrame(() => {
+				fn(...args);
+				ticking = false;
+			});
 
-		    ticking = true;
+			ticking = true;
 		}
-	}
+	};
 }
 
 export function bindSize(node, someAtom) {
 	const resizeObserver = new ResizeObserver((entries) => {
-	  for (const entry of entries) {
-	    if (entry.borderBoxSize) {
-	    	someAtom.value = {
-	    		x: entry.borderBoxSize[0].inlineSize,
-	    		y: entry.borderBoxSize[0].blockSize,
-	    	}
-	    } else {
-			someAtom.value = {
-				x: entry.contentRect.width,
-				y: entry.contentRect.height,
+		for (const entry of entries) {
+			if (entry.borderBoxSize) {
+				someAtom.value = {
+					x: entry.borderBoxSize[0].inlineSize,
+					y: entry.borderBoxSize[0].blockSize
+				};
+			} else {
+				someAtom.value = {
+					x: entry.contentRect.width,
+					y: entry.contentRect.height
+				};
 			}
-	    }
-	  }
+		}
 	});
 
-	resizeObserver.observe(node)
+	resizeObserver.observe(node);
 
-	return () => {
-		resizeObserver.disconnect()
+	return {
+		destroy() {
+			resizeObserver.disconnect();
+		}
 	};
 }
 
-
 export function bindScroll(node, someAtom) {
-	 const onScrollThrottled = throttled(function onscroll(e) {
+	const onScrollThrottled = throttled(function onscroll(e) {
+		const newValue = someAtom.value;
+		const nodeScrollLeft = node.scrollLeft;
+		const nodeScrollTop = node.scrollTop;
 
-	 	const newValue = someAtom.value
-		const nodeScrollLeft = node.scrollLeft
-		const nodeScrollTop = node.scrollTop
+		if (newValue.x !== nodeScrollLeft || newValue.y !== nodeScrollTop) {
+			const leftMax = node.scrollLeftMax ?? node.scrollWidth - node.offsetWidth;
+			const topMax = node.scrollTopMax ?? node.scrollHeight - node.offsetHeight;
 
-	 	if((newValue.x !== nodeScrollLeft || newValue.y !== nodeScrollTop)) {
-
-	 		const leftMax = node.scrollLeftMax ?? (node.scrollWidth - node.offsetWidth)
-	 		const topMax =  node.scrollTopMax ?? (node.scrollHeight - node.offsetHeight)
-
-			const scrollMaxX = Math.max(0, leftMax)
-			const scrollMaxY = Math.max(0, topMax)
+			const scrollMaxX = Math.max(0, leftMax);
+			const scrollMaxY = Math.max(0, topMax);
 
 			someAtom.value = {
 				x: nodeScrollLeft,
@@ -63,114 +62,116 @@ export function bindScroll(node, someAtom) {
 				atMaxX: nodeScrollLeft >= scrollMaxX,
 				atMinX: nodeScrollLeft <= 0,
 				atMaxY: nodeScrollTop >= scrollMaxY,
-				atMinY: nodeScrollTop <= 0,
-			}
-	 	}
-	})
-
+				atMinY: nodeScrollTop <= 0
+			};
+		}
+	});
 
 	$effect.pre(() => {
-		const newPos = someAtom.value
+		const newPos = someAtom.value;
 		tick().then(function bindScrollEffect() {
-			const scrollMaxX = Math.max(0, node.scrollLeftMax  ?? node.scrollWidth - node.offsetWidth)
-			const scrollMaxY = Math.max(0, node.scrollTopMax  ?? node.scrollHeight - node.offsetHeight)
-			const newX =  R.clamp(0, scrollMaxX, newPos.x)
-			const newY =  R.clamp(0, scrollMaxY, newPos.y)
-			const oldX = R.clamp(0, scrollMaxX, node.scrollLeft)
-			const oldY = R.clamp(0, scrollMaxY, node.scrollTop)
+			const scrollMaxX = Math.max(0, node.scrollLeftMax ?? node.scrollWidth - node.offsetWidth);
+			const scrollMaxY = Math.max(0, node.scrollTopMax ?? node.scrollHeight - node.offsetHeight);
+			const newX = R.clamp(0, scrollMaxX, newPos.x);
+			const newY = R.clamp(0, scrollMaxY, newPos.y);
+			const oldX = R.clamp(0, scrollMaxX, node.scrollLeft);
+			const oldY = R.clamp(0, scrollMaxY, node.scrollTop);
 
-			if(oldX != newX || oldY != newY) {
+			if (oldX != newX || oldY != newY) {
 				node.scrollTo({
 					left: newX,
 					top: newY,
-					behavior: "instant",
-				})
+					behavior: 'instant'
+				});
 			}
-		})
+		});
 	});
 
-	node.addEventListener("scroll", onScrollThrottled, { passive: true });
+	node.addEventListener('scroll', onScrollThrottled, { passive: true });
 
-	return () => {
-		node.removeEventListener("scroll", onScrollThrottled, { passive: true });
+	return {
+		destroy() {
+			node.removeEventListener('scroll', onScrollThrottled, { passive: true });
+		}
 	};
 }
 
-
-export function autofocusIf(node, {focus: yes, select: select = false}) {
-	if(yes) {
-		if(yes && document.activeElement !== node) {
+export function autofocusIf(node, { focus: yes, select: select = false }) {
+	if (yes) {
+		if (yes && document.activeElement !== node) {
 			node.focus({
-			  preventScroll: true
-			})
-			if(select) {
+				preventScroll: true
+			});
+			if (select) {
 				node.select();
 			}
-		} else if(!yes && document.activeElement === node) {
-			node.blur()
+		} else if (!yes && document.activeElement === node) {
+			node.blur();
 		}
 	}
 
-
 	return {
 		update(yes) {
-			if(yes && document.activeElement !== node) {
+			if (yes && document.activeElement !== node) {
 				node.focus({
-				  preventScroll: true
-				})
-			} else if(!yes && document.activeElement === node) {
-				node.blur()
+					preventScroll: true
+				});
+			} else if (!yes && document.activeElement === node) {
+				node.blur();
 			}
 		},
 
 		destroy() {
 			// the node has been removed from the DOM
-		},
+		}
 	};
 }
 
-
 export function bindBoundingBox(node, someAtom) {
-	let oldV
+	let oldV;
 	$effect.pre(() => {
 		tick().then(() => {
 			const bbox = node.getBBox();
-			if(bbox.width || bbox.height) {
-				oldV = {x:bbox.x, y:bbox.y, width: bbox.width, height: bbox.height}
-				someAtom.value = oldV
+			if (bbox.width || bbox.height) {
+				oldV = { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height };
+				someAtom.value = oldV;
 			} else {
-				oldV = undefined
-				someAtom.value = undefined
+				oldV = undefined;
+				someAtom.value = undefined;
 			}
-		})
-	})
+		});
+	});
 
-	const observer = new MutationObserver(function(mutations) {
-	  	const bbox = node.getBBox();
-		if(bbox.width || bbox.height) {
-			oldV = {x:Math.round(bbox.x), y:Math.round(bbox.y), width: Math.round(bbox.width), height: Math.round(bbox.height)}
-			someAtom.value = oldV
+	const observer = new MutationObserver(function (mutations) {
+		const bbox = node.getBBox();
+		if (bbox.width || bbox.height) {
+			oldV = {
+				x: Math.round(bbox.x),
+				y: Math.round(bbox.y),
+				width: Math.round(bbox.width),
+				height: Math.round(bbox.height)
+			};
+			someAtom.value = oldV;
 		} else {
-			oldV = undefined
-			someAtom.value = undefined
+			oldV = undefined;
+			someAtom.value = undefined;
 		}
 	});
 
 	observer.observe(node, {
-	  attributes: true 
+		attributes: true
 	});
 
 	return {
 		update(newAtom) {
-			someAtom = newAtom
+			someAtom = newAtom;
 		},
 		destroy() {
 			observer.disconnect(node);
-			someAtom.value = undefined
+			someAtom.value = undefined;
 		}
-	}
+	};
 }
-
 
 export function bindValue(node, someAtom) {
 	let c0 = null;
@@ -180,18 +181,18 @@ export function bindValue(node, someAtom) {
 		someAtom.value = node.value;
 		node.value = someAtom.value;
 		const newVal = someAtom.value;
-		if(node.value != newVal) {	
+		if (node.value != newVal) {
 			node.value = newVal;
 		}
-		if(c0 !== null && someAtom.value == before) {
-			node.selectionStart = c0
-			node.selectionEnd = c1
+		if (c0 !== null && someAtom.value == before) {
+			node.selectionStart = c0;
+			node.selectionEnd = c1;
 		}
 	}
 
 	function onbeforeinput(e) {
-		c0 = node.selectionStart
-		c1 = node.selectionEnd
+		c0 = node.selectionStart;
+		c1 = node.selectionEnd;
 	}
 
 	node.value = someAtom.value;
@@ -200,65 +201,61 @@ export function bindValue(node, someAtom) {
 		const newVal = someAtom.value;
 
 		untrack(() => {
-			if(node.value !== newVal) {	
+			if (node.value !== newVal) {
 				tick().then(() => {
 					node.value = newVal;
-				})
+				});
 			}
-		})
+		});
 	});
 
 	// $effect(() => {
 	// 	node.value = someAtom.value;
 	// });
 
-	node.addEventListener("input", oninput);
-	node.addEventListener("change", oninput);
+	node.addEventListener('input', oninput);
+	node.addEventListener('change', oninput);
 	try {
 		let x = node.selectionStart;
-		node.addEventListener("beforeinput", onbeforeinput);
-	} catch(e) {
-
-	}
+		node.addEventListener('beforeinput', onbeforeinput);
+	} catch (e) {}
 
 	return {
 		update(newAtom) {
-			someAtom = newAtom
+			someAtom = newAtom;
 			node.value = someAtom.value;
 
 			$effect(() => {
 				const newVal = someAtom.value;
 
 				untrack(() => {
-					if(node.value !== newVal) {	
+					if (node.value !== newVal) {
 						tick().then(() => {
 							node.value = newVal;
-						})
+						});
 					}
-				})
+				});
 			});
 		},
-		
+
 		destroy() {
-			node.removeEventListener("beforeinput", onbeforeinput);
-			node.removeEventListener("input", oninput);
-			node.removeEventListener("change", oninput);
+			node.removeEventListener('beforeinput', onbeforeinput);
+			node.removeEventListener('input', oninput);
+			node.removeEventListener('change', oninput);
 		}
 	};
 }
-
-
 
 export function bindNumericValue(node, someAtom) {
 	function oninput(e) {
 		const before = someAtom.value;
 		const newValue = node.valueAsNumber;
 		const newValueString = node.value;
-		if(!isNaN(newValue)) {
+		if (!isNaN(newValue)) {
 			const newVal = someAtom.value;
-			if(node.valueAsNumber != newVal) {
+			if (node.valueAsNumber != newVal) {
 				someAtom.value = node.valueAsNumber;
-				node.value = (Math.round(node.value * 100) / 100).toFixed(2)
+				node.value = (Math.round(node.value * 100) / 100).toFixed(2);
 			}
 		}
 	}
@@ -269,60 +266,59 @@ export function bindNumericValue(node, someAtom) {
 		const newVal = someAtom.value;
 
 		untrack(() => {
-			if(node.valueAsNumber !== newVal) {
+			if (node.valueAsNumber !== newVal) {
 				tick().then(() => {
 					node.valueAsNumber = newVal;
-				})
+				});
 			}
-		})
+		});
 	});
 
-	node.addEventListener("input", oninput);
-	node.addEventListener("change", oninput);
-
+	node.addEventListener('input', oninput);
+	node.addEventListener('change', oninput);
 
 	return {
 		update(newAtom) {
-			someAtom = newAtom
+			someAtom = newAtom;
 			node.valueAsNumber = someAtom.value;
 
 			$effect(() => {
 				const newVal = someAtom.value;
 
 				untrack(() => {
-					if(node.valueAsNumber !== newVal) {
+					if (node.valueAsNumber !== newVal) {
 						tick().then(() => {
 							node.valueAsNumber = newVal;
-						})
+						});
 					}
-				})
+				});
 			});
 		},
 
 		destroy() {
-			node.removeEventListener("input", oninput);
-			node.removeEventListener("change", oninput);
+			node.removeEventListener('input', oninput);
+			node.removeEventListener('change', oninput);
 		}
 	};
 }
 
 export function readScroll(node, someAtom) {
-	 const onScrollThrottled = throttled(function onscroll(e) {
-	 	const newValue = someAtom.value
-		const nodeScrollLeft = node.scrollLeft
-		const nodeScrollTop = node.scrollTop
-	 	if(newValue.x != nodeScrollLeft || newValue.y != nodeScrollTop) {
+	const onScrollThrottled = throttled(function onscroll(e) {
+		const newValue = someAtom.value;
+		const nodeScrollLeft = node.scrollLeft;
+		const nodeScrollTop = node.scrollTop;
+		if (newValue.x != nodeScrollLeft || newValue.y != nodeScrollTop) {
 			someAtom.value = {
 				x: nodeScrollLeft,
-				y: nodeScrollTop,
-			}
-	 	}
-	})
+				y: nodeScrollTop
+			};
+		}
+	});
 
-	node.addEventListener("scroll", onScrollThrottled, { passive: true });
+	node.addEventListener('scroll', onScrollThrottled, { passive: true });
 
 	return () => {
-		node.removeEventListener("scroll", onScrollThrottled, { passive: true });
+		node.removeEventListener('scroll', onScrollThrottled, { passive: true });
 	};
 }
 
@@ -331,154 +327,162 @@ export function bindScrollMax(node, someAtom) {
 	const resizeObserver = new ResizeObserver(() => {
 		someAtom.value = {
 			x: node.scrollWidth - node.clientWidth,
-			y: node.scrollHeight - node.clientHeight,
-		}
+			y: node.scrollHeight - node.clientHeight
+		};
 	});
 
 	const mutObserver = new MutationObserver(() => {
 		someAtom.value = {
 			x: node.scrollWidth - node.clientWidth,
-			y: node.scrollHeight - node.clientHeight,
-		}
+			y: node.scrollHeight - node.clientHeight
+		};
 	});
 
 	const onInput = (evt) => {
-		if(evt.currentTarget !== node) {
-			return
+		if (evt.currentTarget !== node) {
+			return;
 		}
 		someAtom.value = {
 			x: node.scrollWidth - node.clientWidth,
-			y: node.scrollHeight - node.clientHeight,
-		}
-	}
+			y: node.scrollHeight - node.clientHeight
+		};
+	};
 
-	resizeObserver.observe(node)
-	mutObserver.observe(node, { attributes: true, childList: false, subtree: true, characterData: true, })
-	node.addEventListener('input', onInput)
+	resizeObserver.observe(node);
+	mutObserver.observe(node, {
+		attributes: true,
+		childList: false,
+		subtree: true,
+		characterData: true
+	});
+	node.addEventListener('input', onInput);
 
 	return () => {
-		node.removeEventListener('input', onInput)
-		mutObserver.unobserve(node)
-		resizeObserver.unobserve(node)
+		node.removeEventListener('input', onInput);
+		mutObserver.unobserve(node);
+		resizeObserver.unobserve(node);
 	};
 }
-
 
 export function readTextreaScrollSize(node, someAtom) {
 	function oninput(e) {
 		someAtom.value = {
 			x: node.scrollWidth,
-			y: node.scrollHeight,
-		}
+			y: node.scrollHeight
+		};
 	}
 
-	node.addEventListener("input", oninput);
+	node.addEventListener('input', oninput);
 
 	return () => {
-		node.removeEventListener("input", oninput);
+		node.removeEventListener('input', oninput);
 	};
 }
 
-export function activeEvent(node, {eventType, fn}) {
-    node.addEventListener(eventType, fn, { passive: false });
+export function activeEvent(node, { eventType, fn }) {
+	node.addEventListener(eventType, fn, { passive: false });
 
-    return {
-        destroy() {
-            node.removeEventListener(eventType, fn, { passive: false });
-        },
-    };
-};
-
+	return {
+		destroy() {
+			node.removeEventListener(eventType, fn, { passive: false });
+		}
+	};
+}
 
 export function activeTouchMove(node, fn) {
-    return activeEvent(node, {eventType: 'touchmove', fn})
-};
+	return activeEvent(node, { eventType: 'touchmove', fn });
+}
 
 export function disableTouchEventsIf(node, atom) {
 	return activeTouchMove(node, (evt) => {
 		if (atom.value) {
 			evt.preventDefault();
 		}
-	})
+	});
 }
 
 export function polyfillDragDrop(node, args) {
-	let poly = null
-	if(args && args.dropArea) {
+	let poly = null;
+	if (args && args.dropArea) {
 		$effect(() => {
-			const dropArea = args.dropArea.value
-			poly = enableDragDropTouch(node, dropArea, args.options)
+			const dropArea = args.dropArea.value;
+			poly = enableDragDropTouch(node, dropArea, args.options);
 			return () => {
-				poly.dispose()
-				poly = null
-			}
-		})
+				poly.dispose();
+				poly = null;
+			};
+		});
 	} else {
-		poly = enableDragDropTouch(node, document, args?.options)
+		poly = enableDragDropTouch(node, document, args?.options);
 	}
 
 	return {
-        destroy() {
-        	if(poly) {
-            	poly.dispose()
-        	}
-        },
-    };
+		destroy() {
+			if (poly) {
+				poly.dispose();
+			}
+		}
+	};
 }
 
-export function disableEventIf(node, {eventType, cond}) {
-	return activeEvent(node, {eventType, fn: (evt) => {
-		if (cond === true || (cond !== false && cond.value)) {
-			evt.preventDefault();
+export function disableEventIf(node, { eventType, cond }) {
+	return activeEvent(node, {
+		eventType,
+		fn: (evt) => {
+			if (cond === true || (cond !== false && cond.value)) {
+				evt.preventDefault();
+			}
 		}
-	}})
+	});
 }
 
 export function onPointerClick(node, fn) {
-	let wasDown = false
+	let wasDown = false;
 	const onDown = (evt) => {
-		evt.stopPropagation()
-		evt.stopImmediatePropagation()
-		wasDown = true
-	}
+		evt.stopPropagation();
+		evt.stopImmediatePropagation();
+		wasDown = true;
+	};
 	const onEnd = (evt) => {
-		wasDown = false
-	}
+		wasDown = false;
+	};
 	const onClick = (evt) => {
-		if(wasDown) {
-			fn(evt)
-			wasDown = false
+		if (wasDown) {
+			fn(evt);
+			wasDown = false;
 		}
-	}
+	};
 
-	node.addEventListener('pointerdown', onDown)
-	node.addEventListener('click', onClick)
-	node.addEventListener('onpointercancel', onEnd)
+	node.addEventListener('pointerdown', onDown);
+	node.addEventListener('click', onClick);
+	node.addEventListener('onpointercancel', onEnd);
 
-	return () => {
-		node.removeEventListener('onpointercancel', onEnd)
-		node.removeEventListener('click', onClick)
-		node.removeEventListener('pointerdown', onDown)
-	}
+	return {
+		destroy() {
+			node.removeEventListener('onpointercancel', onEnd);
+			node.removeEventListener('click', onClick);
+			node.removeEventListener('pointerdown', onDown);
+		}
+	};
 }
 
 export function isFullscreen() {
-	let isFull = $state(document.fullscreenElement !== null)
+	let isFull = $state(document.fullscreenElement !== null);
 
 	function updateFullScreenState() {
-		isFull = document.fullscreenElement !== null
+		isFull = document.fullscreenElement !== null;
 	}
 
 	$effect(() => {
-		document.addEventListener("fullscreenchange", updateFullScreenState, false);  
+		document.addEventListener('fullscreenchange', updateFullScreenState, false);
 		return () => {
-			document.removeEventListener("fullscreenchange", updateFullScreenState, false); 
-		}
-	})
+			document.removeEventListener('fullscreenchange', updateFullScreenState, false);
+		};
+	});
 
 	return {
 		get value() {
-			return isFull
+			return isFull;
 		}
-	}
+	};
 }

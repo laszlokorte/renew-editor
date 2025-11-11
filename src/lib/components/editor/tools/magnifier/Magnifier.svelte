@@ -119,8 +119,7 @@
 	d={frameBoxPath.value}
 	pointer-events="all"
 	fill="none"
-	class="magnifier-surface"
-	class:magnifier-surface-active={magnifierFrameStretched.value}
+	class={{ 'magnifier-surface': true, 'magnifier-surface-active': magnifierFrameStretched.value }}
 	role="button"
 	tabindex="-1"
 	onclick={(evt) => {
@@ -215,8 +214,7 @@
 		transform={magnifierFrameTransform.value}
 		d={magnifierFramePath.value}
 		fill="none"
-		class="magnifier"
-		class:ready={magnifierFrameStretchedEnough.value}
+		class={{ magnifier: true, ready: magnifierFrameStretchedEnough.value }}
 		pointer-events="none"
 	/>
 {/if}

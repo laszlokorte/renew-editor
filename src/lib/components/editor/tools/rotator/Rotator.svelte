@@ -83,8 +83,7 @@
 
 <path
 	d={frameBoxPath.value}
-	class="rotate-surface"
-	class:rotating={isActive.value}
+	class={{ 'rotate-surface': true, rotating: isActive.value }}
 	pointer-events="all"
 	fill="none"
 	role="button"
@@ -170,8 +169,7 @@
 			cy={rotPivot.y}
 			r={minRadius.value}
 			stroke="#444"
-			class="ring"
-			class:active
+			class={{ ring: true, active }}
 			fill-opacity="0.1"
 			stroke-width="{4 * cameraScale.value}px"
 		/>
@@ -181,8 +179,7 @@
 			r={minRadius.value * 0.92}
 			stroke-dasharray="{7 * cameraScale.value} {4 * cameraScale.value}"
 			fill="#aa8888"
-			class="ring"
-			class:active
+			class={{ ring: true, active }}
 			fill-opacity="0.3"
 			stroke="#444"
 			stroke-width="{4 * cameraScale.value}px"
@@ -192,31 +189,28 @@
 			cx={rotPivot.x}
 			cy={rotPivot.y}
 			r={cameraScale.value * 3}
-			class="ref"
+			class={{ ref: true, active }}
 			stroke="#444"
-			class:active
 		/>
 
 		<line
 			stroke-opacity="0.8"
 			stroke-width="1px"
-			class="ref-line"
 			stroke="#444"
 			vector-effect="non-scaling-stroke"
 			x1={rotPivot.x}
 			y1={rotPivot.y}
 			x2={clampedRefValue.x}
 			y2={clampedRefValue.y}
-			class:active
+			class={{ 'ref-line': true, active }}
 		/>
 
 		<circle
 			cx={clampedRefValue.x}
 			cy={clampedRefValue.y}
 			r={cameraScale.value * 5}
-			class="ref"
+			class={{ ref: true, active }}
 			fill="#444"
-			class:active
 		/>
 	{/if}
 </g>

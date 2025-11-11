@@ -1,106 +1,112 @@
-import { Socket } from "phoenix";
-import { fetchJson } from '$lib/api/json'
+import { Socket } from 'phoenix';
+import { fetchJson } from '$lib/api/json';
 
 function tryParse(str) {
 	try {
-		return JSON.parse(str)
-	} catch(_) {
-		return null
+		return JSON.parse(str);
+	} catch (_) {
+		return null;
 	}
 }
 
 export default (() => {
-	const isBrowser = typeof localStorage !== "undefined"
-	let currentValue = $state(isBrowser && tryParse(localStorage.getItem("authed")))
-	let lastRefresh = new Date()
-	let socket = null
+	const isBrowser = typeof localStorage !== 'undefined';
+	let currentValue = $state(isBrowser && tryParse(localStorage.getItem('authed')));
+	let lastRefresh = new Date();
+	let socket = null;
 
-	if(isBrowser) {
-		window.addEventListener('storage', onChange)
+	if (isBrowser) {
+		window.addEventListener('storage', onChange);
 	}
 
 	function onChange(evt) {
-		if(evt.key === "authed") {
-			currentValue = JSON.parse(evt.newValue)
+		if (evt.key === 'authed') {
+			currentValue = JSON.parse(evt.newValue);
 		}
 	}
 
 	return {
 		set value(authData) {
-			currentValue = authData
-			if(isBrowser && currentValue) {
-				localStorage.setItem("authed", JSON.stringify(authData))
-			} else if(isBrowser) {
-				localStorage.removeItem("authed")
+			currentValue = authData;
+			if (isBrowser && currentValue) {
+				localStorage.setItem('authed', JSON.stringify(authData));
+			} else if (isBrowser) {
+				localStorage.removeItem('authed');
 			}
 		},
 		get lastRefresh() {
-			return lastRefresh
+			return lastRefresh;
 		},
 		get value() {
-			return currentValue
+			return currentValue;
 		},
 		login(token) {
-			lastRefresh = new Date()
-			this.value = token
+			lastRefresh = new Date();
+			this.value = token;
 		},
 		logout() {
-			socket?.disconnect()
-			socket = null
-			this.value = null
+			socket?.disconnect();
+			socket = null;
+			this.value = null;
 		},
 		get authHeader() {
-			return currentValue ? `Bearer ${currentValue.token}` : null
+			return currentValue ? `Bearer ${currentValue.token}` : null;
 		},
 		get isAuthenticated() {
-			return !!currentValue
+			return !!currentValue;
 		},
 		get routes() {
-			return this.value?.routes ?? []
+			return this.value?.routes ?? [];
 		},
 		refresh(fetchFn) {
-			if(!this.value) {
-				return Promise.resolve(false)
+			if (!this.value) {
+				return Promise.resolve(false);
 			}
 			return new Promise((res, rej) => {
-				let rootUrl = this.value?.url
+				let rootUrl = this.value?.url;
 
-				if(rootUrl) {
-					fetchJson(fetchFn, rootUrl, "GET").then((protocolJson)=> {
-						this.value = {
-							...this.value,
-							routes: protocolJson.routes,
-						}
-						lastRefresh = new Date()
+				if (rootUrl) {
+					fetchJson(fetchFn, rootUrl, 'GET')
+						.then((protocolJson) => {
+							this.value = {
+								...this.value,
+								routes: protocolJson.routes
+							};
+							lastRefresh = new Date();
 
-						return protocolJson.routes
-					}).then((routes) => {
-						res(routes)
-					}).catch((e) => {
-						rej(e)
-					})
+							return protocolJson.routes;
+						})
+						.then((routes) => {
+							res(routes);
+						})
+						.catch((e) => {
+							rej(e);
+						});
 				} else {
-					console.log(this.value)
-					return Promise.reject("unknown api url")
+					return Promise.reject('unknown api url');
 				}
-			})
+			});
 		},
 		createSocket() {
-			if(!socket) {
-
-				if(currentValue && currentValue.token && this.value.routes && this.value.routes.live_socket) {
+			if (!socket) {
+				if (
+					currentValue &&
+					currentValue.token &&
+					this.value.routes &&
+					this.value.routes.live_socket
+				) {
 					socket = new Socket(this.value.routes.live_socket.href, {
 						longPollFallbackMs: null,
 						transport: window?.WebSocket,
-						params: {token: currentValue.token}
-					})
-				} 
+						params: { token: currentValue.token }
+					});
+				}
 			}
-			
-			return socket
+
+			return socket;
 		},
 		reconnectSocket() {
-			socket?.connect()
+			socket?.connect();
 		}
-	}
-})()
+	};
+})();

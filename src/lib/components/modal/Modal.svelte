@@ -29,7 +29,7 @@
 	});
 </script>
 
-<div class="modal-backdrop" class:visible>
+<div class={{ 'modal-backdrop': true, visible }}>
 	<div
 		tabindex="-1"
 		role="button"
