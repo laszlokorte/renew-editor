@@ -55,32 +55,32 @@
 
 	<div class="nav-row">
 		{#if authState.isAuthenticated}
-			{#if projectId}
-				<a
-					href="{base}/projects"
-					class={['nav-button', active == 'projects' && 'active']}
-					title="Project Overview"
+			<a
+				href="{base}/projects"
+				class={['nav-button', active == 'projects' && 'active']}
+				title="Projects Overview"
+			>
+				<svg
+					viewBox="0 0 150 128"
+					class="nav-icon"
+					xmlns="http://www.w3.org/2000/svg"
+					fill="currentColor"
+					preserveAspectRatio="xMidYMid meet"
 				>
-					<svg
-						viewBox="0 0 150 128"
-						class="nav-icon"
-						xmlns="http://www.w3.org/2000/svg"
-						fill="currentColor"
-						preserveAspectRatio="xMidYMid meet"
-					>
-						<title>Project overview</title>
-						<path
-							d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"
-						/><path
-							d="M8.453 66.109 0 55.24 73.52 0l72.58 54.872-8.107 10.867-64.474-48.49L8.453 66.11Z"
-						/>
-					</svg>
-				</a>
+					<title>Project overview</title>
+					<path
+						d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"
+					/><path
+						d="M8.453 66.109 0 55.24 73.52 0l72.58 54.872-8.107 10.867-64.474-48.49L8.453 66.11Z"
+					/>
+				</svg>
+			</a>
+			{#if projectId}
 				<a
 					href="{base}/projects/{projectId}/documents"
 					class={['nav-button', active == 'documents' && 'active']}
 					title="Documents List"
-					><span class="long-label">Document</span><span class="short-label">/Docs</span></a
+					><span class="long-label">Documents</span><span class="short-label">/Docs</span></a
 				>
 				<a
 					href="{base}/projects/{projectId}/simulations"
@@ -94,27 +94,6 @@
 					title="Simulations List"
 					><span class="long-label">Settings</span><span class="short-label">/Ctrl</span></a
 				>
-			{:else}
-				<a
-					href="{base}/projects"
-					class={['nav-button', active == 'projects' && 'active']}
-					title="Project Overview"
-				>
-					<svg
-						viewBox="0 0 150 128"
-						class="nav-icon"
-						xmlns="http://www.w3.org/2000/svg"
-						fill="currentColor"
-						preserveAspectRatio="xMidYMid meet"
-					>
-						<title>Project Overview</title>
-						<path
-							d="m17.897 70.077 55.597-42.62 53.562 41.62v54.559H87.881V85.34h-29.81v38.295l-40.174 1V70.077Z"
-						/><path
-							d="M8.453 66.109 0 55.24 73.52 0l72.58 54.872-8.107 10.867-64.474-48.49L8.453 66.11Z"
-						/>
-					</svg>
-				</a>
 			{/if}
 		{/if}
 	</div>
