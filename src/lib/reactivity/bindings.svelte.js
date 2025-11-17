@@ -44,7 +44,12 @@ export function bindSize(node, someAtom) {
 }
 
 export function bindScroll(node, someAtom) {
-	const onScrollThrottled = throttled(function onscroll(e) {
+	let ignoreScoll = false;
+	let stopIgnore = null;
+	const onScrollThrottled = function onscroll(e) {
+		if (ignoreScoll) {
+			return;
+		}
 		const newValue = someAtom.value;
 		const nodeScrollLeft = node.scrollLeft;
 		const nodeScrollTop = node.scrollTop;
@@ -65,24 +70,30 @@ export function bindScroll(node, someAtom) {
 				atMinY: nodeScrollTop <= 0
 			};
 		}
-	});
+	};
 
 	$effect.pre(() => {
 		const newPos = someAtom.value;
 		tick().then(function bindScrollEffect() {
 			const scrollMaxX = Math.max(0, node.scrollLeftMax ?? node.scrollWidth - node.offsetWidth);
 			const scrollMaxY = Math.max(0, node.scrollTopMax ?? node.scrollHeight - node.offsetHeight);
-			const newX = R.clamp(0, scrollMaxX, newPos.x);
-			const newY = R.clamp(0, scrollMaxY, newPos.y);
-			const oldX = R.clamp(0, scrollMaxX, node.scrollLeft);
-			const oldY = R.clamp(0, scrollMaxY, node.scrollTop);
+			const newX = Math.round(R.clamp(0, scrollMaxX, newPos.x));
+			const newY = Math.round(R.clamp(0, scrollMaxY, newPos.y));
+			const oldX = Math.round(R.clamp(0, scrollMaxX, node.scrollLeft));
+			const oldY = Math.round(R.clamp(0, scrollMaxY, node.scrollTop));
 
 			if (oldX != newX || oldY != newY) {
+				ignoreScoll = true;
+				clearTimeout(stopIgnore);
+
 				node.scrollTo({
 					left: newX,
 					top: newY,
 					behavior: 'instant'
 				});
+				stopIgnore = setTimeout(() => {
+					ignoreScoll = false;
+				}, 10);
 			}
 		});
 	});
