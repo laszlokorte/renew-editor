@@ -139,9 +139,8 @@
 	);
 
 	// This is needed to prevent a ceil/floor feedback loop between integer scroll positions of scrollbars and camera position
-	const integerLens = L.lens(
-		(x) => Math.round(x),
-		(newV, oldV) => Math.round(newV) + (oldV - Math.round(oldV))
+	const integerLens = L.setter((newV, oldV) =>
+		2 > Math.abs(Math.round(newV) - Math.round(oldV)) ? oldV : newV
 	);
 
 	const scrollPosition = view(
