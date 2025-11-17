@@ -1,6 +1,7 @@
 <script>
 	import * as L from 'partial.lenses';
 	import * as R from 'ramda';
+	import * as E from '$lib/dom/events';
 	import * as Geo from '$lib/math/geometry';
 	import { atom, view, read, combine } from '$lib/reactivity/atom.svelte.js';
 	import { disableEventIf } from '$lib/reactivity/bindings.svelte';
