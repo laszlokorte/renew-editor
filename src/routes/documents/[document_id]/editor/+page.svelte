@@ -4258,7 +4258,14 @@
 
 						<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
 					</Minimap>
-					<div class={{ toolbar: true, vertical: true, hidden: !showHierarchy.value }}>
+					<div
+						class={{
+							'hierarchy-panel': true,
+							toolbar: true,
+							vertical: true,
+							hidden: !showHierarchy.value
+						}}
+					>
 						<div style="border-bottom: 1px solid #333; padding: 0 1ex 1ex">Hierarchy</div>
 						<!-- <input style="" type="search" name="" placeholder="search" /> -->
 						<div
@@ -5715,5 +5722,8 @@
 	.tool-spacer {
 		border: none;
 		background: #aaa;
+	}
+	.hierarchy-panel {
+		grid-template-rows: auto 1fr auto auto auto;
 	}
 </style>
