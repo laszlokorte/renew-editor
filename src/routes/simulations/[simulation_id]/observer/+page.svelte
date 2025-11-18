@@ -1263,7 +1263,6 @@
 
 	.sidebar {
 		align-self: start;
-		justify-self: start;
 		display: flex;
 		flex-direction: column;
 		align-items: stretch;
@@ -1418,6 +1417,8 @@
 	.net-instance-panel {
 		width: 100%;
 		box-sizing: border-box;
+		justify-self: stretch;
+		align-self: stretch;
 	}
 	.net-instances {
 		height: 5em;
