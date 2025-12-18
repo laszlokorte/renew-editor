@@ -41,6 +41,7 @@
 		if (!evt.isPrimary || !E.isLeftButton(evt)) {
 			return;
 		}
+		evt.preventDefault();
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		grabPosition.value = clientToCanvas(evt.clientX, evt.clientY);
 	}}
