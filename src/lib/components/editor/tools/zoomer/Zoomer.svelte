@@ -133,6 +133,9 @@
 		}
 
 		evt.preventDefault();
+		evt.currentTarget.focus({
+			preventScroll: true
+		});
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		zoomPivotClient.value = { x: evt.clientX, y: evt.clientY };
 	}}

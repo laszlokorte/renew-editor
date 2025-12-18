@@ -94,6 +94,9 @@
 		}
 
 		evt.preventDefault();
+		evt.currentTarget.focus({
+			preventScroll: true
+		});
 
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 

@@ -386,6 +386,9 @@
 		}
 
 		evt.preventDefault();
+		evt.currentTarget.focus({
+			preventScroll: true
+		});
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		const p = clientToCanvas(evt.clientX, evt.clientY);
 
