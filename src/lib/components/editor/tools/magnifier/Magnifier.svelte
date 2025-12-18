@@ -142,6 +142,9 @@
 		}
 
 		evt.preventDefault();
+		evt.currentTarget.focus({
+			preventScroll: true
+		});
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 
 		magnifierFrameStart.value = clientToCanvas(evt.clientX, evt.clientY);

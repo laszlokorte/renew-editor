@@ -125,6 +125,9 @@
 			return;
 		}
 		evt.preventDefault();
+		evt.currentTarget.focus({
+			preventScroll: true
+		});
 		const nodeId = JSON.parse(evt.target.getAttribute('data-idx'));
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		if (nodeId !== null) {

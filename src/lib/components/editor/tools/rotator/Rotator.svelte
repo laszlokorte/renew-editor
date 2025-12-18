@@ -111,6 +111,9 @@
 		}
 
 		evt.preventDefault();
+		evt.currentTarget.focus({
+			preventScroll: true
+		});
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		rotationPivot.value = clientToCanvas(evt.clientX, evt.clientY);
 	}}

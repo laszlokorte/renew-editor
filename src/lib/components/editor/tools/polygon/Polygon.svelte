@@ -159,6 +159,9 @@
 		dragging.value = true;
 		const p = clientToCanvas(evt.clientX, evt.clientY);
 		evt.preventDefault();
+		evt.currentTarget.focus({
+			preventScroll: true
+		});
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 
 		if (!startPath.value) {
