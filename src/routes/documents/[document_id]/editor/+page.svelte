@@ -4,6 +4,7 @@
 	import { base } from '$app/paths';
 	import {
 		view,
+		storedAtom,
 		atom,
 		update,
 		combine,
@@ -75,18 +76,24 @@
 		);
 
 	const textBounds = atom({});
-	const showHierarchy = atom(true);
-	const showCursors = atom(true);
 	const selectedBlueprint = atom(undefined);
-	const showOtherSelections = atom(true);
-	const showDebug = atom(false);
-	const showMinimap = atom(true);
-	const showGrid = atom(false);
+	const storedViewOptions = storedAtom('petristation-editor');
+	const viewOptions = view(L.json(), storedViewOptions);
+	const debugPanel = view('debugPanel', viewOptions);
+	const showDebug = view(['show', L.valueOr(false)], debugPanel);
+	const debugTabs = view(['tabs', L.valueOr({})], debugPanel);
+	const showMinimap = view(['minimap', L.valueOr(true)], viewOptions);
+	const gridView = view(['grid', L.valueOr({})], viewOptions);
+	const showGrid = view(['show', L.valueOr(false)], gridView);
+	const showHierarchy = view(['hierarchy', L.valueOr(true)], viewOptions);
+	const showCursors = view(['remoteCursors', L.valueOr(true)], viewOptions);
+	const showOtherSelections = view(['remoteSelections', L.valueOr(true)], viewOptions);
+	const lockRotation = view(['rotationLock', L.valueOr(false)], viewOptions);
+	const gridDistance = view(['distance', L.valueOr(32)], gridView);
+
 	const showRename = atom(false);
-	const lockRotation = atom(false);
 	const backoffValue = atom(undefined);
 	const pointerOffset = atom({ x: 0, y: 0 });
-	const gridDistance = atom(32);
 	const gridDistanceExp = view(logLens(2), gridDistance);
 
 	const dropperDomElement = atom(undefined);
@@ -4217,15 +4224,15 @@
 					</div>
 				</div>
 
-				{#if singleSelectedLayerType.value == 'text'}
-					<div class="topsubbar">
+				<div class="topsubbar">
+					{#if singleSelectedLayerType.value == 'text'}
 						<div class="toolbar" style="display: block;">
 							<label class="pretty-text">
 								<span class="pretty-text-label">Edit Text</span>
 								<textarea
 									class="pretty-text-control"
 									style="height: 100%; min-height: 6em; resize: none;  width: 100%; justify-self: stretch; flex-grow: 1; box-sizing: border-box;"
-									rows="1"
+									rows="5"
 									cols="50"
 									oninput={(evt) => {
 										updateText(singleSelectedLayer.value.id, evt.currentTarget.value);
@@ -4234,8 +4241,68 @@
 								></textarea>
 							</label>
 						</div>
-					</div>
-				{/if}
+					{/if}
+					{#if showDebug.value}
+						{@const symbolsOpen = view('symbols', debugTabs)}
+						{@const primitivesOpen = view('primitives', debugTabs)}
+						{@const tabs = [
+							{
+								key: 'document',
+								label: 'Debug Document',
+								lens: L.inverse(L.json({ space: '  ' })),
+								root: doc
+							},
+							{
+								key: 'selection',
+								label: 'Debug Selection',
+								lens: L.inverse(L.json({ space: '  ' })),
+								root: singleSelectedLayer
+							},
+							{
+								key: 'camera',
+								label: 'Debug Document',
+								lens: [L.identity],
+								root: cameraJson
+							}
+						]}
+						<div class="toolbar vertical">
+							<label>
+								<input type="checkbox" bind:checked={showDebug.value} />
+								Show Debug</label
+							>
+							{#each tabs as t (t.key)}
+								{@const tabOpen = view(t.key, debugTabs)}
+								<details bind:open={tabOpen.value}>
+									<summary>{t.label}</summary>
+									<textarea
+										style="font-family: monospace; height: 100%; min-height: 6em; resize: none;  width: 100%; justify-self: stretch; flex-grow: 1; box-sizing: border-box;"
+										use:bindValue={view(t.lens, t.root)}
+									></textarea>
+								</details>
+							{/each}
+							<details bind:open={symbolsOpen.value}>
+								<summary>Debug Symbols </summary>
+
+								{#await data.symbols then symbols}
+									<textarea
+										style="font-family: monospace; height: 100%; min-height: 6em; resize: none;  width: 100%; justify-self: stretch; flex-grow: 1; box-sizing: border-box;"
+										value={JSON.stringify(Array.from(symbols.entries()))}
+									></textarea>
+								{/await}
+							</details>
+							<details bind:open={primitivesOpen.value}>
+								<summary>Debug Primitives </summary>
+
+								{#await data.primitives then primitives}
+									<textarea
+										style="height: 100%; min-height: 6em; resize: none;  width: 100%; justify-self: stretch; flex-grow: 1; box-sizing: border-box;"
+										value={JSON.stringify(primitives)}
+									></textarea>
+								{/await}
+							</details>
+						</div>
+					{/if}
+				</div>
 
 				<div class="sidebar right">
 					<Minimap
@@ -4651,39 +4718,6 @@
 							}}>Delete</button
 						>
 					</div>
-					{#if showDebug.value}
-						<div class="toolbar vertical">
-							<details>
-								<summary>Debug Document </summary>
-								<textarea use:bindValue={view(L.inverse(L.json({ space: '  ' })), doc)}></textarea>
-							</details>
-							<details>
-								<summary> Debug Selection </summary>
-								<textarea
-									use:bindValue={view(L.inverse(L.json({ space: '  ' })), singleSelectedLayer)}
-								></textarea>
-							</details>
-							<details>
-								<summary>Debug Camera </summary>
-
-								<textarea bind:value={cameraJson.value}></textarea>
-							</details>
-							<details>
-								<summary>Debug Symbols </summary>
-
-								{#await data.symbols then symbols}
-									<textarea value={JSON.stringify(Array.from(symbols.entries()))}></textarea>
-								{/await}
-							</details>
-							<details>
-								<summary>Debug Primitives </summary>
-
-								{#await data.primitives then primitives}
-									<textarea value={JSON.stringify(primitives)}></textarea>
-								{/await}
-							</details>
-						</div>
-					{/if}
 				</div>
 				<div class="sidebar left">
 					<div
@@ -5068,7 +5102,7 @@
 				20vw
 			)
 			[right-end top-end] 1em [body-end];
-		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start topsubbar-start] 1fr [topsubbar-end] auto [left-end right-end] 1em [body-end];
+		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start topsubbar-start] 1fr [] auto [topsubbar-end left-end right-end] 1em [body-end];
 		gap: 0.5em;
 		overflow: hidden;
 		width: 100vw;
@@ -5080,6 +5114,9 @@
 		grid-area: topsubbar;
 		z-index: 100;
 		align-self: end;
+		display: flex;
+		flex-direction: column;
+		gap: 1ex;
 	}
 
 	.body {

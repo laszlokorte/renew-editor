@@ -10,6 +10,7 @@
 	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
 	import {
 		atom,
+		storedAtom,
 		view,
 		viewCombined,
 		combine,
@@ -106,7 +107,6 @@
 
 	const cameraRotation = view('w', cameraFocus);
 	const cameraZoom = view('z', cameraFocus);
-	const lockRotation = atom(false);
 
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 
@@ -118,12 +118,17 @@
 			(y) => Math.pow(base, y)
 		);
 
-	const showDebug = atom(false);
-	const showInstances = atom(true);
-	const showLog = atom(false);
-	const showMinimap = atom(false);
-	const showGrid = atom(false);
-	const gridDistance = atom(32);
+	const storedViewOptions = storedAtom('petristation-editor');
+	const viewOptions = view(L.json(), storedViewOptions);
+	const debugPanel = view('debugPanel', viewOptions);
+	const showDebug = view(['show', L.valueOr(false)], debugPanel);
+	const showMinimap = view(['minimap', L.valueOr(true)], viewOptions);
+	const gridView = view(['grid', L.valueOr({})], viewOptions);
+	const showGrid = view(['show', L.valueOr(false)], gridView);
+	const lockRotation = view(['rotationLock', L.valueOr(false)], viewOptions);
+	const gridDistance = view(['distance', L.valueOr(32)], gridView);
+	const showInstances = view(['showInstances', L.valueOr(true)], viewOptions);
+	const showLog = view(['showLog', L.valueOr(false)], viewOptions);
 	const gridDistanceExp = view(logLens(2), gridDistance);
 </script>
 
