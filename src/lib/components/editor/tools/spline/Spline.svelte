@@ -385,6 +385,7 @@
 			return;
 		}
 
+		evt.preventDefault();
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		const p = clientToCanvas(evt.clientX, evt.clientY);
 

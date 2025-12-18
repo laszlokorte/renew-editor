@@ -141,6 +141,7 @@
 			return;
 		}
 
+		evt.preventDefault();
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 
 		magnifierFrameStart.value = clientToCanvas(evt.clientX, evt.clientY);

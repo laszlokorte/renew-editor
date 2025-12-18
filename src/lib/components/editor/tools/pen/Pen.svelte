@@ -93,6 +93,8 @@
 			return;
 		}
 
+		evt.preventDefault();
+
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 
 		currentPath.value = clientToCanvas(evt.clientX, evt.clientY);

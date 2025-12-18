@@ -158,6 +158,7 @@
 
 		dragging.value = true;
 		const p = clientToCanvas(evt.clientX, evt.clientY);
+		evt.preventDefault();
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 
 		if (!startPath.value) {
