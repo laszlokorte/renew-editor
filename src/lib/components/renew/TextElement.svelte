@@ -1,7 +1,7 @@
 <script>
-	import { atom } from '$lib/reactivity/atom.svelte.js';
+	import { atom, view, combine } from '$lib/reactivity/atom.svelte.js';
 	import { bindBoundingBox } from '$lib/reactivity/bindings.svelte.js';
-	const { el, bbox = atom() } = $props();
+	const { el, optimisticValue, bbox = atom() } = $props();
 
 	const alignment = {
 		left: 'start',
@@ -14,7 +14,15 @@
 		right: 1
 	};
 
-	const body = $derived(el.text.body);
+	function opti(real, opti, attr, fallback) {
+		if (opti && real.id === opti.id && opti.attr == attr) {
+			return opti.value;
+		} else {
+			return fallback;
+		}
+	}
+
+	const body = $derived(opti(el, optimisticValue, 'textBody', el.text.body));
 </script>
 
 <g opacity={el.style?.opacity ?? '1'}>

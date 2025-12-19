@@ -98,6 +98,20 @@
 
 	const dropperDomElement = atom(undefined);
 
+	const optimisticValue = atom(null);
+	const optimisticLens = (id, attr, persistentLens) => {
+		return L.lens(
+			(store) =>
+				store && store.optimistic && store.optimistic.id === id && store.optimistic.attr === attr
+					? store.optimistic.value
+					: L.get(persistentLens, store.real),
+			(newValue, { optimistic, real }) => ({
+				optimistic: newValue === undefined ? undefined : { id, attr, value: newValue },
+				real: newValue === undefined ? real : L.set(persistentLens, newValue, real)
+			})
+		);
+	};
+
 	function hasTransferContent(trans, type) {
 		return [...trans.types].includes(type);
 	}
@@ -1317,7 +1331,11 @@
 																		}
 																	}}
 																>
-																	<TextElement bbox={thisbbox} el={el.value} />
+																	<TextElement
+																		optimisticValue={optimisticValue.value}
+																		bbox={thisbbox}
+																		el={el.value}
+																	/>
 																</g>
 															{/key}
 														{/if}
@@ -3845,7 +3863,7 @@
 								singleSelectedLayer
 							)}
 							<label class="pretty-select">
-								<span class="pretty-select-label">Font FAmily</span>
+								<span class="pretty-select-label">Font Family</span>
 								<span style:font-family={fontFamily.value} class="pretty-select-value"
 									>{fontFamily.value}</span
 								>
@@ -4226,6 +4244,13 @@
 
 				<div class="topsubbar">
 					{#if singleSelectedLayerType.value == 'text'}
+						{@const optimistic = view(
+							optimisticLens(singleSelectedLayer.value.id, 'textBody', ['text', 'body']),
+							combine(
+								{ optimistic: optimisticValue, real: singleSelectedLayer },
+								{ optimistic: true, real: true }
+							)
+						)}
 						<div class="toolbar" style="display: block;">
 							<label class="pretty-text">
 								<span class="pretty-text-label">Edit Text</span>
@@ -4234,10 +4259,13 @@
 									style="height: 100%; min-height: 6em; resize: none;  width: 100%; justify-self: stretch; flex-grow: 1; box-sizing: border-box;"
 									rows="5"
 									cols="50"
+									onblur={(evt) => {
+										optimistic.value = undefined;
+									}}
 									oninput={(evt) => {
 										updateText(singleSelectedLayer.value.id, evt.currentTarget.value);
 									}}
-									use:bindValue={view(['text', 'body'], singleSelectedLayer)}
+									use:bindValue={optimistic}
 								></textarea>
 							</label>
 						</div>
