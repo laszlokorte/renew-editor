@@ -184,73 +184,57 @@ export function bindBoundingBox(node, someAtom) {
 	};
 }
 
-export function bindValue(node, someAtom) {
-	let c0 = null;
-	let c1 = null;
-	function oninput(e) {
-		const before = someAtom.value;
-		someAtom.value = node.value;
-		node.value = someAtom.value;
-		const newVal = someAtom.value;
-		if (node.value != newVal) {
-			node.value = newVal;
-		}
-		if (c0 !== null && someAtom.value == before) {
-			node.selectionStart = c0;
-			node.selectionEnd = c1;
-		}
-	}
+function restoreSelection(target, cb) {
+	if (target.selectionStart !== null) {
+		const s0 = target.selectionStart;
+		const s1 = target.selectionEnd;
+		const l0 = target.value.slice(0, s0).split('\n').length;
+		const l1 = target.value.slice(0, s1).split('\n').length;
 
-	function onbeforeinput(e) {
-		c0 = node.selectionStart;
-		c1 = node.selectionEnd;
+		const lines0 = target.value.slice(0, s0).split('\n');
+		const lines1 = target.value.slice(0, s1).split('\n');
+		const column0 = lines0[lines0.length - 1].length;
+		const column1 = lines1[lines1.length - 1].length;
+
+		cb();
+
+		const newLines = target.value.split('\n');
+		const newStart = newLines.slice(0, l0 - 1).reduce((a, c) => a + c.length + 1, column0);
+		const newEnd = newLines.slice(0, l1 - 1).reduce((a, c) => a + c.length + 1, column1);
+		target.selectionStart = newStart;
+		target.selectionEnd = newEnd;
+	} else {
+		cb();
+	}
+}
+
+export function bindValue(node, someAtom) {
+	function oninput(e) {
+		const target = e.currentTarget;
+
+		restoreSelection(target, () => {
+			someAtom.value = target.value;
+			target.value = someAtom.value;
+			const newVal = someAtom.value;
+			if (target.value != newVal) {
+				target.value = newVal;
+			}
+		});
 	}
 
 	node.value = someAtom.value;
 
 	$effect.pre(() => {
 		const newVal = someAtom.value;
-
-		untrack(() => {
-			if (node.value !== newVal) {
-				tick().then(() => {
-					node.value = newVal;
-				});
-			}
-		});
+		if (node.value != newVal) {
+			node.value = newVal;
+		}
 	});
-
-	// $effect(() => {
-	// 	node.value = someAtom.value;
-	// });
-
 	node.addEventListener('input', oninput);
 	node.addEventListener('change', oninput);
-	try {
-		let x = node.selectionStart;
-		node.addEventListener('beforeinput', onbeforeinput);
-	} catch (e) {}
 
 	return {
-		update(newAtom) {
-			someAtom = newAtom;
-			node.value = someAtom.value;
-
-			$effect(() => {
-				const newVal = someAtom.value;
-
-				untrack(() => {
-					if (node.value !== newVal) {
-						tick().then(() => {
-							node.value = newVal;
-						});
-					}
-				});
-			});
-		},
-
-		destroy() {
-			node.removeEventListener('beforeinput', onbeforeinput);
+		destroy: () => {
 			node.removeEventListener('input', oninput);
 			node.removeEventListener('change', oninput);
 		}

@@ -20,6 +20,7 @@
 	} from '$lib/reactivity/bindings.svelte.js';
 	import { numberSvgFormat } from '$lib/svg/formatter';
 	import AppBar from '../../../AppBar.svelte';
+	import AttributeInput from './AttributeInput.svelte';
 
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
@@ -3878,27 +3879,21 @@
 										})}
 									use:bindValue={fontFamily}
 								>
-									<option value="serif">Serif</option>
-									<option value="sans-serif">Sans-Serif</option>
-									<option value="monospace">Monospace</option>
+									<option style:font-family={'serif'} value="serif">serif</option>
+									<option style:font-family={'sans-serif'} value="sans-serif">sans-serif</option>
+									<option style:font-family={'monospace'} value="monospace">monospace</option>
 								</select>
 							</label>
 							<label class="pretty-number">
 								<span class="pretty-number-label">Size</span>
-								<input
-									type="number"
-									class="pretty-number-control"
-									size="4"
-									min="1"
-									max="128"
-									onchange={(evt) =>
-										cast('change_style', {
-											layer_id: singleSelectedLayer.value.id,
-											type: 'text',
-											attr: 'font_size',
-											val: evt.currentTarget.value
-										})}
-									use:bindValue={view(['text', 'style', 'font_size'], singleSelectedLayer)}
+								<AttributeInput
+									cmd="change_style"
+									type="text"
+									attr="font_size"
+									{cast}
+									path={['text', 'style', 'font_size']}
+									{singleSelectedLayer}
+									{optimisticValue}
 								/>
 							</label>
 

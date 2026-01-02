@@ -23,6 +23,9 @@
 	}
 
 	const body = $derived(opti(el, optimisticValue, 'textBody', el.text.body));
+	const font_size = $derived(
+		opti(el, optimisticValue, ['text', 'style', 'font_size'].join('__'), el.text.style.font_size)
+	);
 </script>
 
 <g opacity={el.style?.opacity ?? '1'}>
@@ -45,7 +48,7 @@
 				alignmentWeight[el.text?.style?.alignment ?? 'left'] * (bbox.value?.width ?? 0)}
 			y={el.text.position_y}
 			text-anchor={bbox.value ? alignment[el.text?.style?.alignment ?? 'left'] : 'start'}
-			font-size={el.text?.style?.font_size ?? 12}
+			font-size={font_size ?? 12}
 			font-family={el.text?.style?.font_family ?? 'sans-serif'}
 			font-weight={el.text?.style?.bold ? 'bold' : 'normal'}
 			font-style={el.text?.style?.italic ? 'italic' : 'normal'}
@@ -58,14 +61,14 @@
 						text-decoration={el.text?.style?.underline ? 'underline' : 'none'}
 						x={el.text.position_x +
 							alignmentWeight[el.text?.style?.alignment ?? 'left'] * (bbox.value?.width ?? 0)}
-						dy={(li == 0 ? 1 : 1.2) * (el.text?.style?.font_size ?? 12)}>{line.trim()}</tspan
+						dy={(li == 0 ? 1 : 1.2) * (font_size ?? 12)}>{line.trim()}</tspan
 					>
 				{:else if el.text.style?.blank_lines ?? false}
 					<tspan
 						text-decoration="none"
 						x={el.text.position_x +
 							alignmentWeight[el.text?.style?.alignment ?? 'left'] * (bbox.value?.width ?? 0)}
-						dy={(li == 0 ? 1 : 1.2) * (el.text?.style?.font_size ?? 12)}>&nbsp;</tspan
+						dy={(li == 0 ? 1 : 1.2) * (font_size ?? 12)}>&nbsp;</tspan
 					>
 				{/if}
 			{/each}
@@ -80,7 +83,7 @@
 		x={el.text.position_x}
 		y={el.text.position_y}
 		text-anchor={'start'}
-		font-size={el.text?.style?.font_size ?? 12}
+		font-size={font_size ?? 12}
 		font-family={el.text?.style?.font_family ?? 'sans-serif'}
 		font-weight={el.text?.style?.bold ? 'bold' : 'normal'}
 		font-style={el.text?.style?.italic ? 'italic' : 'normal'}
@@ -92,13 +95,13 @@
 				<tspan
 					text-decoration={el.text?.style?.underline ? 'underline' : 'none'}
 					x={el.text.position_x}
-					dy={(li == 0 ? 1 : 1.2) * (el.text?.style?.font_size ?? 12)}>{line.trim()}</tspan
+					dy={(li == 0 ? 1 : 1.2) * (font_size ?? 12)}>{line.trim()}</tspan
 				>
 			{:else if el.text.style?.blank_lines ?? false}
 				<tspan
 					text-decoration="none"
 					x={el.text.position_x}
-					dy={(li == 0 ? 1 : 1.2) * (el.text?.style?.font_size ?? 12)}>&nbsp;</tspan
+					dy={(li == 0 ? 1 : 1.2) * (font_size ?? 12)}>&nbsp;</tspan
 				>
 			{/if}
 		{/each}
