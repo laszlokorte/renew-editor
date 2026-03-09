@@ -2,6 +2,7 @@
 	import { base } from '$app/paths';
 	import { page } from '$app/stores';
 	import AppBar from '../../../AppBar.svelte';
+	import Error from '../../../Error.svelte';
 
 	const { data } = $props();
 	const { project } = data;
@@ -15,15 +16,7 @@
 />
 
 <section>
-	<h1 class="center">Error {$page.status}: {$page.error.message}</h1>
-
-	{#if $page.status === 401 || $page.status === 403}
-		<p class="center">Try to <a href="{base}/auth">log out</a> and log in again.</p>
-	{/if}
-
-	<p class="center">
-		<a href="{base}/projects/{project.id}/simulations">Back to Simulation list</a>
-	</p>
+	<Error {page} />
 </section>
 
 <style>

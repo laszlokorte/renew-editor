@@ -17,7 +17,9 @@
 		return kv;
 	});
 
-	let apiUrl = $state(page.url.searchParams.get('server') ?? knownApis[0]?.url ?? '');
+	let apiUrl = $state(
+		page.url.searchParams.get('server') ?? knownApis[0]?.url ?? auth.value?.url ?? ''
+	);
 
 	/** @type undefined | {error: string, message:string} */
 	let currentError = $state(undefined);
@@ -25,7 +27,7 @@
 	/** @type undefined | HTMLInputElement */
 	let passwordField = $state(undefined);
 
-	let emailValue = $state(page.url.searchParams.get('email'));
+	let emailValue = $state(page.url.searchParams.get('email') ?? auth.value?.email);
 	let passwordValue = $state(page.url.searchParams.get('password'));
 
 	let inProgress = $state(false);
