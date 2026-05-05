@@ -301,6 +301,7 @@
 							{:else}
 								<a
 									class="document-list-link"
+									data-sveltekit-preload-data="off"
 									href="{base}/documents/{d.id}/editor"
 									title="Document #{d.id}">{d.name}</a
 								>
