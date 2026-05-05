@@ -24,7 +24,12 @@
 
 	const body = $derived(opti(el, optimisticValue, 'textBody', el.text.body));
 	const font_size = $derived(
-		opti(el, optimisticValue, ['text', 'style', 'font_size'].join('__'), el.text.style.font_size)
+		opti(
+			el,
+			optimisticValue,
+			['text', 'style', 'font_size'].join('__'),
+			el.text.style?.font_size ?? '1em'
+		)
 	);
 </script>
 

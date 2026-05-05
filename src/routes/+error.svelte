@@ -1,6 +1,5 @@
 <script>
-	import { base } from '$app/paths';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import AppBar from './AppBar.svelte';
 	import Error from './Error.svelte';
 
@@ -16,9 +15,5 @@
 <style>
 	section {
 		margin: 2em;
-	}
-
-	.center {
-		text-align: center;
 	}
 </style>

@@ -42,10 +42,6 @@
 </div>
 
 <style>
-	section {
-		margin: 2em;
-	}
-
 	.center {
 		text-align: center;
 	}
