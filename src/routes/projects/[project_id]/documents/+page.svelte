@@ -192,7 +192,7 @@
 
 	<header class={{ offline: !online }}>
 		<div>
-			<a href="{base}/projects" title="Back">Back</a>
+			<a href="{base}/projects" data-sveltekit-preload-data="off" title="Back">Back</a>
 
 			<h2>
 				<img src="{base}/icon-document.svg" class="icon" alt="" />

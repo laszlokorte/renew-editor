@@ -159,6 +159,7 @@
 					<a
 						href="{base}/projects/{data.simulation.links.project.id}/simulations"
 						title="Back"
+						data-sveltekit-preload-data="off"
 						class="nav-link">Back</a
 					>
 

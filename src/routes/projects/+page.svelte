@@ -183,6 +183,7 @@
 							{:else}
 								<a
 									class="project-list-link"
+									data-sveltekit-preload-data="off"
 									href="{base}/projects/{d.id}/documents"
 									title="Project #{d.id}"
 								>

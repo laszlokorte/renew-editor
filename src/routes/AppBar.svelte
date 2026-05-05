@@ -80,18 +80,21 @@
 					href="{base}/projects/{projectId}/documents"
 					class={['nav-button', active == 'documents' && 'active']}
 					title="Documents List"
+					data-sveltekit-preload-data="off"
 					><span class="long-label">Documents</span><span class="short-label">/Docs</span></a
 				>
 				<a
 					href="{base}/projects/{projectId}/simulations"
 					class={['nav-button', active == 'simulations' && 'active']}
 					title="Simulations List"
+					data-sveltekit-preload-data="off"
 					><span class="long-label">Simulations</span><span class="short-label">/Sims</span></a
 				>
 				<a
 					href="{base}/projects/{projectId}/settings"
 					class={['nav-button', active == 'settings' && 'active']}
 					title="Simulations List"
+					data-sveltekit-preload-data="off"
 					><span class="long-label">Settings</span><span class="short-label">/Ctrl</span></a
 				>
 			{/if}

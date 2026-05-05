@@ -556,6 +556,7 @@
 				<div class="header-titel">
 					<a
 						href="{base}/projects/{data.document.links.project.id}/documents"
+						data-sveltekit-preload-data="off"
 						title="Back"
 						class="nav-link">Back</a
 					>

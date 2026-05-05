@@ -132,7 +132,7 @@
 
 	<header>
 		<div>
-			<a href="{base}/projects" title="Back">Back</a>
+			<a href="{base}/projects" title="Back" data-sveltekit-preload-data="off">Back</a>
 
 			<h2>
 				<img src="{base}/icon-simulation.svg" class="icon" alt="" />
