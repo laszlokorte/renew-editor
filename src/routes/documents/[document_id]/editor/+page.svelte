@@ -1342,7 +1342,18 @@
 															{/key}
 														{/if}
 														{#if el.value?.edge}
+															{@const pathTransProp = view(
+																[
+																	'edge',
+																	localProp('translation'),
+																	L.valueOr({ dx: 0, dy: 0 }),
+																	L.props('dx', 'dy'),
+																	({ dx, dy }) => `translate(${dx}, ${dy})`
+																],
+																el
+															)}
 															<g
+																transform={pathTransProp.value}
 																role="button"
 																onclick={(evt) => {
 																	evt.stopPropagation();
@@ -1490,7 +1501,18 @@
 														{/if}
 													{/if}
 													{#if el.edge}
+														{@const pathTransProp = view(
+															[
+																'edge',
+																localProp('translation'),
+																L.valueOr({ dx: 0, dy: 0 }),
+																L.props('dx', 'dy'),
+																({ dx, dy }) => `translate(${dx}, ${dy})`
+															],
+															el
+														)}
 														<path
+															transform={pathTransProp.value}
 															class="link-selected"
 															d={edgePath[el.edge?.style?.smoothness ?? 'linear'](
 																el.edge,
@@ -1617,7 +1639,18 @@
 													{/if}
 												{/if}
 												{#if el.value?.edge}
+													{@const pathTransProp = view(
+														[
+															'edge',
+															localProp('translation'),
+															L.valueOr({ dx: 0, dy: 0 }),
+															L.props('dx', 'dy'),
+															({ dx, dy }) => `translate(${dx}, ${dy})`
+														],
+														el
+													)}
 													<path
+														transform={pathTransProp.value}
 														class="selected"
 														d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
 															el.value?.edge,
@@ -1899,6 +1932,49 @@
 													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 													{@const waypoints = view(['edge', localProp('waypoints')], el)}
 													{@const persistentWaypoints = view(L.filter(R.prop('id')), waypoints)}
+													{@const pathTrans = view(
+														[
+															'edge',
+															localProp('translation'),
+															L.valueOr({ x: 0, y: 0, baseX: 0, baseY: 0, dx: 0, dy: 0 })
+														],
+														el
+													)}
+													{@const pathTransCurrent = view(
+														[
+															L.setter(({ x, y }, { baseX, baseY, dx, dy }) => ({
+																baseX: x || baseX,
+																baseY: y || baseY,
+																x: x || baseX,
+																y: y || baseY,
+																dx: dx + x - baseX,
+																dy: dy + y - baseY
+															})),
+															L.props('x', 'y')
+														],
+														pathTrans
+													)}
+													{@const pathTransBase = view(
+														[
+															L.setter(({ baseX, baseY }, old) => ({
+																baseX: baseX || 0,
+																baseY: baseY || 0,
+																x: baseX,
+																y: baseY,
+																dx: old.dx,
+																dy: old.dy
+															})),
+															L.pick({ x: 'baseX', y: 'baseY' })
+														],
+														pathTrans
+													)}
+													{@const pathTransProp = view(
+														({ dx, dy }) => `translate(${dx}, ${dy})`,
+														pathTrans
+													)}
+
+													{@const pathTransDelta = view(L.props('dx', 'dy'), pathTrans)}
+
 													{@const waypointProposals = view(
 														[
 															'edge',
@@ -1924,6 +2000,92 @@
 														el
 													)}
 													{#if el.value?.edge}
+														<path
+															d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																el.value?.edge,
+																L.get(localProp('waypoints'), el.value?.edge)
+															)}
+															tabindex="-1"
+															onkeydown={(e) => {
+																evt.stopPropagation();
+																e.preventDefault();
+															}}
+															stroke={'transparent'}
+															fill={el.value?.edge?.cyclic
+																? (el.value?.style?.background_color ?? 'none')
+																: 'none'}
+															fill-opacity="0"
+															stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+																10 * cameraScale.value}
+															stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
+															stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
+															style:pointer-events="painted"
+															cursor="move"
+															transform={pathTransProp.value}
+															onpointerdown={(evt) => {
+																if (evt.isPrimary && E.isLeftButton(evt)) {
+																	evt.stopPropagation();
+																	evt.preventDefault();
+																	evt.currentTarget.setPointerCapture(evt.pointerId);
+
+																	pathTransBase.value = liveLenses.clientToCanvas(
+																		evt.clientX,
+																		evt.clientY
+																	);
+																}
+															}}
+															onclick={(evt) => {
+																evt.preventDefault(evt.stopPropagation());
+															}}
+															onpointermove={(evt) => {
+																evt.stopPropagation();
+																evt.preventDefault();
+																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+																	pathTransCurrent.value = liveLenses.clientToCanvas(
+																		evt.clientX,
+																		evt.clientY
+																	);
+																}
+															}}
+															onpointerup={(evt) => {
+																evt.stopPropagation();
+																evt.preventDefault();
+																const delta = pathTransDelta.value;
+																if (delta.dx || delta.dy) {
+																	dispatch('move_layer_relative', {
+																		layer_id: el.value.id,
+																		...delta
+																	}).then((e) => {
+																		pathTrans.value = localProp.reset;
+																		update((wps) => {
+																			return wps.map((wp) => ({
+																				...wp,
+																				x: wp.x + delta.dx,
+																				y: wp.y + delta.dy
+																			}));
+																		}, waypoints);
+																		update(
+																			({ source_x, source_y, target_x, target_y, ...rem }) => {
+																				return {
+																					...rem,
+																					source_x: source_x + delta.dx,
+																					source_y: source_y + delta.dy,
+																					target_x: target_x + delta.dx,
+																					target_y: target_y + delta.dy
+																				};
+																			},
+																			view(['edge'], el)
+																		);
+																	});
+																} else {
+																	pathTrans.value = localProp.reset;
+																}
+															}}
+															onpointercancel={(evt) => {
+																evt.stopPropagation();
+																evt.preventDefault();
+															}}
+														/>
 														{#each waypointProposals.value as wp_proposal, wi (wp_proposal.id_before)}
 															{@const pos = view(
 																[
@@ -1967,6 +2129,7 @@
 																	evt.stopPropagation();
 																	backoffValue.value = undefined;
 																}}
+																transform={pathTransProp.value}
 																onkeydown={(evt) => {
 																	if (evt.key === 'Escape' || evt.key === 'Esc') {
 																		if (!backoffValue.value) {
@@ -2057,7 +2220,18 @@
 																],
 																waypoints
 															)}
+															{@const pathTransProp = view(
+																[
+																	'edge',
+																	localProp('translation'),
+																	L.valueOr({ dx: 0, dy: 0 }),
+																	L.props('dx', 'dy'),
+																	({ dx, dy }) => `translate(${dx}, ${dy})`
+																],
+																el
+															)}
 															<g
+																transform={pathTransProp.value}
 																onclick={(evt) => {
 																	backoffValue.value = undefined;
 																	evt.stopPropagation();
@@ -2167,6 +2341,7 @@
 															el
 														)}
 														<g
+															transform={pathTransProp.value}
 															onclick={(evt) => {
 																evt.stopPropagation();
 															}}
@@ -2249,6 +2424,7 @@
 															/></g
 														>
 														<g
+															transform={pathTransProp.value}
 															onclick={(evt) => {
 																evt.stopPropagation();
 															}}
