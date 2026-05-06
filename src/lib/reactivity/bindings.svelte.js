@@ -222,7 +222,10 @@ export function bindValue(node, someAtom) {
 		});
 	}
 
-	node.value = someAtom.value;
+	tick().then(() => {
+		node.value = someAtom.value;
+		console.log(node, node.value, someAtom.value, node.childElementCount);
+	});
 
 	$effect.pre(() => {
 		const newVal = someAtom.value;

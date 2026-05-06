@@ -1671,8 +1671,8 @@
 														)}
 														<g
 															class="selected"
-															transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
-																?.edge.source_y})"
+															transform="{pathTransProp.value} rotate({source_angle} {el.value?.edge
+																.source_x} {el.value?.edge.source_y})"
 														>
 															{#await data.symbols then symbols}
 																{@const symbol = symbols.get(
@@ -1711,8 +1711,8 @@
 														)}
 														<g
 															class="selected"
-															transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
-																?.edge.target_y})"
+															transform="{pathTransProp.value} rotate({target_angle} {el.value?.edge
+																.target_x} {el.value?.edge.target_y})"
 														>
 															{#await data.symbols then symbols}
 																{@const symbol = symbols.get(
@@ -1779,99 +1779,101 @@
 																{/if}
 															{/if}
 															{#if el.value?.edge}
-																<path
-																	class="selected"
-																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																		el.value?.edge,
-																		L.get(localProp('waypoints'), el.value?.edge)
-																	)}
-																	stroke="black"
-																	fill="none"
-																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
-																		4 * cameraScale.value}
-																	stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
-																	stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
-																/>
-
-																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
-																	{@const source_angle = edgeAngle['source'](
-																		el.value?.edge,
-																		L.get(localProp('waypoints'), el.value?.edge)
-																	)}
-																	<g
+																<g transform={pathTransProp.value}>
+																	<path
 																		class="selected"
-																		transform="rotate({source_angle} {el.value?.edge.source_x} {el
-																			.value?.edge.source_y})"
-																	>
-																		{#await data.symbols then symbols}
-																			{@const symbol = symbols.get(
-																				el.value?.edge?.style?.source_tip_symbol_shape_id
-																			)}
-																			{@const size =
-																				(el.value?.edge?.style?.stroke_width ?? 1) *
-																				(el.value?.edge?.style?.source_tip_size ?? 1)}
+																		d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
+																			el.value?.edge,
+																			L.get(localProp('waypoints'), el.value?.edge)
+																		)}
+																		stroke="black"
+																		fill="none"
+																		stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+																			4 * cameraScale.value}
+																		stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
+																		stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
+																	/>
 
-																			{#if symbol}
-																				{#each symbol.paths as path, i (i)}
-																					<path
-																						fill={path.fill_color ?? 'transparent'}
-																						stroke={path.stroke_color ?? 'transparent'}
-																						d={buildPath(
-																							{
-																								x: el.value?.edge.source_x - size,
-																								y: el.value?.edge.source_y - size,
-																								width: 2 * size,
-																								height: 2 * size
-																							},
-																							path
-																						)}
-																						fill-rule="evenodd"
-																					/>
-																				{/each}
-																			{/if}
-																		{/await}
-																	</g>
-																{/if}
+																	{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+																		{@const source_angle = edgeAngle['source'](
+																			el.value?.edge,
+																			L.get(localProp('waypoints'), el.value?.edge)
+																		)}
+																		<g
+																			class="selected"
+																			transform="rotate({source_angle} {el.value?.edge.source_x} {el
+																				.value?.edge.source_y})"
+																		>
+																			{#await data.symbols then symbols}
+																				{@const symbol = symbols.get(
+																					el.value?.edge?.style?.source_tip_symbol_shape_id
+																				)}
+																				{@const size =
+																					(el.value?.edge?.style?.stroke_width ?? 1) *
+																					(el.value?.edge?.style?.source_tip_size ?? 1)}
 
-																{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
-																	{@const target_angle = edgeAngle['target'](
-																		el.value?.edge,
-																		L.get(localProp('waypoints'), el.value?.edge)
-																	)}
-																	<g
-																		class="selected"
-																		transform="rotate({target_angle} {el.value?.edge.target_x} {el
-																			.value?.edge.target_y})"
-																	>
-																		{#await data.symbols then symbols}
-																			{@const symbol = symbols.get(
-																				el.value?.edge?.style?.target_tip_symbol_shape_id
-																			)}
-																			{@const size =
-																				(el.value?.edge?.style?.stroke_width ?? 1) *
-																				(el.value?.edge?.style?.target_tip_size ?? 1)}
+																				{#if symbol}
+																					{#each symbol.paths as path, i (i)}
+																						<path
+																							fill={path.fill_color ?? 'transparent'}
+																							stroke={path.stroke_color ?? 'transparent'}
+																							d={buildPath(
+																								{
+																									x: el.value?.edge.source_x - size,
+																									y: el.value?.edge.source_y - size,
+																									width: 2 * size,
+																									height: 2 * size
+																								},
+																								path
+																							)}
+																							fill-rule="evenodd"
+																						/>
+																					{/each}
+																				{/if}
+																			{/await}
+																		</g>
+																	{/if}
 
-																			{#if symbol}
-																				{#each symbol.paths as path, i (i)}
-																					<path
-																						fill={path.fill_color ?? 'transparent'}
-																						stroke={path.stroke_color ?? 'transparent'}
-																						d={buildPath(
-																							{
-																								x: el.value?.edge.target_x - size,
-																								y: el.value?.edge.target_y - size,
-																								width: 2 * size,
-																								height: 2 * size
-																							},
-																							path
-																						)}
-																						fill-rule="evenodd"
-																					/>
-																				{/each}
-																			{/if}
-																		{/await}
-																	</g>
-																{/if}
+																	{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+																		{@const target_angle = edgeAngle['target'](
+																			el.value?.edge,
+																			L.get(localProp('waypoints'), el.value?.edge)
+																		)}
+																		<g
+																			class="selected"
+																			transform="rotate({target_angle} {el.value?.edge.target_x} {el
+																				.value?.edge.target_y})"
+																		>
+																			{#await data.symbols then symbols}
+																				{@const symbol = symbols.get(
+																					el.value?.edge?.style?.target_tip_symbol_shape_id
+																				)}
+																				{@const size =
+																					(el.value?.edge?.style?.stroke_width ?? 1) *
+																					(el.value?.edge?.style?.target_tip_size ?? 1)}
+
+																				{#if symbol}
+																					{#each symbol.paths as path, i (i)}
+																						<path
+																							fill={path.fill_color ?? 'transparent'}
+																							stroke={path.stroke_color ?? 'transparent'}
+																							d={buildPath(
+																								{
+																									x: el.value?.edge.target_x - size,
+																									y: el.value?.edge.target_y - size,
+																									width: 2 * size,
+																									height: 2 * size
+																								},
+																								path
+																							)}
+																							fill-rule="evenodd"
+																						/>
+																					{/each}
+																				{/if}
+																			{/await}
+																		</g>
+																	{/if}</g
+																>
 															{/if}
 														{/each}
 													</g>
