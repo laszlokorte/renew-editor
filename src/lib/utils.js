@@ -162,7 +162,8 @@ const colorNames = {
 	transparent: '#00000000'
 };
 export function colorNameToHex(color) {
-	if (typeof colorNames[color.toLowerCase()] != 'undefined') return colorNames[color.toLowerCase()];
+	if (color && typeof colorNames[color.toLowerCase()] != 'undefined')
+		return colorNames[color.toLowerCase()];
 
 	return color;
 }

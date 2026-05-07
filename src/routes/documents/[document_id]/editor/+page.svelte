@@ -1206,6 +1206,7 @@
 																	preventScroll: true
 																});
 																evt.currentTarget.setPointerCapture(evt.pointerId);
+																evt.currentTarget.currentPointerId = evt.pointerId;
 																backoffValue.value = true;
 																const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
 
@@ -1252,7 +1253,9 @@
 														onkeydown={(evt) => {
 															if (evt.key === 'Escape' || evt.key === 'Esc') {
 																evt.stopPropagation();
-																evt.currentTarget.releasePointerCapture(groupDrag.value.pointerId);
+																evt.currentTarget.releasePointerCapture(
+																	groupDrag.value.currentTarget.currentPointerId
+																);
 																groupDrag.value = undefined;
 															}
 														}}
@@ -1342,18 +1345,7 @@
 															{/key}
 														{/if}
 														{#if el.value?.edge}
-															{@const pathTransProp = view(
-																[
-																	'edge',
-																	localProp('translation'),
-																	L.valueOr({ dx: 0, dy: 0 }),
-																	L.props('dx', 'dy'),
-																	({ dx, dy }) => `translate(${dx}, ${dy})`
-																],
-																el
-															)}
 															<g
-																transform={pathTransProp.value}
 																role="button"
 																onclick={(evt) => {
 																	evt.stopPropagation();
@@ -1501,18 +1493,7 @@
 														{/if}
 													{/if}
 													{#if el.edge}
-														{@const pathTransProp = view(
-															[
-																'edge',
-																localProp('translation'),
-																L.valueOr({ dx: 0, dy: 0 }),
-																L.props('dx', 'dy'),
-																({ dx, dy }) => `translate(${dx}, ${dy})`
-															],
-															el
-														)}
 														<path
-															transform={pathTransProp.value}
 															class="link-selected"
 															d={edgePath[el.edge?.style?.smoothness ?? 'linear'](
 																el.edge,
@@ -1639,18 +1620,7 @@
 													{/if}
 												{/if}
 												{#if el.value?.edge}
-													{@const pathTransProp = view(
-														[
-															'edge',
-															localProp('translation'),
-															L.valueOr({ dx: 0, dy: 0 }),
-															L.props('dx', 'dy'),
-															({ dx, dy }) => `translate(${dx}, ${dy})`
-														],
-														el
-													)}
 													<path
-														transform={pathTransProp.value}
 														class="selected"
 														d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
 															el.value?.edge,
@@ -1671,8 +1641,8 @@
 														)}
 														<g
 															class="selected"
-															transform="{pathTransProp.value} rotate({source_angle} {el.value?.edge
-																.source_x} {el.value?.edge.source_y})"
+															transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
+																?.edge.source_y})"
 														>
 															{#await data.symbols then symbols}
 																{@const symbol = symbols.get(
@@ -1711,8 +1681,8 @@
 														)}
 														<g
 															class="selected"
-															transform="{pathTransProp.value} rotate({target_angle} {el.value?.edge
-																.target_x} {el.value?.edge.target_y})"
+															transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
+																?.edge.target_y})"
 														>
 															{#await data.symbols then symbols}
 																{@const symbol = symbols.get(
@@ -1779,7 +1749,7 @@
 																{/if}
 															{/if}
 															{#if el.value?.edge}
-																<g transform={pathTransProp.value}>
+																<g>
 																	<path
 																		class="selected"
 																		d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
@@ -1936,21 +1906,20 @@
 													{@const persistentWaypoints = view(L.filter(R.prop('id')), waypoints)}
 													{@const pathTrans = view(
 														[
-															'edge',
 															localProp('translation'),
-															L.valueOr({ x: 0, y: 0, baseX: 0, baseY: 0, dx: 0, dy: 0 })
+															L.defaults({ x: 0, y: 0, baseX: 0, baseY: 0, dx: 0, dy: 0 })
 														],
 														el
 													)}
 													{@const pathTransCurrent = view(
 														[
-															L.setter(({ x, y }, { baseX, baseY, dx, dy }) => ({
-																baseX: x || baseX,
-																baseY: y || baseY,
-																x: x || baseX,
-																y: y || baseY,
-																dx: dx + x - baseX,
-																dy: dy + y - baseY
+															L.setter(({ x, y }, old) => ({
+																baseX: x,
+																baseY: y,
+																x: x,
+																y: y,
+																dx: old.dx + x - old.x,
+																dy: old.dy + y - old.y
 															})),
 															L.props('x', 'y')
 														],
@@ -1963,15 +1932,11 @@
 																baseY: baseY || 0,
 																x: baseX,
 																y: baseY,
-																dx: old.dx,
-																dy: old.dy
+																dx: 0,
+																dy: 0
 															})),
 															L.pick({ x: 'baseX', y: 'baseY' })
 														],
-														pathTrans
-													)}
-													{@const pathTransProp = view(
-														({ dx, dy }) => `translate(${dx}, ${dy})`,
 														pathTrans
 													)}
 
@@ -2008,9 +1973,31 @@
 																L.get(localProp('waypoints'), el.value?.edge)
 															)}
 															tabindex="-1"
-															onkeydown={(e) => {
-																evt.stopPropagation();
-																e.preventDefault();
+															onkeydown={(evt) => {
+																if (evt.key === 'Escape' || evt.key === 'Esc') {
+																	evt.stopPropagation();
+																	evt.preventDefault();
+																	evt.currentTarget.releasePointerCapture(
+																		evt.currentTarget.currentPointerId
+																	);
+																	const d = pathTransDelta.value;
+
+																	update(
+																		(e) => {
+																			return {
+																				...e,
+																				source_x: e.source_x - (e.source_bond ? 0 : d.dx),
+																				source_y: e.source_y - (e.source_bond ? 0 : d.dy),
+																				target_x: e.target_x - (e.target_bond ? 0 : d.dx),
+																				target_y: e.target_y - (e.target_bond ? 0 : d.dy)
+																			};
+																		},
+																		view('edge', el)
+																	);
+
+																	pathTrans.value = localProp.reset;
+																	waypoints.value = localProp.reset;
+																}
 															}}
 															stroke={'transparent'}
 															fill={el.value?.edge?.cyclic
@@ -2023,12 +2010,28 @@
 															stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 															style:pointer-events="painted"
 															cursor="move"
-															transform={pathTransProp.value}
 															onpointerdown={(evt) => {
 																if (evt.isPrimary && E.isLeftButton(evt)) {
 																	evt.stopPropagation();
 																	evt.preventDefault();
+																	const d = pathTransDelta.value;
+
+																	update(
+																		(e) => {
+																			return {
+																				...e,
+																				source_x: e.source_x - (e.source_bond ? 0 : d.dx),
+																				source_y: e.source_y - (e.source_bond ? 0 : d.dy),
+																				target_x: e.target_x - (e.target_bond ? 0 : d.dx),
+																				target_y: e.target_y - (e.target_bond ? 0 : d.dy)
+																			};
+																		},
+																		view('edge', el)
+																	);
+																	waypoints.value = localProp.reset;
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	evt.currentTarget.currentPointerId = evt.pointerId;
+																	evt.currentTarget.focus();
 
 																	pathTransBase.value = liveLenses.clientToCanvas(
 																		evt.clientX,
@@ -2043,10 +2046,31 @@
 																evt.stopPropagation();
 																evt.preventDefault();
 																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-																	pathTransCurrent.value = liveLenses.clientToCanvas(
-																		evt.clientX,
-																		evt.clientY
+																	const pos = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+																	const dx = pos.x - pathTransCurrent.value.x;
+																	const dy = pos.y - pathTransCurrent.value.y;
+
+																	update((wps) => {
+																		return wps.map((wp) => ({
+																			...wp,
+																			x: wp.x + dx,
+																			y: wp.y + dy
+																		}));
+																	}, waypoints);
+																	update(
+																		(e) => {
+																			return {
+																				...e,
+																				source_x: e.source_x + (e.source_bond ? 0 : dx),
+																				source_y: e.source_y + (e.source_bond ? 0 : dy),
+																				target_x: e.target_x + (e.target_bond ? 0 : dx),
+																				target_y: e.target_y + (e.target_bond ? 0 : dy)
+																			};
+																		},
+																		view('edge', el)
 																	);
+
+																	pathTransCurrent.value = pos;
 																}
 															}}
 															onpointerup={(evt) => {
@@ -2059,28 +2083,11 @@
 																		...delta
 																	}).then((e) => {
 																		pathTrans.value = localProp.reset;
-																		update((wps) => {
-																			return wps.map((wp) => ({
-																				...wp,
-																				x: wp.x + delta.dx,
-																				y: wp.y + delta.dy
-																			}));
-																		}, waypoints);
-																		update(
-																			({ source_x, source_y, target_x, target_y, ...rem }) => {
-																				return {
-																					...rem,
-																					source_x: source_x + delta.dx,
-																					source_y: source_y + delta.dy,
-																					target_x: target_x + delta.dx,
-																					target_y: target_y + delta.dy
-																				};
-																			},
-																			view(['edge'], el)
-																		);
+																		waypoints.value = localProp.reset;
 																	});
 																} else {
 																	pathTrans.value = localProp.reset;
+																	waypoints.value = localProp.reset;
 																}
 															}}
 															onpointercancel={(evt) => {
@@ -2131,15 +2138,16 @@
 																	evt.stopPropagation();
 																	backoffValue.value = undefined;
 																}}
-																transform={pathTransProp.value}
 																onkeydown={(evt) => {
 																	if (evt.key === 'Escape' || evt.key === 'Esc') {
 																		if (!backoffValue.value) {
 																			return;
 																		}
 																		evt.stopPropagation();
-																		evt.currentTarget.releasePointerCapture(evt.pointerId);
 																		waypoints.value = localProp.reset;
+																		evt.currentTarget.releasePointerCapture(
+																			evt.currentTarget.currentPointerId
+																		);
 																	}
 																}}
 																role="button"
@@ -2152,6 +2160,7 @@
 																		});
 																		waypoints.value = localProp.reset;
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		evt.currentTarget.currentPointerId = evt.pointerId;
 																		backoffValue.value = wp_proposal;
 																		pointerOffset.value = Geo.diff2d(
 																			wp_proposal,
@@ -2222,18 +2231,7 @@
 																],
 																waypoints
 															)}
-															{@const pathTransProp = view(
-																[
-																	'edge',
-																	localProp('translation'),
-																	L.valueOr({ dx: 0, dy: 0 }),
-																	L.props('dx', 'dy'),
-																	({ dx, dy }) => `translate(${dx}, ${dy})`
-																],
-																el
-															)}
 															<g
-																transform={pathTransProp.value}
 																onclick={(evt) => {
 																	backoffValue.value = undefined;
 																	evt.stopPropagation();
@@ -2256,6 +2254,7 @@
 																			preventScroll: true
 																		});
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		evt.currentTarget.currentPointerId = evt.pointerId;
 																		backoffValue.value = pos.value;
 																		waypoints.value = localProp.reset;
 																		pointerOffset.value = Geo.diff2d(
@@ -2304,7 +2303,9 @@
 																			return;
 																		}
 																		evt.stopPropagation();
-																		evt.currentTarget.releasePointerCapture(evt.pointerId);
+																		evt.currentTarget.releasePointerCapture(
+																			evt.currentTarget.currentPointerId
+																		);
 																		waypoints.value = localProp.reset;
 																	}
 																}}
@@ -2343,7 +2344,6 @@
 															el
 														)}
 														<g
-															transform={pathTransProp.value}
 															onclick={(evt) => {
 																evt.stopPropagation();
 															}}
@@ -2354,6 +2354,7 @@
 																		preventScroll: true
 																	});
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	evt.currentTarget.currentPointerId = evt.pointerId;
 																	backoffValue.value = source_pos.value;
 																	pointerOffset.value = Geo.diff2d(
 																		source_pos.value,
@@ -2398,7 +2399,9 @@
 																		return;
 																	}
 																	evt.stopPropagation();
-																	evt.currentTarget.releasePointerCapture(evt.pointerId);
+																	evt.currentTarget.releasePointerCapture(
+																		evt.currentTarget.currentPointerId
+																	);
 																	source_pos.value = backoffValue.value;
 																}
 															}}
@@ -2426,7 +2429,6 @@
 															/></g
 														>
 														<g
-															transform={pathTransProp.value}
 															onclick={(evt) => {
 																evt.stopPropagation();
 															}}
@@ -2437,6 +2439,7 @@
 																		preventScroll: true
 																	});
 																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	evt.currentTarget.currentPointerId = evt.pointerId;
 																	backoffValue.value = target_pos.value;
 																	pointerOffset.value = Geo.diff2d(
 																		target_pos.value,
@@ -2481,7 +2484,9 @@
 																		return;
 																	}
 																	evt.stopPropagation();
-																	evt.currentTarget.releasePointerCapture(evt.pointerId);
+																	evt.currentTarget.releasePointerCapture(
+																		evt.currentTarget.currentPointerId
+																	);
 																	target_pos.value = backoffValue.value;
 																}
 															}}
@@ -2668,6 +2673,7 @@
 																	preventScroll: true
 																});
 																evt.currentTarget.setPointerCapture(evt.pointerId);
+																evt.currentTarget.currentPointerId = evt.pointerId;
 																backoffValue.value = boxPos.value;
 																pointerOffset.value = Geo.diff2d(
 																	boxPos.value,
@@ -2723,7 +2729,9 @@
 																	return;
 																}
 																evt.stopPropagation();
-																evt.currentTarget.releasePointerCapture(evt.pointerId);
+																evt.currentTarget.releasePointerCapture(
+																	evt.currentTarget.currentPointerId
+																);
 																boxPos.value = backoffValue.value;
 															}
 														}}
@@ -2742,6 +2750,7 @@
 																			preventScroll: true
 																		});
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		evt.currentTarget.currentPointerId = evt.pointerId;
 																		backoffValue.value = pos.value;
 																		pointerOffset.value = Geo.diff2d(
 																			posVal,
@@ -2787,7 +2796,9 @@
 																			return;
 																		}
 																		evt.stopPropagation();
-																		evt.currentTarget.releasePointerCapture(evt.pointerId);
+																		evt.currentTarget.releasePointerCapture(
+																			evt.currentTarget.currentPointerId
+																		);
 																		pos.value = backoffValue.value;
 																	}
 																}}
