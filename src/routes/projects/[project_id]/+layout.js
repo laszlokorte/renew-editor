@@ -1,19 +1,12 @@
 export const ssr = false;
 
-import { base } from '$app/paths';
-import { goto } from '$app/navigation';
+import { resolve } from '$app/paths';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
 import projectApi from '$lib/api/projects';
-import LiveState from '$lib/api/livestate';
-import { downloadFile } from '$lib/io/download';
-
-function createCommands(api, fetchFn) {
-	return {};
-}
 
 export async function load({ fetch, params }) {
-	const api = projectApi(fetch, authState.routes, authState.authHeader);
+	// 	const api = projectApi(fetch, authState.routes, authState.authHeader);
 
 	if (authState.isAuthenticated) {
 		return fetch(authState.value.routes.project.href.replace(':id', params.project_id), {
@@ -40,6 +33,6 @@ export async function load({ fetch, params }) {
 				}
 			});
 	} else {
-		return redirect(307, `${base}/auth`);
+		return redirect(307, `${resolve(`/auth`)}`);
 	}
 }

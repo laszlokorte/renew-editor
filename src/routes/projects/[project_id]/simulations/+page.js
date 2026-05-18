@@ -1,4 +1,4 @@
-import { base } from '$app/paths';
+import { resolve } from '$app/paths';
 import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
@@ -12,7 +12,7 @@ function createCommands(project, api, fetchFn) {
 	return {
 		createSimulation(doc_ids, main_net_name, formalism) {
 			return api.createSimulation(project, doc_ids, main_net_name, formalism).then((r) => {
-				return goto(`${base}/simulations/${r.id}/observer`);
+				return goto(resolve(`/simulations/${r.id}/observer`));
 			});
 		},
 
@@ -61,6 +61,6 @@ export async function load({ fetch, params, parent }) {
 				}
 			});
 	} else {
-		return redirect(307, `${base}/auth`);
+		return redirect(307, resolve(`/auth`));
 	}
 }

@@ -1,4 +1,4 @@
-import { base } from '$app/paths';
+import { resolve } from '$app/paths';
 import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
@@ -14,18 +14,18 @@ function createCommands(fetchFn, doc) {
 	return {
 		deleteDocument() {
 			return api.deleteDocument(doc.id).then((r) => {
-				return goto(`${base}/projects/${doc.links.project.id}/documents`);
+				return goto(resolve(`/projects/${doc.links.project.id}/documents`));
 			});
 		},
 
 		duplicateDocument() {
 			return api.callJson(doc.links.duplicate).then((r) => {
-				return goto(`${base}/documents/${r.id}/editor`);
+				return goto(resolve(`/documents/${r.id}/editor`));
 			});
 		},
 
 		simulateDocument(formalism) {
-			const simWindow = new Promise((resolve, reject) => {
+			const simWindow = new Promise((res, reject) => {
 				const w = window.open('', '_blank');
 				if (w) {
 					w.document.write(`
@@ -36,7 +36,7 @@ function createCommands(fetchFn, doc) {
     										name="viewport"
     										content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
    									/>
-   									<link rel="icon" href="${base}/favicon.svg" />
+   									<link rel="icon" href="${resolve('/favicon.svg')}" />
    									<meta charset="utf-8" />
    									<meta name="HandheldFriendly" content="true" />
    									<meta name="MobileOptimized" content="width" />
@@ -80,7 +80,7 @@ function createCommands(fetchFn, doc) {
 				        </head>
 				        <body>
 				            <div class="container">
-							<img style="width: 4em; margin: 1em auto" src="${base}/favicon.svg" alt="Renew" class="icon" />
+							<img style="width: 4em; margin: 1em auto" src="${resolve('/favicon.svg')}" alt="Renew" class="icon" />
 
 							<h1>Setting up Simulation</h1>
 							<p>Compiling Shadow Nets…</p>
@@ -91,7 +91,7 @@ function createCommands(fetchFn, doc) {
 				    `);
 					w.document.close();
 
-					resolve(w);
+					res(w);
 				} else {
 					reject('could not open new window');
 				}
@@ -103,7 +103,7 @@ function createCommands(fetchFn, doc) {
 				.then((w) => {
 					sim
 						.then((r) => {
-							w.location = `${base}/simulations/${r.id}/observer`;
+							w.location = resolve(`/simulations/${r.id}/observer`);
 						})
 						.catch((e) => {
 							console.error(e);
@@ -112,7 +112,7 @@ function createCommands(fetchFn, doc) {
 				})
 				.catch(() => {
 					return sim.then((r) => {
-						window.location = `${base}/simulations/${r.id}/observer`;
+						window.location = resolve(`/simulations/${r.id}/observer`);
 
 						return r;
 					});
@@ -272,6 +272,6 @@ export async function load({ params, fetch }) {
 				});
 			});
 	} else {
-		return redirect(307, `${base}/auth`);
+		return redirect(307, resolve(`/auth`));
 	}
 }

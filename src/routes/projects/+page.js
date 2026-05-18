@@ -1,4 +1,4 @@
-import { base } from '$app/paths';
+import { resolve } from '$app/paths';
 import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
@@ -12,7 +12,7 @@ function createCommands(api, fetchFn) {
 		createProject(name, redirect) {
 			return api.createProject(name).then((r) => {
 				if (redirect) {
-					return goto(`${base}/projects/${r.id}`);
+					return goto(resolve(`/projects/${r.id}`));
 				} else {
 					return r;
 				}
@@ -61,6 +61,6 @@ export async function load({ fetch }) {
 				}
 			});
 	} else {
-		return redirect(307, `${base}/auth`);
+		return redirect(307, resolve('/auth'));
 	}
 }

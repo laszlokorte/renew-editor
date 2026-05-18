@@ -1,8 +1,8 @@
 <script>
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import * as env from '../env';
 	import CurrentAuthState from './auth/CurrentAuthState.svelte';
-	import { view, atom, update } from '$lib/reactivity/atom.svelte';
+	import { atom, update } from '$lib/reactivity/atom.svelte';
 
 	import SplashScreen from '$lib/components/splashscreen/SplashScreen.svelte';
 
@@ -10,7 +10,7 @@
 
 	const {
 		title,
-		projectId,
+		projectId = null,
 		authState,
 		errors = atom([]),
 		connectionState = atom(undefined),
@@ -26,7 +26,7 @@
 	<title>{[title, appTitle].filter((x) => x).join(' - ')}</title>
 </svelte:head>
 
-<SplashScreen icon="{base}/favicon.svg" color="white" />
+<SplashScreen icon={resolve('/favicon.svg')} color="white" />
 
 <div
 	class={{
@@ -35,9 +35,14 @@
 		unknown: connectionState.value === undefined
 	}}
 >
-	<a href="{base}/"
+	<a href={resolve('/')}
 		><h2 class="app-name">
-			<img style="grid-row: 1; grid-column: 1;" src="{base}/favicon.svg" alt="Renew" class="icon" />
+			<img
+				style="grid-row: 1; grid-column: 1;"
+				src={resolve('/favicon.svg')}
+				alt="Renew"
+				class="icon"
+			/>
 
 			<span class="titel" style="grid-row: 1; grid-column: 2;">{appTitle}</span>
 
@@ -56,7 +61,7 @@
 	<div class="nav-row">
 		{#if authState.isAuthenticated}
 			<a
-				href="{base}/projects"
+				href={resolve('/projects')}
 				class={['nav-button', active == 'projects' && 'active']}
 				title="Projects Overview"
 			>
@@ -77,21 +82,21 @@
 			</a>
 			{#if projectId}
 				<a
-					href="{base}/projects/{projectId}/documents"
+					href={resolve(`/projects/${projectId}/documents`)}
 					class={['nav-button', active == 'documents' && 'active']}
 					title="Documents List"
 					data-sveltekit-preload-data="off"
 					><span class="long-label">Documents</span><span class="short-label">/Docs</span></a
 				>
 				<a
-					href="{base}/projects/{projectId}/simulations"
+					href={resolve(`/projects/${projectId}/simulations`)}
 					class={['nav-button', active == 'simulations' && 'active']}
 					title="Simulations List"
 					data-sveltekit-preload-data="off"
 					><span class="long-label">Simulations</span><span class="short-label">/Sims</span></a
 				>
 				<a
-					href="{base}/projects/{projectId}/settings"
+					href={resolve(`/projects/${projectId}/settings`)}
 					class={['nav-button', active == 'settings' && 'active']}
 					title="Simulations List"
 					data-sveltekit-preload-data="off"

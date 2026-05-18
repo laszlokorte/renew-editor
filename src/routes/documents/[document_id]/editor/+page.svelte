@@ -1,7 +1,7 @@
 <script>
 	// @ts-nocheck
 
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import {
 		view,
 		storedAtom,
@@ -555,7 +555,7 @@
 			<header class="header">
 				<div class="header-titel">
 					<a
-						href="{base}/projects/{data.document.links.project.id}/documents"
+						href={resolve(`/projects/${data.document.links.project.id}/documents`)}
 						data-sveltekit-preload-data="off"
 						title="Back"
 						class="nav-link">Back</a
@@ -971,7 +971,7 @@
 								<li class="menu-bar-menu-item">
 									<a
 										class="menu-bar-item-button"
-										href="{base}/projects/{data.document.links.project.id}/simulations"
+										href={resolve(`/projects/${data.document.links.project.id}/simulations`)}
 										target="_blank">Show all Simulations</a
 									>
 								</li>
@@ -985,7 +985,7 @@
 												<li class="menu-bar-menu-item">
 													<a
 														class="menu-bar-item-button"
-														href="{base}/simulations/{l.id}/observer"
+														href={resolve(`/simulations/${l.id}/observer`)}
 														target="_blank">{l.id}</a
 													>
 												</li>

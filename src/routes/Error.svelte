@@ -5,26 +5,23 @@
 	import authState from '$lib/components/auth/local_state.svelte.js';
 	import LoginForm from '$lib/components/auth/LoginForm.svelte';
 
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	function onLogin(auth) {
-		return new Promise((resolve) => {
-			goto(`${base}`, { invalidateAll: true }).then((_) => {
-				resolve(auth);
+		return new Promise((res) => {
+			goto(resolve('/'), { invalidateAll: true }).then((_) => {
+				res(auth);
 			});
 		});
-	}
-	function onLogout() {
-		goto(`${base}/auth`, { invalidateAll: true });
 	}
 </script>
 
 <div>
-	<h1 class="center">Error {$page.status}: {$page.error.message}</h1>
+	<h1 class="center">Error {page.status}: {page.error.message}</h1>
 
-	{#if $page.status === 401 || $page.status === 403}
+	{#if page.status === 401 || page.status === 403}
 		{#if authState.value}
 			<p class="center">
-				You are currently connect to <a href="{base}/auth">{authState.value.url}</a>.
+				You are currently connect to <a href={resolve('/auth')}>{authState.value.url}</a>.
 			</p>
 			<p class="center">But your session seems to be expired. Try to log in again.</p>
 		{/if}
@@ -37,7 +34,7 @@
 	<hr />
 
 	<p class="center">
-		<a href="{base}/">Back to Homepage</a>
+		<a href={resolve('/')}>Back to Homepage</a>
 	</p>
 </div>
 

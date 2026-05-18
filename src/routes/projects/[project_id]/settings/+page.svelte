@@ -1,5 +1,5 @@
 <script>
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import AppBar from '../../../AppBar.svelte';
 	import * as env from '../../../../env';
 
@@ -21,7 +21,7 @@
 	<LiveResource socket={data.live_socket} resource={data.project}>
 		{#snippet children(project, _presence, { dispatch, cast })}
 			<h2>
-				<img src="{base}/icon-gear.svg" class="icon" alt="" />
+				<img src={resolve('/icon-gear.svg')} class="icon" alt="" />
 				Project Settings
 				<br />
 				<small>Name: {project.value.name}</small>

@@ -1,5 +1,5 @@
 <script>
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 
 	import LoginForm from '$lib/components/auth/LoginForm.svelte';
@@ -9,24 +9,28 @@
 	const { data } = $props();
 
 	function onLogin(auth) {
-		return new Promise((resolve) => {
-			goto(`${base}`, { invalidateAll: true }).then((_) => {
-				resolve(auth);
+		return new Promise((res) => {
+			goto(resolve('/'), { invalidateAll: true }).then((_) => {
+				res(auth);
 			});
 		});
 	}
 	function onLogout() {
-		goto(`${base}/auth`, { invalidateAll: true });
+		goto(resolve(`/auth`), { invalidateAll: true });
 	}
 </script>
 
-<AppBar title={data.authState.isAuthenticated ? 'Account' : 'Login'} authState={data.authState} connectionState={data.connectionState} />
+<AppBar
+	title={data.authState.isAuthenticated ? 'Account' : 'Login'}
+	authState={data.authState}
+	connectionState={data.connectionState}
+/>
 
 <section class="content">
 	<div>
 		{#if data.authState.isAuthenticated}
 			<p class="center">
-				<a href="{base}/">Dashboard</a>
+				<a href={resolve('/')}>Dashboard</a>
 			</p>
 			<h2>Authentication</h2>
 			<div style=" line-height: 2; display: flex; flex-direction: column; align-items: stretch;">

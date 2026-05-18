@@ -1,5 +1,5 @@
 <script>
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import AppBar from '../../../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
@@ -132,10 +132,10 @@
 
 	<header>
 		<div>
-			<a href="{base}/projects" title="Back" data-sveltekit-preload-data="off">Back</a>
+			<a href={resolve('/projects')} title="Back" data-sveltekit-preload-data="off">Back</a>
 
 			<h2>
-				<img src="{base}/icon-simulation.svg" class="icon" alt="" />
+				<img src={resolve('/icon-simulation.svg')} class="icon" alt="" />
 				Simulations
 			</h2>
 		</div>
@@ -159,10 +159,10 @@
 				{/if}
 				<ul>
 					{#each simulations.value.items as sim (sim.id)}
-						<li class="list-item" style:--background-image="url({base}/icon-simulation.svg)">
+						<li class="list-item" style:--background-image="url({resolve('/icon-simulation.svg')})">
 							<a
 								class="list-link"
-								href="{base}/simulations/{sim.id}/observer"
+								href={resolve(`/simulations/${sim.id}/observer`)}
 								title="Simulation #{sim.id}">{sim.id}</a
 							>
 							<div class="list-details">

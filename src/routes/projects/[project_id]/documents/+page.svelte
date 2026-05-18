@@ -1,6 +1,5 @@
 <script>
-	import { base } from '$app/paths';
-	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import AppBar from '../../../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
@@ -192,10 +191,10 @@
 
 	<header class={{ offline: !online }}>
 		<div>
-			<a href="{base}/projects" data-sveltekit-preload-data="off" title="Back">Back</a>
+			<a href={resolve('/projects')} data-sveltekit-preload-data="off" title="Back">Back</a>
 
 			<h2>
-				<img src="{base}/icon-document.svg" class="icon" alt="" />
+				<img src={resolve('/icon-document.svg')} class="icon" alt="" />
 				Documents
 			</h2>
 		</div>
@@ -229,7 +228,10 @@
 				{/if}
 				<ul>
 					{#each documents.value.items as d (d.id)}
-						<li class="document-list-item" style:--background-image="url({base}/icon-document.svg)">
+						<li
+							class="document-list-item"
+							style:--background-image="url({resolve('/icon-document.svg')})"
+						>
 							{#if renamingId == d.id}
 								<button
 									onclick={() => {
@@ -302,7 +304,7 @@
 								<a
 									class="document-list-link"
 									data-sveltekit-preload-data="off"
-									href="{base}/documents/{d.id}/editor"
+									href={resolve(`/documents/${d.id}/editor`)}
 									title="Document #{d.id}">{d.name}</a
 								>
 								<div class="document-list-actions">

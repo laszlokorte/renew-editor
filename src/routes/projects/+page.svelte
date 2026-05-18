@@ -1,8 +1,6 @@
 <script>
-	import { base } from '$app/paths';
-	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import AppBar from '../AppBar.svelte';
-	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
 
@@ -10,12 +8,10 @@
 
 	const { createProject, downloadFile } = $derived(data.commands);
 
-	let uploadFormVisible = $state(false);
 	let online = $state(true);
 	let renamingId = $state(null);
 	let renamingNewName = $state();
 	let renamingOrigName = $state();
-	let filesToUpload = $state();
 
 	/** @type {(evt: SubmitEvent) => void} */
 	function onNewProject(evt) {
@@ -40,10 +36,10 @@
 
 	<header class={{ offline: !online }}>
 		<div>
-			<a href="{base}/" title="Back">Back</a>
+			<a href={resolve('/')} title="Back">Back</a>
 
 			<h2>
-				<img src="{base}/icon-project.svg" class="icon" alt="" />
+				<img src={resolve('/icon-project.svg')} class="icon" alt="" />
 				Projects
 			</h2>
 		</div>
@@ -72,7 +68,7 @@
 					{#each invitations.value.items as invitation}
 						<li
 							class="invitation-list-item"
-							style:--background-image="url({base}/icon-project.svg)"
+							style:--background-image="url({resolve('/icon-project.svg')})"
 						>
 							<span class="invitation-name" title="Project #{invitation.project_id}">
 								<strong>Invitation:</strong>
@@ -109,7 +105,10 @@
 				{/if}
 				<ul>
 					{#each projects.value.items as d (d.id)}
-						<li class="project-list-item" style:--background-image="url({base}/icon-project.svg)">
+						<li
+							class="project-list-item"
+							style:--background-image="url({resolve('/icon-project.svg')})"
+						>
 							{#if renamingId == d.id}
 								<button
 									onclick={() => {
@@ -184,7 +183,7 @@
 								<a
 									class="project-list-link"
 									data-sveltekit-preload-data="off"
-									href="{base}/projects/{d.id}/documents"
+									href={resolve(`/projects/${d.id}/documents`)}
 									title="Project #{d.id}"
 								>
 									{d.name}</a

@@ -1,5 +1,5 @@
 <script>
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import AppBar from './AppBar.svelte';
 	import * as env from '../env';
 
@@ -8,17 +8,22 @@
 	const { data } = $props();
 </script>
 
-<AppBar  title={`Welcome`} authState={data.authState} connectionState={data.connectionState} />
+<AppBar title={`Welcome`} authState={data.authState} connectionState={data.connectionState} />
 
 <section class="hero">
-	<img style="max-width: 5em; margin: 1em auto" src="{base}/favicon.svg" alt="Renew" class="icon" />
+	<img
+		style="max-width: 5em; margin: 1em auto"
+		src={resolve('/favicon.svg')}
+		alt="Renew"
+		class="icon"
+	/>
 
 	<h2>{appTitle}</h2>
 
 	<p>Welcome to the {appTitle} Web Editor</p>
 
 	<div style="display: flex; margin: 1ex; gap: 1ex">
-		<a href="{base}/projects" class="action">View Your Projects</a>
+		<a href={resolve('/projects')} class="action">View Your Projects</a>
 	</div>
 	<div style="display: flex; margin: 1ex; gap: 1ex">
 		<a href="mailto:petristation@laszlokorte.de?subject=Petristation%20Feedback" class="action"

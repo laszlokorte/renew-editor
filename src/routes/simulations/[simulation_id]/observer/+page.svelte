@@ -1,7 +1,7 @@
 <script>
 	import * as L from 'partial.lenses';
 	import * as R from 'ramda';
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import AppBar from '../../../AppBar.svelte';
 	import { numberSvgFormat } from '$lib/svg/formatter';
@@ -157,7 +157,7 @@
 			<header class="header">
 				<div class="header-titel">
 					<a
-						href="{base}/projects/{data.simulation.links.project.id}/simulations"
+						href={resolve(`/projects/${data.simulation.links.project.id}/simulations`)}
 						title="Back"
 						data-sveltekit-preload-data="off"
 						class="nav-link">Back</a
