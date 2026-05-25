@@ -1,6 +1,6 @@
 <script>
-	import { buildPath } from './symbols';
-	const { symbols, symbolId, box, background_url = null } = $props();
+	import { buildPath, buildPiePath } from './symbols';
+	const { symbols, symbolId, box, shapeAttributes = null, background_url = null } = $props();
 
 	let error = $state(false);
 </script>
@@ -9,7 +9,18 @@
 	<rect x={box.x} y={box.y} width={box.width} height={box.height}></rect>
 {:then symbols}
 	{@const symbol = symbols.get(symbolId)}
-	{#if symbol}
+	{#if symbol?.name === 'pie'}
+		<path d={buildPiePath(box, shapeAttributes?.start_angle, shapeAttributes?.end_angle)} fill-rule="evenodd" />
+	{:else if symbol?.name === 'rect-round'}
+		<rect
+			x={box.x}
+			y={box.y}
+			width={box.width}
+			height={box.height}
+			rx={(shapeAttributes?.rx ?? 0) / 2}
+			ry={(shapeAttributes?.ry ?? 0) / 2}
+		/>
+	{:else if symbol}
 		{#each symbol.paths as path, i (i)}
 			<path
 				fill={path.fill_color ?? 'transparent'}

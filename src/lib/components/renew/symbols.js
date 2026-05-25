@@ -189,3 +189,33 @@ export function buildPath(box, path) {
 		})
 		.join(' ');
 }
+
+/**
+ * Build the SVG path for a Renew PieFigure.
+ *
+ * Renew stores free-angle pie geometry separately from the static symbol shape.
+ * The angle convention mirrors the server-side Renew renderer: degrees measured
+ * counter-clockwise with the SVG y-axis inverted at the point conversion step.
+ */
+export function buildPiePath(box, startAngle, endAngle) {
+	const start = startAngle == null || !Number.isFinite(Number(startAngle)) ? 0 : Number(startAngle);
+	const end = endAngle == null || !Number.isFinite(Number(endAngle)) ? 180 : Number(endAngle);
+	const rx = box.width / 2;
+	const ry = box.height / 2;
+	const cx = box.x + rx;
+	const cy = box.y + ry;
+
+	const startRadians = (Math.PI / 180) * start;
+	const endRadians = (Math.PI / 180) * end;
+	const cosStart = Math.cos(startRadians);
+	const sinStart = Math.sin(startRadians);
+	const cosEnd = Math.cos(endRadians);
+	const sinEnd = Math.sin(endRadians);
+
+	const dot = cosStart * cosEnd + sinStart * sinEnd;
+	const det = cosStart * sinEnd - sinStart * cosEnd;
+	const angleDiff = (Math.atan2(-det, -dot) * 180) / Math.PI + 180;
+	const largeArcFlag = angleDiff < 180 ? 0 : 1;
+
+	return `M ${cx}, ${cy} L ${cx + cosStart * rx}, ${cy - sinStart * ry} A ${rx} ${ry} 0 ${largeArcFlag} 0 ${cx + cosEnd * rx}, ${cy - sinEnd * ry} z`;
+}

@@ -30,6 +30,7 @@
 					<Symbol
 						{symbols}
 						symbolId={layer.box.shape}
+						shapeAttributes={layer.box.shape_attributes}
 						background_url={layer.style?.background_url}
 						box={{
 							x: layer.box.position_x,

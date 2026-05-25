@@ -540,6 +540,7 @@
 																	<Symbol
 																		symbols={data.symbols}
 																		symbolId={el.value?.box.shape}
+																		shapeAttributes={el.value?.box.shape_attributes}
 																		background_url={el.value?.style?.background_url}
 																		box={{
 																			x: el.value?.box.position_x,
