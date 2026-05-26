@@ -167,6 +167,39 @@
 		};
 	}
 
+	let lastTargetLocationOpen = 0;
+
+	function openTargetLocation(evt, layer) {
+		const location = layer?.style?.target_location;
+		if (!evt.ctrlKey || !location) {
+			return false;
+		}
+
+		let target;
+		try {
+			target = new URL(location, window.location.href);
+		} catch {
+			return false;
+		}
+
+		if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		// macOS dispatches a contextmenu event for control-clicks; avoid opening twice
+		// when the same user gesture also produces a click event.
+		const now = performance.now();
+		if (now - lastTargetLocationOpen > 250) {
+			window.open(target.href, '_blank', 'noopener,noreferrer');
+			lastTargetLocationOpen = now;
+		}
+
+		return true;
+	}
+
 	const tools = [
 		{ name: 'Select', id: 'select' },
 		{
@@ -1276,7 +1309,13 @@
 														{#if el.value?.box}
 															<g
 																role="button"
+																oncontextmenu={(evt) => {
+																	openTargetLocation(evt, el.value);
+																}}
 																onclick={(evt) => {
+																	if (openTargetLocation(evt, el.value)) {
+																		return;
+																	}
 																	evt.stopPropagation();
 																	if (groupDrag.value === undefined) {
 																		selectedLayers.value = [el.value?.id];
@@ -1319,7 +1358,13 @@
 															{#key el.id}
 																<g
 																	role="button"
+																	oncontextmenu={(evt) => {
+																		openTargetLocation(evt, el.value);
+																	}}
 																	onclick={(evt) => {
+																		if (openTargetLocation(evt, el.value)) {
+																			return;
+																		}
 																		evt.stopPropagation();
 																		if (groupDrag.value === undefined) {
 																			selectedLayers.value = [el.value?.id];
@@ -1348,7 +1393,13 @@
 														{#if el.value?.edge}
 															<g
 																role="button"
+																oncontextmenu={(evt) => {
+																	openTargetLocation(evt, el.value);
+																}}
 																onclick={(evt) => {
+																	if (openTargetLocation(evt, el.value)) {
+																		return;
+																	}
 																	evt.stopPropagation();
 																	if (groupDrag.value === undefined) {
 																		selectedLayers.value = [el.value?.id];
