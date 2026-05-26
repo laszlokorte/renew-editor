@@ -42,7 +42,7 @@
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
 	import { edgeAngle, edgePath, tipColor } from '$lib/components/renew/edges.js';
-	import { walkDocument } from '$lib/components/renew/document.js';
+	import { calculateCanvasViewbox, walkDocument } from '$lib/components/renew/document.js';
 
 	import * as E from '$lib/dom/events';
 
@@ -77,6 +77,8 @@
 		);
 
 	const textBounds = atom({});
+	const frozenCanvasViewbox = atom(undefined);
+
 	const selectedBlueprint = atom(undefined);
 	const storedViewOptions = storedAtom('petristation-editor');
 	const viewOptions = view(L.json(), storedViewOptions);
@@ -401,17 +403,22 @@
 				}
 			}, 20)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
+			{@const calculatedCanvasViewbox = view(
+				L.reread(({ doc, textBounds }) => calculateCanvasViewbox(doc, textBounds)),
+				combine({ doc, textBounds })
+			)}
+			{@const canvasViewbox = view(
+				L.reread(({ calculated, frozen }) => frozen ?? calculated),
+				combine({ calculated: calculatedCanvasViewbox, frozen: frozenCanvasViewbox })
+			)}
 			{@const extension = view(
-				[
-					'viewbox',
-					L.pick({
-						minX: 'x',
-						minY: 'y',
-						maxX: L.reread(({ x, width }) => x + width),
-						maxY: L.reread(({ y, height }) => y + height)
-					})
-				],
-				doc
+				L.pick({
+					minX: 'x',
+					minY: 'y',
+					maxX: L.reread(({ x, width }) => x + width),
+					maxY: L.reread(({ y, height }) => y + height)
+				}),
+				canvasViewbox
 			)}
 			{@const selectedLayersType = read(
 				L.reread(({ d, sl }) => {
@@ -1125,6 +1132,19 @@
 						<CameraScroller bind:this={cameraScroller.value} {camera} {extension}>
 							<SVGViewport
 								{camera}
+								onpointerdowncapture={(evt) => {
+									if (evt.isPrimary && E.isLeftButton(evt)) {
+										frozenCanvasViewbox.value = calculatedCanvasViewbox.value;
+									}
+								}}
+								onpointerupcapture={(evt) => {
+									if (evt.isPrimary) {
+										frozenCanvasViewbox.value = undefined;
+									}
+								}}
+								onpointercancelcapture={() => {
+									frozenCanvasViewbox.value = undefined;
+								}}
 								onclick={(evt) => {
 									evt.preventDefault();
 									if (backoffValue.value === undefined) {
@@ -1165,7 +1185,7 @@
 											fill="#fff"
 											stroke="#eee"
 											stroke-width="5"
-											{...doc.value.viewbox}
+											{...canvasViewbox.value}
 										/>
 										{#if showGrid.value}
 											<Grid {rotationTransform} {frameBoxObject} {cameraScale} {gridDistance} />
@@ -4527,10 +4547,10 @@
 						{cameraFocus}
 					>
 						<rect
-							x={doc.value.viewbox.x}
-							y={doc.value.viewbox.y}
-							width={doc.value.viewbox.width}
-							height={doc.value.viewbox.height}
+							x={canvasViewbox.value.x}
+							y={canvasViewbox.value.y}
+							width={canvasViewbox.value.width}
+							height={canvasViewbox.value.height}
 							fill="white"
 							opacity="0.8"
 						/>

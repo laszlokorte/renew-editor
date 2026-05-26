@@ -31,7 +31,7 @@
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
 	import { edgeAngle, edgePath } from '$lib/components/renew/edges.js';
-	import { walkDocument } from '$lib/components/renew/document.js';
+	import { calculateCanvasViewbox, walkDocument } from '$lib/components/renew/document.js';
 
 	import MenuBarButton from '$lib/components/menubar/MenuBarButton.svelte';
 	import {
@@ -466,9 +466,14 @@
 					)}
 
 					{@const layersInOrder = view(L.reread(walkDocument), doc)}
+					{@const canvasViewbox = view(
+						L.reread(({ doc, textBounds }) =>
+							doc ? calculateCanvasViewbox(doc, textBounds) : null
+						),
+						combine({ doc, textBounds })
+					)}
 					{@const extension = view(
 						[
-							'viewbox',
 							L.pick({
 								minX: 'x',
 								minY: 'y',
@@ -482,7 +487,7 @@
 								maxY: 0
 							})
 						],
-						doc
+						canvasViewbox
 					)}
 					<div class="body">
 						{#if doc.value}
@@ -938,10 +943,10 @@
 									{cameraFocus}
 								>
 									<rect
-										x={doc.value.viewbox.x}
-										y={doc.value.viewbox.y}
-										width={doc.value.viewbox.width}
-										height={doc.value.viewbox.height}
+										x={canvasViewbox.value.x}
+										y={canvasViewbox.value.y}
+										width={canvasViewbox.value.width}
+										height={canvasViewbox.value.height}
 										fill="white"
 										opacity="0.8"
 									/>
