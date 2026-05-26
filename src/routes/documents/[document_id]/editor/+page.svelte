@@ -170,6 +170,10 @@
 	let lastTargetLocationOpen = 0;
 
 	function openTargetLocation(evt, layer) {
+		if (activeTool.value !== 'select') {
+			return false;
+		}
+
 		const location = layer?.style?.target_location;
 		if (!evt.ctrlKey || !location) {
 			return false;
