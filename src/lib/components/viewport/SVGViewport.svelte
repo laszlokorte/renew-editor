@@ -5,17 +5,7 @@
 	import { stopPropagation } from 'svelte/legacy';
 	import PreventSafariMagnifier from './PreventSafariMagnifier.svelte';
 
-	const {
-		camera,
-		children,
-		onclick,
-		onkeydown,
-		onpointermove,
-		onpointerdowncapture,
-		onpointerupcapture,
-		onpointercancelcapture,
-		ondblclick
-	} = $props();
+	const { camera, children, onclick, onkeydown, onpointermove, ondblclick } = $props();
 
 	let svgElement = atom(undefined);
 	let svgPoint = read(
@@ -42,9 +32,6 @@
 	{ondblclick}
 	{onkeydown}
 	{onpointermove}
-	{onpointerdowncapture}
-	{onpointerupcapture}
-	{onpointercancelcapture}
 	viewBox={viewBox.value}
 >
 	{#if children}

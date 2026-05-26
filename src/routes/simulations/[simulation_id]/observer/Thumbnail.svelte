@@ -4,26 +4,16 @@
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
 	import { edgeAngle, edgePath } from '$lib/components/renew/edges.js';
-	import { atom, combine, view } from '$lib/reactivity/atom.svelte';
-	import { calculateCanvasViewbox } from '$lib/components/renew/document.js';
+	import { atom, view } from '$lib/reactivity/atom.svelte';
 
 	const textBounds = atom({});
 	const { document, symbols } = $props();
-	const documentAtom = {
-		get value() {
-			return document;
-		}
-	};
-	const canvasViewbox = view(
-		L.reread(({ document, textBounds }) => calculateCanvasViewbox(document, textBounds, 0)),
-		combine({ document: documentAtom, textBounds })
-	);
 </script>
 
 <svg
-	{...canvasViewbox.value}
-	viewBox="{canvasViewbox.value.x} {canvasViewbox.value.y} {canvasViewbox.value
-		.width} {canvasViewbox.value.height}"
+	{...document.viewbox}
+	viewBox="{document.viewbox.x} {document.viewbox.y} {document.viewbox.width} {document.viewbox
+		.height}"
 >
 	{#each document.layers.items as layer (layer.id)}
 		{#if !layer.hidden}
