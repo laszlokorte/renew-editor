@@ -1,6 +1,14 @@
 import { applyPatch } from 'fast-json-patch/index.mjs';
 import { Socket, Channel, Presence } from 'phoenix';
 
+function normalizeSelection(selection) {
+	if (!selection) {
+		return [];
+	}
+
+	return Array.isArray(selection) ? selection.filter(Boolean) : [selection];
+}
+
 // This file is copied from https://github.com/launchscout/phx-live-state
 // the original is MIT Licensed:
 // https://github.com/launchscout/phx-live-state/blob/992349f8ef6f1339a1f84a732121816e6c552d02/package.json#L22
@@ -117,10 +125,12 @@ export class LiveState {
 								value: m.cursor,
 								self: m.connection_id === this.connection_id
 							})),
-							selections: metas.map((m) => ({
-								value: m.selection,
-								self: m.connection_id === this.connection_id
-							}))
+							selections: metas.flatMap((m) =>
+								normalizeSelection(m.selection).map((value) => ({
+									value,
+									self: m.connection_id === this.connection_id
+								}))
+							)
 						},
 						count: metas.length
 					};

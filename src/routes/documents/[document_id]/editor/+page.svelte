@@ -317,11 +317,706 @@
 	let errors = atom([]);
 
 	let selectedLayers = atom([]);
+	let areaSelection = atom(undefined);
+	let areaSelectionDelay = undefined;
+	const AREA_SELECTION_DELAY = 180;
 	let groupDrag = atom(undefined);
 	let groupDragDelta = view(
 		[L.reread(({ bx, by, cx, cy }) => ({ x: cx - bx, y: cy - by })), L.valueOr({ x: 0, y: 0 })],
 		groupDrag
 	);
+
+	function uniqueLayerIds(ids) {
+		return [...new Set(ids.filter((id) => typeof id === 'string' && id))];
+	}
+
+	function publishSelection(cast, ids) {
+		const selection = uniqueLayerIds(ids);
+		selectedLayers.value = selection;
+		cast('select', selection);
+		return selection;
+	}
+
+	function clearSelection(cast) {
+		return publishSelection(cast, []);
+	}
+
+	function toggleLayerSelection(cast, id) {
+		if (!id) {
+			return selectedLayers.value;
+		}
+
+		const selected = new Set(selectedLayers.value);
+		if (selected.has(id)) {
+			selected.delete(id);
+		} else {
+			selected.add(id);
+		}
+
+		return publishSelection(cast, [...selected]);
+	}
+
+	function selectLayer(cast, id, evt) {
+		if (!id) {
+			return selectedLayers.value;
+		}
+
+		return evt?.shiftKey ? toggleLayerSelection(cast, id) : publishSelection(cast, [id]);
+	}
+
+	function mergeAreaSelection(cast, ids, toggle) {
+		if (!toggle) {
+			return publishSelection(cast, ids);
+		}
+
+		const selected = new Set(selectedLayers.value);
+		for (const id of uniqueLayerIds(ids)) {
+			if (selected.has(id)) {
+				selected.delete(id);
+			} else {
+				selected.add(id);
+			}
+		}
+
+		return publishSelection(cast, [...selected]);
+	}
+
+	function deleteSelectedLayers(cast, layersInOrderValue) {
+		const selected = new Set(selectedLayers.value);
+		const layerIds = layersInOrderValue
+			.filter(({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent)))
+			.map(({ id }) => id);
+
+		for (const id of uniqueLayerIds(layerIds)) {
+			cast('delete_layer', id);
+		}
+
+		clearSelection(cast);
+	}
+
+	function selectedTopLevelLayerIds(layersInOrderValue, ids = selectedLayers.value) {
+		const selected = new Set(ids);
+		return layersInOrderValue
+			.filter(({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent)))
+			.map(({ id }) => id);
+	}
+
+	function selectedLinkedLayerIds(docValue, ids = selectedLayers.value) {
+		const selected = new Set(ids);
+		return uniqueLayerIds(
+			docValue.layers.items
+				.filter((layer) => selected.has(layer.id) && layer.hyperlink)
+				.map((layer) => layer.hyperlink)
+		);
+	}
+
+	function dragLayerIdsFor(layerId, layersInOrderValue) {
+		const selected = new Set(selectedLayers.value);
+		const layerInfo = layersInOrderValue.find((layer) => layer.id === layerId);
+		const selectedOrInSelectedGroup =
+			selected.has(layerId) || layerInfo?.parents.some((parent) => selected.has(parent));
+
+		if (selectedOrInSelectedGroup) {
+			return selectedTopLevelLayerIds(layersInOrderValue);
+		}
+
+		return layerId ? [layerId] : [];
+	}
+
+	function isLayerInMovingSet(layerId, layersInOrderValue) {
+		const moving = new Set(groupDrag.value?.layerIds ?? []);
+		if (!moving.size) {
+			return false;
+		}
+
+		const layerInfo = layersInOrderValue.find((layer) => layer.id === layerId);
+		return moving.has(layerId) || layerInfo?.parents.some((parent) => moving.has(parent));
+	}
+
+	function samePosition(a, b) {
+		return Math.abs(Number(a) - Number(b)) < 0.001;
+	}
+
+	function expectedLayerMove(layer, delta) {
+		if (layer.box) {
+			return {
+				type: 'box',
+				layer_id: layer.id,
+				position_x: layer.box.position_x + delta.x,
+				position_y: layer.box.position_y + delta.y
+			};
+		}
+
+		if (layer.text) {
+			return {
+				type: 'text',
+				layer_id: layer.id,
+				position_x: layer.text.position_x + delta.x,
+				position_y: layer.text.position_y + delta.y
+			};
+		}
+
+		if (layer.edge) {
+			return {
+				type: 'edge',
+				layer_id: layer.id,
+				source_x: layer.edge.source_x + delta.x,
+				source_y: layer.edge.source_y + delta.y,
+				target_x: layer.edge.target_x + delta.x,
+				target_y: layer.edge.target_y + delta.y,
+				waypoints: (L.get(localProp('waypoints'), layer.edge) ?? layer.edge.waypoints ?? [])
+					.filter((waypoint) => waypoint?.id)
+					.map((waypoint) => ({
+						id: waypoint.id,
+						x: waypoint.x + delta.x,
+						y: waypoint.y + delta.y
+					}))
+			};
+		}
+
+		return undefined;
+	}
+
+	function layerReachedExpectedMove(layer, expected) {
+		if (!layer) {
+			return false;
+		}
+
+		if (expected.type === 'box') {
+			return (
+				layer.box &&
+				samePosition(layer.box.position_x, expected.position_x) &&
+				samePosition(layer.box.position_y, expected.position_y)
+			);
+		}
+
+		if (expected.type === 'text') {
+			return (
+				layer.text &&
+				samePosition(layer.text.position_x, expected.position_x) &&
+				samePosition(layer.text.position_y, expected.position_y)
+			);
+		}
+
+		if (expected.type === 'edge') {
+			if (
+				!layer.edge ||
+				!samePosition(layer.edge.source_x, expected.source_x) ||
+				!samePosition(layer.edge.source_y, expected.source_y) ||
+				!samePosition(layer.edge.target_x, expected.target_x) ||
+				!samePosition(layer.edge.target_y, expected.target_y)
+			) {
+				return false;
+			}
+
+			const waypoints = new Map(
+				(L.get(localProp('waypoints'), layer.edge) ?? layer.edge.waypoints ?? [])
+					.filter((waypoint) => waypoint?.id)
+					.map((waypoint) => [waypoint.id, waypoint])
+			);
+
+			return expected.waypoints.every((expectedWaypoint) => {
+				const waypoint = waypoints.get(expectedWaypoint.id);
+				return (
+					waypoint &&
+					samePosition(waypoint.x, expectedWaypoint.x) &&
+					samePosition(waypoint.y, expectedWaypoint.y)
+				);
+			});
+		}
+
+		return false;
+	}
+
+	function clearCommittedLayerMove(docValue) {
+		if (!groupDrag.value?.committing) {
+			return;
+		}
+
+		const movedLayerIds = groupDrag.value.expectedLayers ?? [];
+		if (movedLayerIds.length) {
+			const layerById = new Map(docValue.layers.items.map((layer) => [layer.id, layer]));
+			const allReachedExpectedMove = movedLayerIds.every((expected) =>
+				layerReachedExpectedMove(layerById.get(expected.layer_id), expected)
+			);
+
+			if (!allReachedExpectedMove) {
+				return;
+			}
+		}
+
+		if (groupDrag.value.baseSnapshotId && groupDrag.value.baseSnapshotId !== docValue.snapshot.current_id) {
+			groupDrag.value = undefined;
+		}
+	}
+
+	function layerMoveTransform(layerId, layersInOrderValue) {
+		if (!isLayerInMovingSet(layerId, layersInOrderValue)) {
+			return undefined;
+		}
+
+		const delta = groupDragDelta.value;
+		return delta.x || delta.y ? `translate(${delta.x} ${delta.y})` : undefined;
+	}
+
+	function expandedMoveLayerIds(layerIds, layersInOrderValue) {
+		const moving = new Set(layerIds);
+		for (const layerInfo of layersInOrderValue) {
+			if (layerInfo.parents.some((parent) => moving.has(parent))) {
+				moving.add(layerInfo.id);
+			}
+		}
+
+		return moving;
+	}
+
+	function moveWaypointList(waypoints, delta) {
+		return Array.isArray(waypoints)
+			? waypoints.map((waypoint) => ({
+					...waypoint,
+					x: waypoint.x + delta.x,
+					y: waypoint.y + delta.y
+				}))
+			: waypoints;
+	}
+
+	function moveLayerValue(layer, delta) {
+		if (layer.box) {
+			return {
+				...layer,
+				box: {
+					...layer.box,
+					position_x: layer.box.position_x + delta.x,
+					position_y: layer.box.position_y + delta.y
+				}
+			};
+		}
+
+		if (layer.text) {
+			return {
+				...layer,
+				text: {
+					...layer.text,
+					position_x: layer.text.position_x + delta.x,
+					position_y: layer.text.position_y + delta.y
+				}
+			};
+		}
+
+		if (layer.edge) {
+			return {
+				...layer,
+				edge: {
+					...layer.edge,
+					source_x: layer.edge.source_x + delta.x,
+					source_y: layer.edge.source_y + delta.y,
+					target_x: layer.edge.target_x + delta.x,
+					target_y: layer.edge.target_y + delta.y,
+					waypoints: moveWaypointList(layer.edge.waypoints, delta)
+				}
+			};
+		}
+
+		return layer;
+	}
+
+	function moveLayersLocally(docAtom, layerIds, delta, layersInOrderValue) {
+		const moving = expandedMoveLayerIds(layerIds, layersInOrderValue);
+		docAtom.value = {
+			...docAtom.value,
+			layers: {
+				...docAtom.value.layers,
+				items: docAtom.value.layers.items.map((layer) =>
+					moving.has(layer.id) ? moveLayerValue(layer, delta) : layer
+				)
+			}
+		};
+	}
+
+	function beginLayerMove(evt, liveLenses, layerId, layersInOrderValue) {
+		if (!evt.isPrimary || !E.isLeftButton(evt)) {
+			return false;
+		}
+
+		const layerIds = dragLayerIdsFor(layerId, layersInOrderValue);
+		if (!layerIds.length) {
+			return false;
+		}
+
+		evt.stopPropagation();
+		evt.preventDefault();
+		evt.currentTarget.focus?.({ preventScroll: true });
+		evt.currentTarget.setPointerCapture(evt.pointerId);
+		evt.currentTarget.currentPointerId = evt.pointerId;
+		backoffValue.value = true;
+
+		const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		groupDrag.value = {
+			pointerId: evt.pointerId,
+			layerIds,
+			bx: world.x,
+			by: world.y,
+			cx: world.x,
+			cy: world.y
+		};
+
+		return true;
+	}
+
+	function updateLayerMove(evt, liveLenses) {
+		if (
+			evt.isPrimary &&
+			groupDrag.value?.pointerId === evt.pointerId &&
+			evt.currentTarget.hasPointerCapture(evt.pointerId)
+		) {
+			evt.stopPropagation();
+			evt.preventDefault();
+			const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+			update(L.set(L.props('cx', 'cy'), { cx: world.x, cy: world.y }), groupDrag);
+		}
+	}
+
+	function commitLayerMove(layer_id, delta, cast, dispatch, docValue) {
+		const layer = docValue.layers.items.find((layer) => layer.id === layer_id);
+		if (!layer) {
+			return Promise.resolve();
+		}
+
+		if (layer.box) {
+			cast('update_box_size', {
+				layer_id,
+				value: {
+					position_x: layer.box.position_x + delta.x,
+					position_y: layer.box.position_y + delta.y,
+					width: layer.box.width,
+					height: layer.box.height
+				}
+			});
+			return Promise.resolve();
+		}
+
+		if (layer.text) {
+			cast('update_text_position', {
+				layer_id,
+				value: {
+					position_x: layer.text.position_x + delta.x,
+					position_y: layer.text.position_y + delta.y
+				}
+			});
+			return Promise.resolve();
+		}
+
+		if (layer.edge) {
+			const edge = layer.edge;
+			const waypoints = L.get(localProp('waypoints'), edge) ?? edge.waypoints ?? [];
+			for (const waypoint of waypoints.filter((waypoint) => waypoint?.id)) {
+				cast('update_waypoint_position', {
+					layer_id,
+					waypoint_id: waypoint.id,
+					value: {
+						x: waypoint.x + delta.x,
+						y: waypoint.y + delta.y
+					}
+				});
+			}
+
+			return dispatch('update_edge_position', {
+				layer_id,
+				value: {
+					source_x: edge.source_x + delta.x,
+					source_y: edge.source_y + delta.y,
+					target_x: edge.target_x + delta.x,
+					target_y: edge.target_y + delta.y
+				}
+			});
+		}
+
+		return dispatch('move_layer_relative', {
+			layer_id,
+			dx: delta.x,
+			dy: delta.y
+		});
+	}
+
+	function finishLayerMove(evt, cast, dispatch, docAtom, layersInOrderValue) {
+		if (groupDrag.value?.pointerId !== evt.pointerId) {
+			return;
+		}
+
+		evt.stopPropagation();
+		evt.preventDefault();
+
+		const delta = groupDragDelta.value;
+		const layerIds = uniqueLayerIds(groupDrag.value.layerIds);
+		const docValue = docAtom.value;
+
+		if (!layerIds.length || (!delta.x && !delta.y)) {
+			if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+				evt.currentTarget.releasePointerCapture(evt.pointerId);
+			}
+			groupDrag.value = undefined;
+			return;
+		}
+
+		moveLayersLocally(docAtom, layerIds, delta, layersInOrderValue);
+		groupDrag.value = undefined;
+
+		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+			evt.currentTarget.releasePointerCapture(evt.pointerId);
+		}
+
+		Promise.all(layerIds.map((layer_id) => commitLayerMove(layer_id, delta, cast, dispatch, docValue)))
+			.catch(() => {});
+	}
+
+	function cancelLayerMove(evt) {
+		if (!evt || groupDrag.value?.pointerId !== evt.pointerId || groupDrag.value?.committing) {
+			return;
+		}
+
+		evt.stopPropagation();
+		evt.preventDefault();
+
+		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+			evt.currentTarget.releasePointerCapture(evt.pointerId);
+		}
+
+		groupDrag.value = undefined;
+	}
+
+	function clickSelectedLayer(evt, cast, id) {
+		evt.preventDefault();
+		evt.stopPropagation();
+		if (evt.shiftKey) {
+			toggleLayerSelection(cast, id);
+		}
+		backoffValue.value = undefined;
+	}
+
+	function reorderSelectedLayers(dispatch, cast, target_rel, layersInOrderValue) {
+		const ids = selectedTopLevelLayerIds(layersInOrderValue);
+		ids
+			.reduce(
+				(results, id) =>
+					results.then((reordered) =>
+						dispatch('reorder_relative', {
+							id,
+							target_rel
+						})
+							.catch(() => ({ id }))
+							.then((result) => [...reordered, result])
+					),
+				Promise.resolve([])
+			)
+			.then((results) => {
+				const reorderedIds = uniqueLayerIds(results.map(({ id }) => id).filter(Boolean));
+				publishSelection(cast, reorderedIds.length ? reorderedIds : ids);
+			});
+	}
+
+	function selectRelativeLayers(dispatch, cast, rel, layersInOrderValue) {
+		const ids = selectedTopLevelLayerIds(layersInOrderValue);
+		Promise.all(
+			ids.map((id) =>
+				dispatch('fetch_relative', {
+					id,
+					rel
+				}).catch(() => ({ id: null }))
+			)
+		).then((results) => {
+			publishSelection(cast, uniqueLayerIds(results.map(({ id }) => id).filter(Boolean)));
+		});
+	}
+
+	function wrapSelectedLayersInGroup(dispatch, cast, layersInOrderValue) {
+		const ids = selectedTopLevelLayerIds(layersInOrderValue);
+		const [firstId, ...restIds] = ids;
+
+		if (!firstId) {
+			return;
+		}
+
+		dispatch('create_layer', {
+			child_layer_id: firstId
+		}).then(({ id: groupId }) => {
+			if (!groupId) {
+				return;
+			}
+
+			for (const layer_id of restIds) {
+				cast('move_layer', {
+					layer_id,
+					target_layer_id: groupId,
+					order: 'above',
+					relative: 'inside'
+				});
+			}
+
+			publishSelection(cast, [groupId]);
+		});
+	}
+
+	function normalizedBox({ start, current }) {
+		const minX = Math.min(start.x, current.x);
+		const minY = Math.min(start.y, current.y);
+		const maxX = Math.max(start.x, current.x);
+		const maxY = Math.max(start.y, current.y);
+
+		return {
+			minX,
+			minY,
+			maxX,
+			maxY,
+			x: minX,
+			y: minY,
+			width: maxX - minX,
+			height: maxY - minY
+		};
+	}
+
+	function finiteBox(box) {
+		return (
+			box &&
+			Number.isFinite(box.minX) &&
+			Number.isFinite(box.minY) &&
+			Number.isFinite(box.maxX) &&
+			Number.isFinite(box.maxY)
+		);
+	}
+
+	function layerBox(layerInfo, layer, textBoundsValue) {
+		if (layerInfo?.has_children) {
+			return layerInfo.deep_bounding;
+		}
+
+		if (layer?.box) {
+			return layerInfo.own_bounding;
+		}
+
+		if (layer?.edge) {
+			return layerInfo.own_bounding;
+		}
+
+		if (layer?.text) {
+			const bbox = textBoundsValue[layer.id];
+			return bbox
+				? {
+						minX: bbox.x,
+						minY: bbox.y,
+						maxX: bbox.x + bbox.width,
+						maxY: bbox.y + bbox.height
+					}
+				: layerInfo.own_bounding;
+		}
+
+		return null;
+	}
+
+	function boxContainsBox(outer, inner) {
+		return (
+			inner.minX >= outer.minX &&
+			inner.minY >= outer.minY &&
+			inner.maxX <= outer.maxX &&
+			inner.maxY <= outer.maxY
+		);
+	}
+
+	function layersInsideBox(box, layersInOrderValue, docValue, textBoundsValue) {
+		const layerById = new Map(docValue.layers.items.map((layer) => [layer.id, layer]));
+
+		const selected = new Set(
+			layersInOrderValue
+				.filter(({ hidden }) => !hidden)
+				.filter((layerInfo) => {
+					const boundingBox = layerBox(layerInfo, layerById.get(layerInfo.id), textBoundsValue);
+					return finiteBox(boundingBox) && boxContainsBox(box, boundingBox);
+				})
+				.map(({ id }) => id)
+		);
+
+		return layersInOrderValue
+			.filter(({ hidden }) => !hidden)
+			.filter(({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent)))
+			.map(({ id }) => id);
+	}
+
+	function clearAreaSelectionDelay() {
+		if (areaSelectionDelay !== undefined) {
+			clearTimeout(areaSelectionDelay);
+			areaSelectionDelay = undefined;
+		}
+	}
+
+	function beginAreaSelection(evt, liveLenses) {
+		if (activeTool.value !== 'select' || !evt.isPrimary || !E.isLeftButton(evt)) {
+			return;
+		}
+
+		const start = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		areaSelection.value = {
+			pointerId: evt.pointerId,
+			start,
+			current: start,
+			active: false,
+			toggle: evt.shiftKey
+		};
+
+		evt.currentTarget.setPointerCapture(evt.pointerId);
+		clearAreaSelectionDelay();
+		areaSelectionDelay = setTimeout(() => {
+			if (areaSelection.value?.pointerId === evt.pointerId) {
+				areaSelection.value = { ...areaSelection.value, active: true };
+				backoffValue.value = true;
+			}
+		}, AREA_SELECTION_DELAY);
+	}
+
+	function updateAreaSelection(evt, liveLenses) {
+		if (areaSelection.value?.pointerId !== evt.pointerId) {
+			return;
+		}
+
+		areaSelection.value = {
+			...areaSelection.value,
+			current: liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+		};
+	}
+
+	function finishAreaSelection(evt, liveLenses, cast, layersInOrderValue, docValue) {
+		if (areaSelection.value?.pointerId !== evt.pointerId) {
+			return;
+		}
+
+		updateAreaSelection(evt, liveLenses);
+		clearAreaSelectionDelay();
+
+		if (areaSelection.value.active) {
+			const box = normalizedBox(areaSelection.value);
+			const ids = layersInsideBox(box, layersInOrderValue, docValue, textBounds.value);
+			mergeAreaSelection(cast, ids, areaSelection.value.toggle);
+			backoffValue.value = true;
+		}
+
+		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+			evt.currentTarget.releasePointerCapture(evt.pointerId);
+		}
+
+		areaSelection.value = undefined;
+	}
+
+	function cancelAreaSelection(evt) {
+		clearAreaSelectionDelay();
+
+		if (
+			evt &&
+			areaSelection.value?.pointerId === evt.pointerId &&
+			evt.currentTarget.hasPointerCapture(evt.pointerId)
+		) {
+			evt.currentTarget.releasePointerCapture(evt.pointerId);
+		}
+
+		areaSelection.value = undefined;
+	}
 
 	function deleteThisDocument(evt) {
 		evt.preventDefault();
@@ -438,6 +1133,7 @@
 				}
 			}, 20)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
+			{@const _layerMoveCommitSync = clearCommittedLayerMove(doc.value)}
 			{@const extension = view(
 				[
 					'viewbox',
@@ -493,6 +1189,10 @@
 			{@const singleSelectedHyperinkedId = read(
 				L.reread((l) => l && l.hyperlink),
 				singleSelectedLayer
+			)}
+			{@const selectedHyperlinkedIds = read(
+				L.reread(({ d, sl }) => selectedLinkedLayerIds(d, sl)),
+				combine({ d: doc, sl: selectedLayers })
 			)}
 			{@const singleSelectedIsBoxOrEdge = read(
 				L.reread((x) => x == 'box' || x == 'edge'),
@@ -719,19 +1419,10 @@
 								{#each [{ target_rel: 'before_parent', label: 'Below Parent' }, { target_rel: 'after_parent', label: 'Above Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
 									<li class="menu-bar-menu-item">
 										<MenuBarButton
-											disabled={!singleSelectedLayer.value}
+											disabled={selectedLayers.value.length === 0}
 											onclick={(evt) => {
 												evt.preventDefault();
-
-												dispatch('reorder_relative', {
-													id: singleSelectedLayer.value.id,
-													target_rel
-												}).then(({ id }) => {
-													if (id) {
-														selectedLayers.value = [id];
-														cast('select', id);
-													}
-												});
+												reorderSelectedLayers(dispatch, cast, target_rel, layersInOrder.value);
 											}}>{label}</MenuBarButton
 										>
 									</li>
@@ -740,18 +1431,10 @@
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
-										disabled={!singleSelectedLayer.value}
+										disabled={selectedLayers.value.length === 0}
 										onclick={(evt) => {
 											evt.preventDefault();
-
-											dispatch('create_layer', {
-												child_layer_id: singleSelectedLayer.value.id
-											}).then(({ id }) => {
-												if (id) {
-													selectedLayers.value = [id];
-													cast('select', id);
-												}
-											});
+											wrapSelectedLayersInGroup(dispatch, cast, layersInOrder.value);
 										}}>Wrap in Group</MenuBarButton
 									>
 								</li>
@@ -771,11 +1454,11 @@
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
-										disabled={!singleSelectedLayerType.value}
+										disabled={selectedLayers.value.length === 0}
 										shortcut={{ ctrlKey: true, key: 'Backspace' }}
 										onclick={(evt) => {
 											evt.preventDefault();
-											cast('delete_layer', selectedLayers.value[0]);
+											deleteSelectedLayers(cast, layersInOrder.value);
 										}}
 										class="menu-bar-item-button menu-bar-item-danger">Delete</MenuBarButton
 									>
@@ -787,31 +1470,20 @@
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
-										disabled={!singleSelectedHyperinkedId.value}
+										disabled={selectedHyperlinkedIds.value.length === 0}
 										onclick={(evt) => {
 											evt.preventDefault();
-											const id = singleSelectedHyperinkedId.value;
-											selectedLayers.value = [id];
-											cast('select', id);
+											publishSelection(cast, selectedHyperlinkedIds.value);
 										}}>Select Linked</MenuBarButton
 									>
 								</li>
 								{#each [{ label: 'Parent', rel: 'parent' }, { label: 'First Sibling', rel: 'sibling_first' }, { label: 'Last Sibling', rel: 'sibling_last' }, { label: 'Sibling Below', rel: 'sibling_prev' }, { label: 'Sibling Above', rel: 'sibling_next' }, { label: 'First Child', rel: 'child_first' }, { label: 'Last Child', rel: 'child_last' }] as { label, rel }}
 									<li class="menu-bar-menu-item">
 										<MenuBarButton
-											disabled={!singleSelectedLayer.value}
+											disabled={selectedLayers.value.length === 0}
 											onclick={(evt) => {
 												evt.preventDefault();
-
-												dispatch('fetch_relative', {
-													id: singleSelectedLayer.value.id,
-													rel
-												}).then(({ id }) => {
-													if (id) {
-														selectedLayers.value = [id];
-														cast('select', id);
-													}
-												});
+												selectRelativeLayers(dispatch, cast, rel, layersInOrder.value);
 											}}>Select {label}</MenuBarButton
 										>
 									</li>
@@ -1103,8 +1775,7 @@
 									pos,
 									...content
 								}).then((l) => {
-									selectedLayers.value = [l.id];
-									cast('select', l.id);
+									publishSelection(cast, [l.id]);
 								});
 							} else if (mime === 'application/json+renewex-blueprint') {
 								dispatch('insert_document', {
@@ -1139,8 +1810,7 @@
 													},
 													image: j.url
 												}).then((l) => {
-													selectedLayers.value = [l.id];
-													cast('select', l.id);
+													publishSelection(cast, [l.id]);
 												});
 											});
 										} else {
@@ -1165,8 +1835,9 @@
 								onclick={(evt) => {
 									evt.preventDefault();
 									if (backoffValue.value === undefined) {
-										selectedLayers.value = [];
-										cast('select', null);
+										if (!evt.shiftKey) {
+											clearSelection(cast);
+										}
 									} else {
 										backoffValue.value = undefined;
 									}
@@ -1176,8 +1847,7 @@
 								}}
 								onkeydown={(evt) => {
 									if (evt.key == 'Escape') {
-										selectedLayers.value = [];
-										cast('select', null);
+										clearSelection(cast);
 									}
 								}}
 							>
@@ -1197,109 +1867,23 @@
 									{frameBoxPath}
 								>
 									{#snippet children(liveLenses, navigationActions)}
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
 										<rect
 											transform={rotationTransform.value}
 											fill="#fff"
 											stroke="#eee"
 											stroke-width="5"
 											{...doc.value.viewbox}
+											onpointerdown={(evt) => beginAreaSelection(evt, liveLenses)}
+											onpointermove={(evt) => updateAreaSelection(evt, liveLenses)}
+											onpointerup={(evt) =>
+												finishAreaSelection(evt, liveLenses, cast, layersInOrder.value, doc.value)}
+											onpointercancel={cancelAreaSelection}
+											onlostpointercapture={cancelAreaSelection}
 										/>
 										{#if showGrid.value}
 											<Grid {rotationTransform} {frameBoxObject} {cameraScale} {gridDistance} />
 										{/if}
-
-										<g transform={rotationTransform.value} opacity="0.7">
-											{#each selectedLayers.value as id (id)}
-												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-
-												{@const deep_bounding = view(
-													[L.find((el) => el.id == id && el.has_children), 'deep_bounding'],
-													layersInOrder
-												).value}
-
-												{#if deep_bounding}
-													<rect
-														tabindex="-1"
-														stroke="#0af"
-														cursor="move"
-														stroke-dasharray="{cameraScale.value * 2} {cameraScale.value * 2}"
-														stroke-width={cameraScale.value * 2}
-														x={deep_bounding.minX - 3 * cameraScale.value + groupDragDelta.value.x}
-														y={deep_bounding.minY - 3 * cameraScale.value + groupDragDelta.value.y}
-														width={deep_bounding.maxX - deep_bounding.minX + 6 * cameraScale.value}
-														height={deep_bounding.maxY - deep_bounding.minY + 6 * cameraScale.value}
-														fill="none"
-														pointer-events="all"
-														role="button"
-														data-layer-id={id}
-														onclick={(evt) => {
-															evt.stopPropagation();
-															backoffValue.value = undefined;
-														}}
-														onpointerdown={(evt) => {
-															if (evt.isPrimary && E.isLeftButton(evt)) {
-																evt.preventDefault();
-																evt.currentTarget.focus({
-																	preventScroll: true
-																});
-																evt.currentTarget.setPointerCapture(evt.pointerId);
-																evt.currentTarget.currentPointerId = evt.pointerId;
-																backoffValue.value = true;
-																const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
-
-																groupDrag.value = {
-																	pointerId: evt.pointerId,
-																	bx: world.x,
-																	by: world.y,
-																	cx: world.x,
-																	cy: world.y
-																};
-															}
-														}}
-														onpointermove={(evt) => {
-															if (
-																evt.isPrimary &&
-																evt.currentTarget.hasPointerCapture(evt.pointerId)
-															) {
-																const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
-
-																update(
-																	L.set(L.props('cx', 'cy'), { cx: world.x, cy: world.y }),
-																	groupDrag
-																);
-															}
-														}}
-														onpointerup={(evt) => {
-															if (
-																evt.isPrimary &&
-																evt.currentTarget.hasPointerCapture(evt.pointerId)
-															) {
-																const layer_id = evt.currentTarget.getAttribute('data-layer-id');
-																const delta = groupDragDelta.value;
-																dispatch('move_layer_relative', {
-																	layer_id,
-																	dx: delta.x,
-																	dy: delta.y
-																})
-																	.catch(() => {})
-																	.then(() => {
-																		groupDrag.value = undefined;
-																	});
-															}
-														}}
-														onkeydown={(evt) => {
-															if (evt.key === 'Escape' || evt.key === 'Esc') {
-																evt.stopPropagation();
-																evt.currentTarget.releasePointerCapture(
-																	groupDrag.value.currentTarget.currentPointerId
-																);
-																groupDrag.value = undefined;
-															}
-														}}
-													/>
-												{/if}
-											{/each}
-										</g>
 
 										<g transform={rotationTransform.value}>
 											<g id="full-document-{data.document.id}">
@@ -1313,6 +1897,7 @@
 														{#if el.value?.box}
 															<g
 																role="button"
+																transform={layerMoveTransform(id, layersInOrder.value)}
 																oncontextmenu={(evt) => {
 																	openTargetLocation(evt, el.value);
 																}}
@@ -1322,19 +1907,19 @@
 																	}
 																	evt.stopPropagation();
 																	if (groupDrag.value === undefined) {
-																		selectedLayers.value = [el.value?.id];
-
 																		if (el.value?.id) {
 																			evt.preventDefault();
-																			cast('select', el.value?.id);
+																			selectLayer(cast, el.value.id, evt);
 																		}
 																	}
 																}}
 																tabindex="-1"
-																onkeydown={() => {
-																	selectedLayers.value = [el.value?.id];
-																	if (el.value?.id) {
-																		cast('select', el.value?.id);
+																onkeydown={(evt) => {
+																	if (evt.key === ' ' || evt.key === 'Enter') {
+																		evt.preventDefault();
+																		if (el.value?.id) {
+																			selectLayer(cast, el.value.id, evt);
+																		}
 																	}
 																}}
 																fill={el.value?.style?.background_color ?? '#70DB93'}
@@ -1362,6 +1947,7 @@
 															{#key el.id}
 																<g
 																	role="button"
+																	transform={layerMoveTransform(id, layersInOrder.value)}
 																	oncontextmenu={(evt) => {
 																		openTargetLocation(evt, el.value);
 																	}}
@@ -1371,18 +1957,19 @@
 																		}
 																		evt.stopPropagation();
 																		if (groupDrag.value === undefined) {
-																			selectedLayers.value = [el.value?.id];
 																			if (el.value?.id) {
 																				evt.preventDefault();
-																				cast('select', el.value?.id);
+																				selectLayer(cast, el.value.id, evt);
 																			}
 																		}
 																	}}
 																	tabindex="-1"
-																	onkeydown={() => {
-																		selectedLayers.value = [el.value?.id];
-																		if (el.value?.id) {
-																			cast('select', el.value?.id);
+																	onkeydown={(evt) => {
+																		if (evt.key === ' ' || evt.key === 'Enter') {
+																			evt.preventDefault();
+																			if (el.value?.id) {
+																				selectLayer(cast, el.value.id, evt);
+																			}
 																		}
 																	}}
 																>
@@ -1397,6 +1984,7 @@
 														{#if el.value?.edge}
 															<g
 																role="button"
+																transform={layerMoveTransform(id, layersInOrder.value)}
 																oncontextmenu={(evt) => {
 																	openTargetLocation(evt, el.value);
 																}}
@@ -1406,18 +1994,19 @@
 																	}
 																	evt.stopPropagation();
 																	if (groupDrag.value === undefined) {
-																		selectedLayers.value = [el.value?.id];
 																		if (el.value?.id) {
 																			evt.preventDefault();
-																			cast('select', el.value?.id);
+																			selectLayer(cast, el.value.id, evt);
 																		}
 																	}
 																}}
 																tabindex="-1"
-																onkeydown={() => {
-																	selectedLayers.value = [el.value?.id];
-																	if (el.value?.id) {
-																		cast('select', el.value?.id);
+																onkeydown={(evt) => {
+																	if (evt.key === ' ' || evt.key === 'Enter') {
+																		evt.preventDefault();
+																		if (el.value?.id) {
+																			selectLayer(cast, el.value.id, evt);
+																		}
 																	}
 																}}
 																opacity={el.value?.style?.opacity ?? '1'}
@@ -1517,6 +2106,49 @@
 												{/each}
 											</g>
 										</g>
+										{#if activeTool.value === 'select'}
+											<g transform={rotationTransform.value}>
+												{#each selectedLayers.value as id (id)}
+													{@const deep_bounding = view(
+														[L.find((el) => el.id == id && el.has_children), 'deep_bounding'],
+														layersInOrder
+													).value}
+
+													{#if deep_bounding}
+														<rect
+															tabindex="-1"
+															cursor="move"
+															x={deep_bounding.minX - 3 * cameraScale.value + groupDragDelta.value.x}
+															y={deep_bounding.minY - 3 * cameraScale.value + groupDragDelta.value.y}
+															width={deep_bounding.maxX - deep_bounding.minX + 6 * cameraScale.value}
+															height={deep_bounding.maxY - deep_bounding.minY + 6 * cameraScale.value}
+															fill="transparent"
+															pointer-events="all"
+															role="button"
+															onclick={(evt) => clickSelectedLayer(evt, cast, id)}
+															onpointerdown={(evt) =>
+																beginLayerMove(evt, liveLenses, id, layersInOrder.value)}
+															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
+															onpointerup={(evt) =>
+																finishLayerMove(
+																	evt,
+																	cast,
+																	dispatch,
+																	doc,
+																	layersInOrder.value
+																)}
+															onpointercancel={cancelLayerMove}
+															onlostpointercapture={cancelLayerMove}
+															onkeydown={(evt) => {
+																if (evt.key === 'Escape' || evt.key === 'Esc') {
+																	cancelLayerMove(evt);
+																}
+															}}
+														/>
+													{/if}
+												{/each}
+											</g>
+										{/if}
 										<g transform={rotationTransform.value} opacity="0.7">
 											{#each selectedLayers.value as id (id)}
 												{@const els = view(
@@ -1654,6 +2286,7 @@
 												{#if el.value?.box}
 													<rect
 														class="selected"
+														transform={layerMoveTransform(id, layersInOrder.value)}
 														x={el.value?.box.position_x - cameraScale.value}
 														y={el.value?.box.position_y - cameraScale.value}
 														width={el.value?.box.width + 2 * cameraScale.value}
@@ -1667,6 +2300,7 @@
 													{#if bbox.value}
 														<rect
 															class="selected"
+															transform={layerMoveTransform(id, layersInOrder.value)}
 															x={bbox.value.x}
 															y={bbox.value.y}
 															width={bbox.value.width}
@@ -1678,6 +2312,7 @@
 												{#if el.value?.edge}
 													<path
 														class="selected"
+														transform={layerMoveTransform(id, layersInOrder.value)}
 														d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
 															el.value?.edge,
 															L.get(localProp('waypoints'), el.value?.edge)
@@ -1697,7 +2332,8 @@
 														)}
 														<g
 															class="selected"
-															transform="rotate({source_angle} {el.value?.edge.source_x} {el.value
+															transform="{layerMoveTransform(id, layersInOrder.value) ??
+																''} rotate({source_angle} {el.value?.edge.source_x} {el.value
 																?.edge.source_y})"
 														>
 															{#await data.symbols then symbols}
@@ -1737,7 +2373,8 @@
 														)}
 														<g
 															class="selected"
-															transform="rotate({target_angle} {el.value?.edge.target_x} {el.value
+															transform="{layerMoveTransform(id, layersInOrder.value) ??
+																''} rotate({target_angle} {el.value?.edge.target_x} {el.value
 																?.edge.target_y})"
 														>
 															{#await data.symbols then symbols}
@@ -1782,6 +2419,23 @@
 																['layers', 'items', L.find((el) => el.id == id)],
 																doc
 															)}
+															{@const deep_bounding = view(
+																[L.find((layer) => layer.id == id && layer.has_children), 'deep_bounding'],
+																layersInOrder
+															).value}
+															{#if deep_bounding}
+																<rect
+																	class="selected"
+																	x={deep_bounding.minX - 3 * cameraScale.value}
+																	y={deep_bounding.minY - 3 * cameraScale.value}
+																	width={deep_bounding.maxX -
+																		deep_bounding.minX +
+																		6 * cameraScale.value}
+																	height={deep_bounding.maxY -
+																		deep_bounding.minY +
+																		6 * cameraScale.value}
+																></rect>
+															{/if}
 															{#if el.value?.box}
 																<rect
 																	class="selected"
@@ -1918,6 +2572,19 @@
 											{/each}
 										</g>
 
+										{#if areaSelection.value?.active}
+											{@const selectionBox = normalizedBox(areaSelection.value)}
+											<g transform={rotationTransform.value}>
+												<rect
+													class="area-selection"
+													x={selectionBox.x}
+													y={selectionBox.y}
+													width={selectionBox.width}
+													height={selectionBox.height}
+												/>
+											</g>
+										{/if}
+
 										{#if activeTool.value === 'select'}
 											<g transform={rotationTransform.value} opacity="0.7">
 												{#each selectedLayers.value as id (id)}
@@ -1960,43 +2627,6 @@
 													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 													{@const waypoints = view(['edge', localProp('waypoints')], el)}
 													{@const persistentWaypoints = view(L.filter(R.prop('id')), waypoints)}
-													{@const pathTrans = view(
-														[
-															localProp('translation'),
-															L.defaults({ x: 0, y: 0, baseX: 0, baseY: 0, dx: 0, dy: 0 })
-														],
-														el
-													)}
-													{@const pathTransCurrent = view(
-														[
-															L.setter(({ x, y }, old) => ({
-																baseX: x,
-																baseY: y,
-																x: x,
-																y: y,
-																dx: old.dx + x - old.x,
-																dy: old.dy + y - old.y
-															})),
-															L.props('x', 'y')
-														],
-														pathTrans
-													)}
-													{@const pathTransBase = view(
-														[
-															L.setter(({ baseX, baseY }, old) => ({
-																baseX: baseX || 0,
-																baseY: baseY || 0,
-																x: baseX,
-																y: baseY,
-																dx: 0,
-																dy: 0
-															})),
-															L.pick({ x: 'baseX', y: 'baseY' })
-														],
-														pathTrans
-													)}
-
-													{@const pathTransDelta = view(L.props('dx', 'dy'), pathTrans)}
 
 													{@const waypointProposals = view(
 														[
@@ -2028,31 +2658,11 @@
 																el.value?.edge,
 																L.get(localProp('waypoints'), el.value?.edge)
 															)}
+															transform={layerMoveTransform(id, layersInOrder.value)}
 															tabindex="-1"
 															onkeydown={(evt) => {
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	evt.stopPropagation();
-																	evt.preventDefault();
-																	evt.currentTarget.releasePointerCapture(
-																		evt.currentTarget.currentPointerId
-																	);
-																	const d = pathTransDelta.value;
-
-																	update(
-																		(e) => {
-																			return {
-																				...e,
-																				source_x: e.source_x - (e.source_bond ? 0 : d.dx),
-																				source_y: e.source_y - (e.source_bond ? 0 : d.dy),
-																				target_x: e.target_x - (e.target_bond ? 0 : d.dx),
-																				target_y: e.target_y - (e.target_bond ? 0 : d.dy)
-																			};
-																		},
-																		view('edge', el)
-																	);
-
-																	pathTrans.value = localProp.reset;
-																	waypoints.value = localProp.reset;
+																	cancelLayerMove(evt);
 																}
 															}}
 															stroke={'transparent'}
@@ -2066,90 +2676,20 @@
 															stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 															style:pointer-events="painted"
 															cursor="move"
-															onpointerdown={(evt) => {
-																if (evt.isPrimary && E.isLeftButton(evt)) {
-																	evt.stopPropagation();
-																	evt.preventDefault();
-																	const d = pathTransDelta.value;
-
-																	update(
-																		(e) => {
-																			return {
-																				...e,
-																				source_x: e.source_x - (e.source_bond ? 0 : d.dx),
-																				source_y: e.source_y - (e.source_bond ? 0 : d.dy),
-																				target_x: e.target_x - (e.target_bond ? 0 : d.dx),
-																				target_y: e.target_y - (e.target_bond ? 0 : d.dy)
-																			};
-																		},
-																		view('edge', el)
-																	);
-																	waypoints.value = localProp.reset;
-																	evt.currentTarget.setPointerCapture(evt.pointerId);
-																	evt.currentTarget.currentPointerId = evt.pointerId;
-																	evt.currentTarget.focus();
-
-																	pathTransBase.value = liveLenses.clientToCanvas(
-																		evt.clientX,
-																		evt.clientY
-																	);
-																}
-															}}
-															onclick={(evt) => {
-																evt.preventDefault(evt.stopPropagation());
-															}}
-															onpointermove={(evt) => {
-																evt.stopPropagation();
-																evt.preventDefault();
-																if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-																	const pos = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
-																	const dx = pos.x - pathTransCurrent.value.x;
-																	const dy = pos.y - pathTransCurrent.value.y;
-
-																	update((wps) => {
-																		return wps.map((wp) => ({
-																			...wp,
-																			x: wp.x + dx,
-																			y: wp.y + dy
-																		}));
-																	}, waypoints);
-																	update(
-																		(e) => {
-																			return {
-																				...e,
-																				source_x: e.source_x + (e.source_bond ? 0 : dx),
-																				source_y: e.source_y + (e.source_bond ? 0 : dy),
-																				target_x: e.target_x + (e.target_bond ? 0 : dx),
-																				target_y: e.target_y + (e.target_bond ? 0 : dy)
-																			};
-																		},
-																		view('edge', el)
-																	);
-
-																	pathTransCurrent.value = pos;
-																}
-															}}
-															onpointerup={(evt) => {
-																evt.stopPropagation();
-																evt.preventDefault();
-																const delta = pathTransDelta.value;
-																if (delta.dx || delta.dy) {
-																	dispatch('move_layer_relative', {
-																		layer_id: el.value.id,
-																		...delta
-																	}).then((e) => {
-																		pathTrans.value = localProp.reset;
-																		waypoints.value = localProp.reset;
-																	});
-																} else {
-																	pathTrans.value = localProp.reset;
-																	waypoints.value = localProp.reset;
-																}
-															}}
-															onpointercancel={(evt) => {
-																evt.stopPropagation();
-																evt.preventDefault();
-															}}
+															onpointerdown={(evt) =>
+																beginLayerMove(evt, liveLenses, el.value.id, layersInOrder.value)}
+															onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
+															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
+															onpointerup={(evt) =>
+																finishLayerMove(
+																	evt,
+																	cast,
+																	dispatch,
+																	doc,
+																	layersInOrder.value
+																)}
+															onpointercancel={cancelLayerMove}
+															onlostpointercapture={cancelLayerMove}
 														/>
 														{#each waypointProposals.value as wp_proposal, wi (wp_proposal.id_before)}
 															{@const pos = view(
@@ -2190,6 +2730,7 @@
 																waypoints
 															)}
 															<g
+																transform={layerMoveTransform(id, layersInOrder.value)}
 																onclick={(evt) => {
 																	evt.stopPropagation();
 																	backoffValue.value = undefined;
@@ -2263,7 +2804,7 @@
 																	r={12 * cameraScale.value}
 																	cx={wp_proposal.x}
 																	cy={wp_proposal.y}
-																	pointer-events="all"
+																	pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
 																/>
 																<circle
 																	fill="white"
@@ -2288,6 +2829,7 @@
 																waypoints
 															)}
 															<g
+																transform={layerMoveTransform(id, layersInOrder.value)}
 																onclick={(evt) => {
 																	backoffValue.value = undefined;
 																	evt.stopPropagation();
@@ -2375,7 +2917,7 @@
 																	r={12 * cameraScale.value}
 																	cx={wp.x}
 																	cy={wp.y}
-																	pointer-events="all"
+																	pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
 																/>
 																<circle
 																	fill="white"
@@ -2400,6 +2942,7 @@
 															el
 														)}
 														<g
+															transform={layerMoveTransform(id, layersInOrder.value)}
 															onclick={(evt) => {
 																evt.stopPropagation();
 															}}
@@ -2468,7 +3011,7 @@
 																fill="none"
 																cursor="move"
 																stroke="none"
-																pointer-events="all"
+																pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
 																r={12 * cameraScale.value}
 																cx={el.value?.edge?.source_x}
 																cy={el.value?.edge?.source_y}
@@ -2485,6 +3028,7 @@
 															/></g
 														>
 														<g
+															transform={layerMoveTransform(id, layersInOrder.value)}
 															onclick={(evt) => {
 																evt.stopPropagation();
 															}}
@@ -2553,7 +3097,7 @@
 																fill="none"
 																stroke="none"
 																cursor="move"
-																pointer-events="all"
+																pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
 																r={12 * cameraScale.value}
 																cx={el.value?.edge?.target_x}
 																cy={el.value?.edge?.target_y}
@@ -2708,87 +3252,28 @@
 														],
 														{ el, textBounds }
 													)}
-													{@const boxPos = view(
-														[
-															L.cond([R.prop('box'), 'box'], [R.prop('text'), 'text']),
-															L.pick({
-																x: 'position_x',
-																y: 'position_y'
-															})
-														],
-														el
-													)}
 													<rect
 														{...boxDim.value}
+														transform={layerMoveTransform(id, layersInOrder.value)}
 														fill="none"
 														class="draggable"
-														onpointerdown={(evt) => {
-															if (evt.isPrimary && E.isLeftButton(evt)) {
-																evt.preventDefault();
-																evt.currentTarget.focus({
-																	preventScroll: true
-																});
-																evt.currentTarget.setPointerCapture(evt.pointerId);
-																evt.currentTarget.currentPointerId = evt.pointerId;
-																backoffValue.value = boxPos.value;
-																pointerOffset.value = Geo.diff2d(
-																	boxPos.value,
-																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																);
-															}
-														}}
-														onpointermove={(evt) => {
-															if (
-																evt.isPrimary &&
-																evt.currentTarget.hasPointerCapture(evt.pointerId)
-															) {
-																boxPos.value = Geo.translate(
-																	pointerOffset.value,
-																	liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																);
-															}
-														}}
-														onpointerup={(evt) => {
-															if (
-																evt.isPrimary &&
-																evt.currentTarget.hasPointerCapture(evt.pointerId)
-															) {
-																if (el.value.box) {
-																	cast('update_box_size', {
-																		layer_id: el.value.id,
-																		value: L.get(
-																			[
-																				'box',
-																				L.props('position_x', 'position_y', 'width', 'height')
-																			],
-																			el.value
-																		)
-																	});
-																} else if (el.value.text) {
-																	cast('update_text_position', {
-																		layer_id: el.value.id,
-																		value: L.get(
-																			['text', L.props('position_x', 'position_y')],
-																			el.value
-																		)
-																	});
-																}
-															}
-														}}
-														onclick={(evt) => {
-															evt.stopPropagation();
-															backoffValue.value = undefined;
-														}}
+														onpointerdown={(evt) =>
+															beginLayerMove(evt, liveLenses, el.value.id, layersInOrder.value)}
+														onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
+														onpointerup={(evt) =>
+															finishLayerMove(
+																evt,
+																cast,
+																dispatch,
+																doc,
+																layersInOrder.value
+															)}
+														onpointercancel={cancelLayerMove}
+														onlostpointercapture={cancelLayerMove}
+														onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
 														onkeydown={(evt) => {
 															if (evt.key === 'Escape' || evt.key === 'Esc') {
-																if (!backoffValue.value) {
-																	return;
-																}
-																evt.stopPropagation();
-																evt.currentTarget.releasePointerCapture(
-																	evt.currentTarget.currentPointerId
-																);
-																boxPos.value = backoffValue.value;
+																cancelLayerMove(evt);
 															}
 														}}
 														role="button"
@@ -2860,7 +3345,8 @@
 																}}
 																role="button"
 																tabindex="-1"
-																transform="translate({dy * cameraScale.value * 6},{dx *
+																transform="{layerMoveTransform(id, layersInOrder.value) ??
+																	''} translate({dy * cameraScale.value * 6},{dx *
 																	cameraScale.value *
 																	6})"
 															>
@@ -2868,7 +3354,7 @@
 																	fill="none"
 																	stroke="none"
 																	cursor="move"
-																	pointer-events="all"
+																	pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
 																	vector-effect="non-scaling-stroke"
 																	r={cameraScale.value * 12}
 																	cx={posVal.x}
@@ -3015,8 +3501,7 @@
 																	},
 																	target: { socket_id: e.target.socket, layer_id: e.target.layer }
 																}).then((l) => {
-																	selectedLayers.value = [l.id];
-																	cast('select', l.id);
+																	publishSelection(cast, [l.id]);
 																});
 															}
 														}}
@@ -3047,8 +3532,7 @@
 																		semantic_tag: autoNodeType.edge.semantic_tag
 																	}
 																}).then((l) => {
-																	selectedLayers.value = [l.id];
-																	cast('select', l.id);
+																	publishSelection(cast, [l.id]);
 																});
 															}
 														}}
@@ -3068,8 +3552,7 @@
 														base_layer_id: L.get('id', singleSelectedLayer.value),
 														points
 													}).then((l) => {
-														selectedLayers.value = [l.id];
-														cast('select', l.id);
+														publishSelection(cast, [l.id]);
 													});
 												}}
 											/>
@@ -3127,8 +3610,7 @@
 														points,
 														cyclic: !!closed
 													}).then((l) => {
-														selectedLayers.value = [l.id];
-														cast('select', l.id);
+														publishSelection(cast, [l.id]);
 													});
 												}}
 											/>
@@ -4640,7 +5122,7 @@
 								{@const selected = view(
 									L.lens(
 										(s) => s.includes(id),
-										(s, old) => (s ? [id] : old.filter((o) => o !== id))
+										(s, old) => (s ? uniqueLayerIds([...old, id]) : old.filter((o) => o !== id))
 									),
 									selectedLayers
 								)}
@@ -4736,8 +5218,7 @@
 											evt.dataTransfer.effectAllowed = 'move';
 											setTransferContent(evt.dataTransfer, 'application/json+renewex-layer-id', id);
 
-											selectedLayers.value = [id];
-											cast('select', id);
+											publishSelection(cast, [id]);
 										}}
 										ondragover={(evt) => {
 											if (evt.currentTarget === evt.relatedTarget) {
@@ -4798,24 +5279,13 @@
 									<div
 										role="button"
 										tabindex="-1"
-										onclick={() => {
-											const newSel = update(R.not, selected);
-
-											if (newSel) {
-												cast('select', id);
-											} else {
-												cast('select', null);
-											}
+										onclick={(evt) => {
+											selectLayer(cast, id, evt);
 										}}
 										onkeydown={(evt) => {
-											if (evt.key == 'space') {
-												const newSel = update(R.not, selected);
-
-												if (newSel) {
-													cast('select', id);
-												} else {
-													cast('select', null);
-												}
+											if (evt.key === ' ' || evt.key === 'Enter') {
+												evt.preventDefault();
+												selectLayer(cast, id, evt);
 											}
 										}}
 										style="flex-grow: 1; display: flex; flex-direction: column; align-self: stretch; justify-content: center; box-sizing: border-box;"
@@ -4910,14 +5380,12 @@
 									onkeydown={(evt) => {
 										if (evt.key === 'enter') {
 											const id = singleSelectedHyperinkedId.value;
-											selectedLayers.value = [id];
-											cast('select', id);
+											publishSelection(cast, [id]);
 										}
 									}}
 									onclick={() => {
 										const id = singleSelectedHyperinkedId.value;
-										selectedLayers.value = [id];
-										cast('select', id);
+										publishSelection(cast, [id]);
 									}}>{singleSelectedHyperinkedId.value}</u
 								>
 							</div>
@@ -4979,11 +5447,11 @@
 							{/await}
 						</label>
 						<button
-							disabled={!singleSelectedLayerType.value}
+							disabled={selectedLayers.value.length === 0}
 							class="delete-button"
 							onclick={(evt) => {
 								evt.preventDefault();
-								cast('delete_layer', selectedLayers.value[0]);
+								deleteSelectedLayers(cast, layersInOrder.value);
 							}}>Delete</button
 						>
 					</div>
@@ -5627,6 +6095,16 @@
 	.draggable {
 		pointer-events: all;
 		cursor: move;
+	}
+
+	rect.area-selection {
+		stroke: #0af;
+		fill: #0af;
+		fill-opacity: 0.12;
+		stroke-width: 1.5;
+		stroke-dasharray: 6 4;
+		vector-effect: non-scaling-stroke;
+		pointer-events: none;
 	}
 
 	rect.selected {
