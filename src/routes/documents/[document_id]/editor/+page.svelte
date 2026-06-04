@@ -1865,14 +1865,46 @@
 		return /^[0-9]+(\.[0-9]+)?$/.test(text) ? `${text}px` : text;
 	}
 
+	function visibleTextMatchesLayer(element, layer) {
+		return (
+			!!element &&
+			element.classList?.contains?.('editor-text-visible') &&
+			(!layer?.id || element.dataset?.layerId === layer.id)
+		);
+	}
+
+	function eventHitsVisibleText(evt, layer) {
+		const directText = evt?.target?.closest?.('.editor-text-visible');
+		if (visibleTextMatchesLayer(directText, layer)) {
+			return true;
+		}
+
+		if (
+			typeof document === 'undefined' ||
+			typeof document.elementsFromPoint !== 'function' ||
+			!Number.isFinite(evt?.clientX) ||
+			!Number.isFinite(evt?.clientY)
+		) {
+			return false;
+		}
+
+		return document
+			.elementsFromPoint(evt.clientX, evt.clientY)
+			.some((element) => visibleTextMatchesLayer(element.closest?.('.editor-text-visible'), layer));
+	}
+
 	function beginInlineTextEdit(
 		evt,
 		layer,
 		bbox,
 		cast,
-		{ allowSelectTool = false, force = false, select = true } = {}
+		{ allowSelectTool = false, force = false, select = true, requireTextHit = true } = {}
 	) {
-		if (!canInlineEditTextLayer(layer, allowSelectTool, force) || groupDrag.value !== undefined) {
+		if (
+			!canInlineEditTextLayer(layer, allowSelectTool, force) ||
+			groupDrag.value !== undefined ||
+			(requireTextHit && !eventHitsVisibleText(evt, layer))
+		) {
 			return false;
 		}
 
@@ -1896,12 +1928,16 @@
 	}
 
 	function beginContextTextEdit(evt, layer, bbox, cast) {
-		if (!layer?.text || groupDrag.value !== undefined) {
+		if (!layer?.text || groupDrag.value !== undefined || !eventHitsVisibleText(evt, layer)) {
 			return false;
 		}
 
 		activateTextToolForContextEdit(layer, cast);
-		return beginInlineTextEdit(evt, layer, bbox, cast, { force: true, select: false });
+		return beginInlineTextEdit(evt, layer, bbox, cast, {
+			force: true,
+			select: false,
+			requireTextHit: true
+		});
 	}
 
 	function updateInlineTextEdit(value) {

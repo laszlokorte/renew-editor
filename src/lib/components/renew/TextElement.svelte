@@ -47,6 +47,8 @@
 		/>
 
 		<text
+			class="editor-text-visible"
+			data-layer-id={el.id}
 			text-rendering="geometricPrecision"
 			fill={el.text?.style?.text_color ?? 'black'}
 			x={el.text.position_x +
@@ -57,16 +59,17 @@
 			font-family={el.text?.style?.font_family ?? 'sans-serif'}
 			font-weight={el.text?.style?.bold ? 'bold' : 'normal'}
 			font-style={el.text?.style?.italic ? 'italic' : 'normal'}
+			xml:space="preserve"
 			data-blank={el.text.style?.blank_lines ?? false}
 			data-body={body}
 		>
 			{#each body.split('\n') as line, li (li)}
-				{#if line.trim()}
+				{#if line.length > 0}
 					<tspan
 						text-decoration={el.text?.style?.underline ? 'underline' : 'none'}
 						x={el.text.position_x +
 							alignmentWeight[el.text?.style?.alignment ?? 'left'] * (bbox.value?.width ?? 0)}
-						dy={(li == 0 ? 1 : 1.2) * (font_size ?? 12)}>{line.trim()}</tspan
+						dy={(li == 0 ? 1 : 1.2) * (font_size ?? 12)}>{line}</tspan
 					>
 				{:else if el.text.style?.blank_lines ?? false}
 					<tspan
@@ -92,15 +95,16 @@
 		font-family={el.text?.style?.font_family ?? 'sans-serif'}
 		font-weight={el.text?.style?.bold ? 'bold' : 'normal'}
 		font-style={el.text?.style?.italic ? 'italic' : 'normal'}
+		xml:space="preserve"
 		data-blank={el.text.style?.blank_lines ?? false}
 		data-body={body}
 	>
 		{#each body.split('\n') as line, li (li)}
-			{#if line.trim()}
+			{#if line.length > 0}
 				<tspan
 					text-decoration={el.text?.style?.underline ? 'underline' : 'none'}
 					x={el.text.position_x}
-					dy={(li == 0 ? 1 : 1.2) * (font_size ?? 12)}>{line.trim()}</tspan
+					dy={(li == 0 ? 1 : 1.2) * (font_size ?? 12)}>{line}</tspan
 				>
 			{:else if el.text.style?.blank_lines ?? false}
 				<tspan
@@ -125,5 +129,10 @@
 		-webkit-user-modify: none !important;
 		-webkit-highlight: none !important;
 		-webkit-tap-highlight-color: transparent;
+	}
+
+	.editor-text-visible {
+		cursor: text;
+		pointer-events: visiblePainted;
 	}
 </style>
