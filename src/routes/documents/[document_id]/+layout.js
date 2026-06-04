@@ -3,10 +3,27 @@ import { goto } from '$app/navigation';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
 import documentApi from '$lib/api/documents.js';
+import { cachedResource } from '$lib/api/resource_cache.js';
 import { downloadFile } from '$lib/io/download';
 import defaultSyntax from './defaultSyntax.json';
 
 export const ssr = false;
+
+function loadLinkJson(api, link, label) {
+	if (!link?.href) {
+		return Promise.reject(new Error(`${label} not defined`));
+	}
+
+	return api.loadJson(link.href);
+}
+
+function cachedLinkJson(api, link, label) {
+	if (!link?.href) {
+		return Promise.reject(new Error(`${label} not defined`));
+	}
+
+	return cachedResource(`${label}:${link.href}`, () => api.loadJson(link.href));
+}
 
 function createCommands(fetchFn, doc) {
 	const api = documentApi(fetchFn, authState.routes, authState.authHeader);
@@ -165,7 +182,7 @@ export async function load({ params, fetch }) {
 	const api = documentApi(fetch, authState.routes, authState.authHeader);
 
 	if (authState.isAuthenticated) {
-		const syntaxes = api.loadSyntaxes();
+		const syntaxes = cachedResource('syntax:list', () => api.loadSyntaxes());
 
 		return fetch(authState.value.routes.document.href.replace(':id', params.document_id), {
 			headers: {
@@ -185,70 +202,42 @@ export async function load({ params, fetch }) {
 						return {
 							document: j,
 							commands: createCommands(fetch, j),
-							symbols: new Promise((r, e) =>
-								j.links.symbols ? r(j.links.symbols.href) : e('doc.links.symbols not defined')
-							)
-								.then(api.loadJson)
-								.then((symbols) => {
-									return new Map(
-										symbols.shapes.map((s) => [s.id, { name: s.name, paths: s.paths }])
-									);
-								}),
-							socket_schemas: new Promise((r, e) =>
-								j.links.socket_schemas
-									? r(j.links.socket_schemas.href)
-									: e('doc.links.socket_schemas not defined')
-							)
-								.then(api.loadJson)
-								.then((socket_schemas) => {
+							symbols: cachedLinkJson(api, j.links.symbols, 'symbols').then((symbols) => {
+								return new Map(symbols.shapes.map((s) => [s.id, { name: s.name, paths: s.paths }]));
+							}),
+							socket_schemas: cachedLinkJson(api, j.links.socket_schemas, 'socket_schemas').then(
+								(socket_schemas) => {
 									return new Map(
 										socket_schemas.socket_schemas.map((s) => [
 											s.id,
 											{ name: s.name, sockets: s.sockets }
 										])
 									);
-								}),
-							semantic_tags: new Promise((r, e) =>
-								j.links.semantic_tags
-									? r(j.links.semantic_tags.href)
-									: e('doc.links.semantic_tags not defined')
-							)
-								.then(api.loadJson)
-								.then((semantic_tags) => {
+								}
+							),
+							semantic_tags: cachedLinkJson(api, j.links.semantic_tags, 'semantic_tags').then(
+								(semantic_tags) => {
 									return semantic_tags.semantic_tags;
-								}),
-							primitives: new Promise((r, e) =>
-								j.links.primitives
-									? r(j.links.primitives.href)
-									: e('doc.links.primitives not defined')
-							)
-								.then(api.loadJson)
-								.then((primitives) => {
+								}
+							),
+							primitives: cachedLinkJson(api, j.links.primitives, 'primitives').then(
+								(primitives) => {
 									return primitives.groups;
-								}),
-							blueprints: new Promise((r, e) =>
-								j.links.blueprints
-									? r(j.links.blueprints.href)
-									: e('doc.links.blueprints not defined')
-							)
-								.then(api.loadJson)
-								.then((blueprints) => {
-									return new Map(
-										blueprints.blueprints.map((s) => [s.id, { name: s.name, sockets: s.sockets }])
-									);
-								}),
-							linked_simulations: new Promise((r, e) =>
-								j.links.linked_simulations
-									? r(j.links.linked_simulations.href)
-									: e('doc.links.linked_simulations not defined')
-							).then(api.loadJson),
-							formalisms: new Promise((r, e) =>
-								j.links.formalisms
-									? r(j.links.formalisms.href)
-									: e('doc.links.formalisms not defined')
-							)
-								.then(api.loadJson)
-								.then((r) => r.formalisms),
+								}
+							),
+							blueprints: loadLinkJson(api, j.links.blueprints, 'blueprints').then((blueprints) => {
+								return new Map(
+									blueprints.blueprints.map((s) => [s.id, { name: s.name, sockets: s.sockets }])
+								);
+							}),
+							linked_simulations: loadLinkJson(
+								api,
+								j.links.linked_simulations,
+								'linked_simulations'
+							),
+							formalisms: cachedLinkJson(api, j.links.formalisms, 'formalisms').then(
+								(r) => r.formalisms
+							),
 
 							syntaxes: syntaxes,
 							defaultSyntax,

@@ -1,5 +1,6 @@
 import { Socket } from 'phoenix';
 import { fetchJson } from '$lib/api/json';
+import { clearResourceCache } from '$lib/api/resource_cache.js';
 
 function tryParse(str) {
 	try {
@@ -41,10 +42,12 @@ export default (() => {
 			return currentValue;
 		},
 		login(token) {
+			clearResourceCache();
 			lastRefresh = new Date();
 			this.value = token;
 		},
 		logout() {
+			clearResourceCache();
 			socket?.disconnect();
 			socket = null;
 			this.value = null;

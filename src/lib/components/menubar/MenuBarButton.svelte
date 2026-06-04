@@ -5,7 +5,8 @@
 		disabled = false,
 		onclick = null,
 		children = null,
-		shortcut = null
+		shortcut = null,
+		style = null
 	} = $props();
 
 	const isMac = navigator.userAgent.indexOf('Mac') != -1;
@@ -14,21 +15,50 @@
 			short && {
 				key: short.key,
 				shiftKey: short.shiftKey ? true : false,
+				altKey: short.altKey ? true : false,
 				metaKey: isMac ? short.ctrlKey : false,
 				ctrlKey: !isMac ? short.ctrlKey : false
 			}
 		);
 	}
 
+	function shortcutKeyLabel(key) {
+		if (!key) {
+			return '';
+		}
+
+		const labels = {
+			Backspace: 'Backspace',
+			Delete: 'Entf',
+			Escape: 'Esc',
+			Enter: 'Enter',
+			' ': 'Leertaste'
+		};
+
+		if (labels[key]) {
+			return labels[key];
+		}
+
+		return key.length === 1 ? key.toUpperCase() : key;
+	}
+
+	function formatShortcut(short) {
+		if (!short) {
+			return '';
+		}
+
+		const modifiers = [
+			short.ctrlKey || short.metaKey ? (short.metaKey ? 'Cmd' : 'Strg') : false,
+			short.shiftKey ? 'Umschalt' : false,
+			short.altKey ? 'Alt' : false
+		].filter(Boolean);
+		const key = shortcutKeyLabel(short.key);
+
+		return modifiers.length ? `${modifiers.join('+')}-${key}` : key;
+	}
+
 	const normalizedShortcut = normalize(shortcut);
-	let shortcutLabel = $derived(
-		[
-			normalizedShortcut?.ctrlKey || normalizedShortcut?.metaKey ? (isMac ? '⌘' : 'ctrl') : false,
-			normalizedShortcut?.shiftKey ? 'shift' : false,
-			normalizedShortcut?.altKey ? 'alt' : false,
-			normalizedShortcut?.key ?? false
-		].filter((x) => x)
-	);
+	let shortcutLabel = $derived(formatShortcut(normalizedShortcut));
 	let btn = null;
 	$effect(() => {
 		if (normalizedShortcut) {
@@ -59,26 +89,21 @@
 	bind:this={btn}
 	class={[className, 'menu-bar-item-button']}
 	disabled={disabled || false}
+	{style}
 	{onclick}
 	>{@render children()}
-	<span class={'shortcut'}
-		>{#each shortcutLabel as key, i}{#if i}+{/if}<kbd>{key}</kbd>{/each}</span
-	></button
+	{#if shortcutLabel}
+		<span class="shortcut">{shortcutLabel}</span>
+	{/if}</button
 >
 
 <style>
 	.shortcut {
-		display: flex;
-		gap: 0.5ex;
-		align-items: baseline;
-		color: #333;
-	}
-
-	kbd {
-		background-color: #fff;
-		border: 1px solid #eee;
-		border-radius: 3px;
-		padding: 1px;
+		margin-left: 3em;
+		color: #5872a6;
+		font-size: 0.9em;
+		font-weight: 400;
+		white-space: nowrap;
 	}
 
 	.menu-bar-item-button {
@@ -88,6 +113,8 @@
 		font: inherit;
 		cursor: pointer;
 		flex-grow: 1;
+		width: 100%;
+		box-sizing: border-box;
 		padding: 1ex 1ex 1ex 1ex;
 		gap: 3em;
 		display: flex;
@@ -102,7 +129,11 @@
 	}
 
 	.menu-bar-item-button:disabled {
-		opacity: 0.3;
+		color: #8a8a8a;
 		cursor: default;
+	}
+
+	.menu-bar-item-button:disabled .shortcut {
+		color: #8a8a8a;
 	}
 </style>

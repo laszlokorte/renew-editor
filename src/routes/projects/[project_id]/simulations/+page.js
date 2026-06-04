@@ -4,6 +4,7 @@ import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
 import simulationApi from '$lib/api/simulations.js';
 import documentApi from '$lib/api/documents.js';
+import { cachedResource } from '$lib/api/resource_cache.js';
 import { downloadFile } from '$lib/io/download';
 
 export const ssr = false;
@@ -47,7 +48,7 @@ export async function load({ fetch, params, parent }) {
 				simulations: j,
 				documents: docApi.listDocuments(project.links.documents.href),
 				commands: createCommands(project, api, fetch),
-				formalisms: api.listFormalisms()
+				formalisms: cachedResource('formalisms:list', () => api.listFormalisms())
 			}))
 			.catch((e) => {
 				if (e.error == 'http') {

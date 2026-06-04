@@ -1172,7 +1172,7 @@
 	}
 
 	.menu-bar-item-button:disabled {
-		opacity: 0.3;
+		color: #8a8a8a;
 		cursor: default;
 	}
 

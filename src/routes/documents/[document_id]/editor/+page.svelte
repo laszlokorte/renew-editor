@@ -364,6 +364,229 @@
 		return evt?.shiftKey ? toggleLayerSelection(cast, id) : publishSelection(cast, [id]);
 	}
 
+	const RENEW_TEXT_TYPE = {
+		LABEL: 0,
+		INSCRIPTION: 1,
+		NAME: 2,
+		AUX: 3,
+		COMM: 4
+	};
+
+	const renewNodeFilterOptions = [
+		{ label: 'All', filter: { kind: 'nodes', nodeType: 'all' } },
+		{ label: 'Transitions', filter: { kind: 'nodes', nodeType: 'transitions' } },
+		{ label: 'Places', filter: { kind: 'nodes', nodeType: 'places' } }
+	];
+
+	const renewTextParentFilterOptions = [
+		{ label: 'All', parentType: 'all' },
+		{ label: 'of Transitions', parentType: 'transitions' },
+		{ label: 'of Places', parentType: 'places' },
+		{ label: 'of Arcs', parentType: 'arcs' }
+	];
+
+	const renewNameParentFilterOptions = renewTextParentFilterOptions.filter(
+		({ parentType }) => parentType !== 'arcs'
+	);
+
+	const renewSelectionMenuGroups = [
+		{ label: 'Nodes', options: renewNodeFilterOptions },
+		{ label: 'Arcs', filter: { kind: 'arcs' } },
+		{ label: 'Nodes and Arcs', filter: { kind: 'nodes-and-arcs' } },
+		{
+			label: 'Text Children',
+			options: renewTextParentFilterOptions.map(({ label, parentType }) => ({
+				label,
+				filter: { kind: 'text', textType: 'any', parentType }
+			}))
+		},
+		{
+			label: 'Inscriptions',
+			options: renewTextParentFilterOptions.map(({ label, parentType }) => ({
+				label,
+				filter: { kind: 'text', textType: 'inscriptions', parentType }
+			}))
+		},
+		{
+			label: 'Names',
+			options: renewNameParentFilterOptions.map(({ label, parentType }) => ({
+				label,
+				filter: { kind: 'text', textType: 'names', parentType }
+			}))
+		}
+	];
+
+	const renewSelectionOperations = [
+		{ label: 'Select', operation: 'select' },
+		{ label: 'Add To Selection', operation: 'add' },
+		{ label: 'Remove From Selection', operation: 'remove' },
+		{ label: 'Restrict Selection', operation: 'restrict' }
+	];
+
+	function layerMap(docValue) {
+		return new Map((docValue?.layers?.items ?? []).map((layer) => [layer.id, layer]));
+	}
+
+	function visibleLayerIds(layersInOrderValue) {
+		return layersInOrderValue.filter(({ hidden }) => !hidden).map(({ id }) => id);
+	}
+
+	function isTransitionLayer(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return tag === 'de.renew.gui.TransitionFigure' || tag.endsWith('.TransitionFigure');
+	}
+
+	function isPlaceLayer(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return (
+			tag === 'de.renew.gui.PlaceFigure' ||
+			tag === 'de.renew.gui.VirtualPlaceFigure' ||
+			tag.endsWith('.PlaceFigure') ||
+			tag.endsWith('.VirtualPlaceFigure')
+		);
+	}
+
+	function isNodeLayer(layer) {
+		return isTransitionLayer(layer) || isPlaceLayer(layer);
+	}
+
+	function isArcLayer(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return !!layer?.edge && tag.endsWith('ArcConnection');
+	}
+
+	function matchesNodeType(layer, nodeType = 'all') {
+		switch (nodeType) {
+			case 'transitions':
+				return isTransitionLayer(layer);
+			case 'places':
+				return isPlaceLayer(layer);
+			default:
+				return isNodeLayer(layer);
+		}
+	}
+
+	function textTargetLayer(layer, byId) {
+		const targetId = layer?.hyperlink ?? layer?.parent_id;
+		return targetId ? byId.get(targetId) : null;
+	}
+
+	function matchesTextParentType(parent, parentType = 'all') {
+		switch (parentType) {
+			case 'transitions':
+				return isTransitionLayer(parent);
+			case 'places':
+				return isPlaceLayer(parent);
+			case 'arcs':
+				return isArcLayer(parent);
+			default:
+				return !!parent;
+		}
+	}
+
+	function renewTextType(layer) {
+		const rawType = layer?.text?.renew_type;
+		if (rawType === null || rawType === undefined || rawType === '') {
+			return null;
+		}
+
+		const type = Number(rawType);
+		return Number.isInteger(type) ? type : null;
+	}
+
+	function isCpnTextLayer(layer) {
+		return layer?.semantic_tag === 'de.renew.gui.CPNTextFigure';
+	}
+
+	function matchesTextType(layer, textType = 'any') {
+		const type = renewTextType(layer);
+
+		switch (textType) {
+			case 'names':
+				return type === RENEW_TEXT_TYPE.NAME;
+			case 'inscriptions':
+				return (
+					type === RENEW_TEXT_TYPE.INSCRIPTION ||
+					type === RENEW_TEXT_TYPE.AUX ||
+					(type === null && isCpnTextLayer(layer))
+				);
+			default:
+				return true;
+		}
+	}
+
+	function matchesRenewSelectionFilter(layer, filter, byId) {
+		if (!layer || !filter) {
+			return false;
+		}
+
+		switch (filter.kind) {
+			case 'nodes':
+				return matchesNodeType(layer, filter.nodeType);
+			case 'arcs':
+				return isArcLayer(layer);
+			case 'nodes-and-arcs':
+				return isNodeLayer(layer) || isArcLayer(layer);
+			case 'text': {
+				if (!layer.text) {
+					return false;
+				}
+
+				const parent = textTargetLayer(layer, byId);
+				return (
+					matchesTextParentType(parent, filter.parentType) &&
+					matchesTextType(layer, filter.textType)
+				);
+			}
+			default:
+				return false;
+		}
+	}
+
+	function renewSelectionIds(docValue, layersInOrderValue, filter) {
+		const byId = layerMap(docValue);
+		return uniqueLayerIds(
+			visibleLayerIds(layersInOrderValue).filter((id) =>
+				matchesRenewSelectionFilter(byId.get(id), filter, byId)
+			)
+		);
+	}
+
+	function applyRenewSelection(cast, docValue, layersInOrderValue, filter, operation) {
+		const ids = renewSelectionIds(docValue, layersInOrderValue, filter);
+		const target = new Set(ids);
+		const selected = new Set(selectedLayers.value);
+
+		switch (operation) {
+			case 'add':
+				return publishSelection(cast, [...selected, ...ids]);
+			case 'remove':
+				return publishSelection(
+					cast,
+					selectedLayers.value.filter((id) => !target.has(id))
+				);
+			case 'restrict':
+				return publishSelection(
+					cast,
+					selectedLayers.value.filter((id) => target.has(id))
+				);
+			default:
+				return publishSelection(cast, ids);
+		}
+	}
+
+	function selectAllLayers(cast, layersInOrderValue) {
+		return publishSelection(cast, visibleLayerIds(layersInOrderValue));
+	}
+
+	function invertSelection(cast, layersInOrderValue) {
+		const selected = new Set(selectedLayers.value);
+		return publishSelection(
+			cast,
+			visibleLayerIds(layersInOrderValue).filter((id) => !selected.has(id))
+		);
+	}
+
 	function mergeAreaSelection(cast, ids, toggle) {
 		if (!toggle) {
 			return publishSelection(cast, ids);
@@ -384,7 +607,9 @@
 	function deleteSelectedLayers(cast, layersInOrderValue) {
 		const selected = new Set(selectedLayers.value);
 		const layerIds = layersInOrderValue
-			.filter(({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent)))
+			.filter(
+				({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent))
+			)
 			.map(({ id }) => id);
 
 		for (const id of uniqueLayerIds(layerIds)) {
@@ -394,10 +619,48 @@
 		clearSelection(cast);
 	}
 
+	let deleteShortcutContext = { cast: null, layersInOrder: null };
+
+	function syncDeleteShortcutContext(cast, layersInOrder) {
+		deleteShortcutContext = { cast, layersInOrder };
+		return null;
+	}
+
+	function isEditableTarget(el) {
+		return (
+			el &&
+			(el.tagName === 'INPUT' ||
+				el.tagName === 'TEXTAREA' ||
+				el.tagName === 'SELECT' ||
+				el.isContentEditable)
+		);
+	}
+
+	function handleDocumentDeleteKeydown(evt) {
+		if (
+			evt.defaultPrevented ||
+			evt.ctrlKey ||
+			evt.metaKey ||
+			evt.altKey ||
+			(evt.key !== 'Backspace' && evt.key !== 'Delete') ||
+			isEditableTarget(evt.target) ||
+			selectedLayers.value.length === 0 ||
+			!deleteShortcutContext.cast ||
+			!deleteShortcutContext.layersInOrder
+		) {
+			return;
+		}
+
+		evt.preventDefault();
+		deleteSelectedLayers(deleteShortcutContext.cast, deleteShortcutContext.layersInOrder.value);
+	}
+
 	function selectedTopLevelLayerIds(layersInOrderValue, ids = selectedLayers.value) {
 		const selected = new Set(ids);
 		return layersInOrderValue
-			.filter(({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent)))
+			.filter(
+				({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent))
+			)
 			.map(({ id }) => id);
 	}
 
@@ -545,7 +808,10 @@
 			}
 		}
 
-		if (groupDrag.value.baseSnapshotId && groupDrag.value.baseSnapshotId !== docValue.snapshot.current_id) {
+		if (
+			groupDrag.value.baseSnapshotId &&
+			groupDrag.value.baseSnapshotId !== docValue.snapshot.current_id
+		) {
 			groupDrag.value = undefined;
 		}
 	}
@@ -765,8 +1031,9 @@
 			evt.currentTarget.releasePointerCapture(evt.pointerId);
 		}
 
-		Promise.all(layerIds.map((layer_id) => commitLayerMove(layer_id, delta, cast, dispatch, docValue)))
-			.catch(() => {});
+		Promise.all(
+			layerIds.map((layer_id) => commitLayerMove(layer_id, delta, cast, dispatch, docValue))
+		).catch(() => {});
 	}
 
 	function cancelLayerMove(evt) {
@@ -936,7 +1203,9 @@
 
 		return layersInOrderValue
 			.filter(({ hidden }) => !hidden)
-			.filter(({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent)))
+			.filter(
+				({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent))
+			)
 			.map(({ id }) => id);
 	}
 
@@ -1019,7 +1288,14 @@
 	}
 
 	function deleteThisDocument(evt) {
-		evt.preventDefault();
+		evt?.preventDefault();
+
+		if (
+			!confirm(`Delete document "${data.document.content.name}"? This action cannot be undone.`)
+		) {
+			return;
+		}
+
 		data.commands.deleteDocument().catch((e) => {
 			update((e) => [...e, e.message], errors);
 		});
@@ -1090,6 +1366,8 @@
 	const currentFormalism = atom();
 </script>
 
+<svelte:document onkeydown={handleDocumentDeleteKeydown} />
+
 <div class="full-page">
 	<AppBar
 		active="documents"
@@ -1133,6 +1411,7 @@
 				}
 			}, 20)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
+			{@const _deleteShortcutContext = syncDeleteShortcutContext(cast, layersInOrder)}
 			{@const _layerMoveCommitSync = clearCommittedLayerMove(doc.value)}
 			{@const extension = view(
 				[
@@ -1352,7 +1631,7 @@
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton onclick={deleteThisDocument} style="color: #aa0000"
-										>delete</MenuBarButton
+										>Delete Document</MenuBarButton
 									>
 								</li>
 								<!--
@@ -1415,20 +1694,6 @@
 								{/if}
 
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-								<li class="menu-bar-menu-item"><div style="padding: 1ex">Reorder:</div></li>
-								{#each [{ target_rel: 'before_parent', label: 'Below Parent' }, { target_rel: 'after_parent', label: 'Above Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
-									<li class="menu-bar-menu-item">
-										<MenuBarButton
-											disabled={selectedLayers.value.length === 0}
-											onclick={(evt) => {
-												evt.preventDefault();
-												reorderSelectedLayers(dispatch, cast, target_rel, layersInOrder.value);
-											}}>{label}</MenuBarButton
-										>
-									</li>
-								{/each}
-
-								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
 										disabled={selectedLayers.value.length === 0}
@@ -1455,7 +1720,6 @@
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
 										disabled={selectedLayers.value.length === 0}
-										shortcut={{ ctrlKey: true, key: 'Backspace' }}
 										onclick={(evt) => {
 											evt.preventDefault();
 											deleteSelectedLayers(cast, layersInOrder.value);
@@ -1463,6 +1727,94 @@
 										class="menu-bar-item-button menu-bar-item-danger">Delete</MenuBarButton
 									>
 								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: 'a' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											selectAllLayers(cast, layersInOrder.value);
+										}}>Select All</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											invertSelection(cast, layersInOrder.value);
+										}}>Invert Selection</MenuBarButton
+									>
+								</li>
+								{#each renewSelectionOperations as { label, operation }}
+									<li class="menu-bar-menu-item submenu">
+										<button type="button" class="menu-bar-item-button submenu-trigger">
+											<span>{label}</span>
+											<span class="submenu-arrow">&gt;</span>
+										</button>
+										<ul class="menu-bar-menu submenu-menu">
+											{#each renewSelectionMenuGroups as group}
+												{#if group.options}
+													<li class="menu-bar-menu-item submenu">
+														<button type="button" class="menu-bar-item-button submenu-trigger">
+															<span>{group.label}</span>
+															<span class="submenu-arrow">&gt;</span>
+														</button>
+														<ul class="menu-bar-menu submenu-menu">
+															{#each group.options as option}
+																<li class="menu-bar-menu-item">
+																	<MenuBarButton
+																		onclick={(evt) => {
+																			evt.preventDefault();
+																			applyRenewSelection(
+																				cast,
+																				doc.value,
+																				layersInOrder.value,
+																				option.filter,
+																				operation
+																			);
+																		}}>{option.label}</MenuBarButton
+																	>
+																</li>
+															{/each}
+														</ul>
+													</li>
+												{:else}
+													<li class="menu-bar-menu-item">
+														<MenuBarButton
+															onclick={(evt) => {
+																evt.preventDefault();
+																applyRenewSelection(
+																	cast,
+																	doc.value,
+																	layersInOrder.value,
+																	group.filter,
+																	operation
+																);
+															}}>{group.label}</MenuBarButton
+														>
+													</li>
+												{/if}
+											{/each}
+										</ul>
+									</li>
+								{/each}
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							Layout
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item"><div style="padding: 1ex">Reorder:</div></li>
+								{#each [{ target_rel: 'before_parent', label: 'Below Parent' }, { target_rel: 'after_parent', label: 'Above Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
+									<li class="menu-bar-menu-item">
+										<MenuBarButton
+											disabled={selectedLayers.value.length === 0}
+											onclick={(evt) => {
+												evt.preventDefault();
+												reorderSelectedLayers(dispatch, cast, target_rel, layersInOrder.value);
+											}}>{label}</MenuBarButton
+										>
+									</li>
+								{/each}
 							</ul>
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
@@ -2118,10 +2470,18 @@
 														<rect
 															tabindex="-1"
 															cursor="move"
-															x={deep_bounding.minX - 3 * cameraScale.value + groupDragDelta.value.x}
-															y={deep_bounding.minY - 3 * cameraScale.value + groupDragDelta.value.y}
-															width={deep_bounding.maxX - deep_bounding.minX + 6 * cameraScale.value}
-															height={deep_bounding.maxY - deep_bounding.minY + 6 * cameraScale.value}
+															x={deep_bounding.minX -
+																3 * cameraScale.value +
+																groupDragDelta.value.x}
+															y={deep_bounding.minY -
+																3 * cameraScale.value +
+																groupDragDelta.value.y}
+															width={deep_bounding.maxX -
+																deep_bounding.minX +
+																6 * cameraScale.value}
+															height={deep_bounding.maxY -
+																deep_bounding.minY +
+																6 * cameraScale.value}
 															fill="transparent"
 															pointer-events="all"
 															role="button"
@@ -2130,13 +2490,7 @@
 																beginLayerMove(evt, liveLenses, id, layersInOrder.value)}
 															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 															onpointerup={(evt) =>
-																finishLayerMove(
-																	evt,
-																	cast,
-																	dispatch,
-																	doc,
-																	layersInOrder.value
-																)}
+																finishLayerMove(evt, cast, dispatch, doc, layersInOrder.value)}
 															onpointercancel={cancelLayerMove}
 															onlostpointercapture={cancelLayerMove}
 															onkeydown={(evt) => {
@@ -2333,8 +2687,8 @@
 														<g
 															class="selected"
 															transform="{layerMoveTransform(id, layersInOrder.value) ??
-																''} rotate({source_angle} {el.value?.edge.source_x} {el.value
-																?.edge.source_y})"
+																''} rotate({source_angle} {el.value?.edge.source_x} {el.value?.edge
+																.source_y})"
 														>
 															{#await data.symbols then symbols}
 																{@const symbol = symbols.get(
@@ -2374,8 +2728,8 @@
 														<g
 															class="selected"
 															transform="{layerMoveTransform(id, layersInOrder.value) ??
-																''} rotate({target_angle} {el.value?.edge.target_x} {el.value
-																?.edge.target_y})"
+																''} rotate({target_angle} {el.value?.edge.target_x} {el.value?.edge
+																.target_y})"
 														>
 															{#await data.symbols then symbols}
 																{@const symbol = symbols.get(
@@ -2420,7 +2774,10 @@
 																doc
 															)}
 															{@const deep_bounding = view(
-																[L.find((layer) => layer.id == id && layer.has_children), 'deep_bounding'],
+																[
+																	L.find((layer) => layer.id == id && layer.has_children),
+																	'deep_bounding'
+																],
 																layersInOrder
 															).value}
 															{#if deep_bounding}
@@ -2681,13 +3038,7 @@
 															onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
 															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 															onpointerup={(evt) =>
-																finishLayerMove(
-																	evt,
-																	cast,
-																	dispatch,
-																	doc,
-																	layersInOrder.value
-																)}
+																finishLayerMove(evt, cast, dispatch, doc, layersInOrder.value)}
 															onpointercancel={cancelLayerMove}
 															onlostpointercapture={cancelLayerMove}
 														/>
@@ -2804,7 +3155,9 @@
 																	r={12 * cameraScale.value}
 																	cx={wp_proposal.x}
 																	cy={wp_proposal.y}
-																	pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
+																	pointer-events={selectedLayers.value.length === 1
+																		? 'all'
+																		: 'none'}
 																/>
 																<circle
 																	fill="white"
@@ -2917,7 +3270,9 @@
 																	r={12 * cameraScale.value}
 																	cx={wp.x}
 																	cy={wp.y}
-																	pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
+																	pointer-events={selectedLayers.value.length === 1
+																		? 'all'
+																		: 'none'}
 																/>
 																<circle
 																	fill="white"
@@ -3261,13 +3616,7 @@
 															beginLayerMove(evt, liveLenses, el.value.id, layersInOrder.value)}
 														onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 														onpointerup={(evt) =>
-															finishLayerMove(
-																evt,
-																cast,
-																dispatch,
-																doc,
-																layersInOrder.value
-															)}
+															finishLayerMove(evt, cast, dispatch, doc, layersInOrder.value)}
 														onpointercancel={cancelLayerMove}
 														onlostpointercapture={cancelLayerMove}
 														onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
@@ -3354,7 +3703,9 @@
 																	fill="none"
 																	stroke="none"
 																	cursor="move"
-																	pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
+																	pointer-events={selectedLayers.value.length === 1
+																		? 'all'
+																		: 'none'}
 																	vector-effect="non-scaling-stroke"
 																	r={cameraScale.value * 12}
 																	cx={posVal.x}
@@ -5766,8 +6117,22 @@
 
 	.menu-bar-menu-item {
 		display: flex;
-		justify-items: stretch;
+		width: 100%;
 		cursor: default;
+	}
+
+	.menu-bar-menu-item.submenu {
+		position: relative;
+	}
+
+	.menu-bar-menu-item.submenu > .menu-bar-menu {
+		left: 100%;
+		top: -0.5ex;
+	}
+
+	.menu-bar-menu-item.submenu:hover > .menu-bar-menu,
+	.menu-bar-menu-item.submenu:focus-within > .menu-bar-menu {
+		display: flex;
 	}
 
 	.menu-bar-menu-ruler {
@@ -5783,7 +6148,22 @@
 		font: inherit;
 		cursor: pointer;
 		flex-grow: 1;
+		width: 100%;
+		box-sizing: border-box;
 		padding: 1ex 4em 1ex 1ex;
+	}
+
+	.submenu-trigger {
+		display: flex;
+		justify-content: space-between;
+		gap: 3em;
+		padding-right: 1ex;
+	}
+
+	.submenu-arrow {
+		font-size: 1.2em;
+		line-height: 0.8;
+		margin-left: auto;
 	}
 
 	.new-sim-action {
@@ -5815,7 +6195,7 @@
 	}
 
 	.menu-bar-item-button:disabled {
-		opacity: 0.3;
+		color: #8a8a8a;
 		cursor: default;
 	}
 
