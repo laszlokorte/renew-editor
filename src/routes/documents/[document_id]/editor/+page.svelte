@@ -3300,6 +3300,11 @@
 																			el.value?.edge?.style?.stroke_color,
 																			'black'
 																		)}
+																		stroke={tipColor(
+																			el.value?.style?.background_color,
+																			el.value?.edge?.style?.stroke_color,
+																			'black'
+																		)}
 																		transform="rotate({source_angle} {el.value?.edge.source_x} {el
 																			.value?.edge.source_y})"
 																	>
@@ -3326,6 +3331,11 @@
 																		(el.value?.edge?.style?.target_tip_size ?? 1)}
 																	<g
 																		fill={tipColor(
+																			el.value?.style?.background_color,
+																			el.value?.edge?.style?.stroke_color,
+																			'black'
+																		)}
+																		stroke={tipColor(
 																			el.value?.style?.background_color,
 																			el.value?.edge?.style?.stroke_color,
 																			'black'
@@ -3523,6 +3533,54 @@
 														{/if}
 													{/if}
 												{/each}
+											{/each}
+											{#each selectedLinkedLayerIds(doc.value, selectedLayers.value) as linkedTargetId (linkedTargetId)}
+												{@const linkedEl = view(
+													['layers', 'items', L.find((el) => el.id == linkedTargetId)],
+													doc
+												)}
+												{#if linkedEl.value?.box}
+													<rect
+														class="link-selected"
+														transform={layerMoveTransform(linkedTargetId, layersInOrder.value)}
+														x={linkedEl.value.box.position_x - cameraScale.value}
+														y={linkedEl.value.box.position_y - cameraScale.value}
+														width={linkedEl.value.box.width + 2 * cameraScale.value}
+														height={linkedEl.value.box.height + 2 * cameraScale.value}
+														cursor="move"
+													></rect>
+												{/if}
+												{#if linkedEl.value?.text}
+													{@const linkedBbox = view(L.prop(linkedEl.value.id), textBounds)}
+
+													{#if linkedBbox.value}
+														<rect
+															class="link-selected"
+															transform={layerMoveTransform(linkedTargetId, layersInOrder.value)}
+															x={linkedBbox.value.x}
+															y={linkedBbox.value.y}
+															width={linkedBbox.value.width}
+															height={linkedBbox.value.height}
+															stroke-width={cameraScale.value * 6}
+														></rect>
+													{/if}
+												{/if}
+												{#if linkedEl.value?.edge}
+													<path
+														class="link-selected"
+														transform={layerMoveTransform(linkedTargetId, layersInOrder.value)}
+														d={edgePath[linkedEl.value.edge?.style?.smoothness ?? 'linear'](
+															linkedEl.value.edge,
+															L.get(localProp('waypoints'), linkedEl.value.edge)
+														)}
+														stroke="black"
+														fill="none"
+														stroke-width={(linkedEl.value.edge?.style?.stroke_width ?? 1) * 1 +
+															6 * cameraScale.value}
+														stroke-linejoin={linkedEl.value.edge?.style?.stroke_join ?? 'miter'}
+														stroke-linecap={linkedEl.value.edge?.style?.stroke_cap ?? 'butt'}
+													/>
+												{/if}
 											{/each}
 										</g>
 

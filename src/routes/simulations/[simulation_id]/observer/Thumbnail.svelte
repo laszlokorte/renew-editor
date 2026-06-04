@@ -3,7 +3,7 @@
 	import * as R from 'ramda';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
-	import { edgeAngle, edgePath } from '$lib/components/renew/edges.js';
+	import { edgeAngle, edgePath, tipColor } from '$lib/components/renew/edges.js';
 	import { atom, view } from '$lib/reactivity/atom.svelte';
 
 	const textBounds = atom({});
@@ -83,7 +83,16 @@
 						{@const size = layer.edge?.style?.stroke_width ?? 1}
 
 						<g
-							fill={layer.style?.background_color ?? 'black'}
+							fill={tipColor(
+								layer.style?.background_color,
+								layer.edge?.style?.stroke_color,
+								'black'
+							)}
+							stroke={tipColor(
+								layer.style?.background_color,
+								layer.edge?.style?.stroke_color,
+								'black'
+							)}
 							transform="rotate({source_angle} {layer.edge.source_x} {layer.edge.source_y})"
 						>
 							<Symbol
@@ -103,7 +112,16 @@
 						{@const target_angle = edgeAngle['target'](layer.edge, L.get('waypoints', layer.edge))}
 						{@const size = layer.edge?.style?.stroke_width ?? 1}
 						<g
-							fill={layer.style?.background_color ?? 'black'}
+							fill={tipColor(
+								layer.style?.background_color,
+								layer.edge?.style?.stroke_color,
+								'black'
+							)}
+							stroke={tipColor(
+								layer.style?.background_color,
+								layer.edge?.style?.stroke_color,
+								'black'
+							)}
 							transform="rotate({target_angle} {layer.edge.target_x} {layer.edge.target_y})"
 						>
 							<Symbol

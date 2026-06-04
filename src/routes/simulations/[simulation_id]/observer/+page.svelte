@@ -30,7 +30,7 @@
 	import { buildPath, buildCoord } from '$lib/components/renew/symbols';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
-	import { edgeAngle, edgePath } from '$lib/components/renew/edges.js';
+	import { edgeAngle, edgePath, tipColor } from '$lib/components/renew/edges.js';
 	import { walkDocument } from '$lib/components/renew/document.js';
 
 	import MenuBarButton from '$lib/components/menubar/MenuBarButton.svelte';
@@ -610,7 +610,16 @@
 																		{@const size = el.value?.edge?.style?.stroke_width ?? 1}
 
 																		<g
-																			fill={el.value?.style?.background_color ?? 'black'}
+																			fill={tipColor(
+																				el.value?.style?.background_color,
+																				el.value?.edge?.style?.stroke_color,
+																				'black'
+																			)}
+																			stroke={tipColor(
+																				el.value?.style?.background_color,
+																				el.value?.edge?.style?.stroke_color,
+																				'black'
+																			)}
 																			transform="rotate({source_angle} {el.value?.edge.source_x} {el
 																				.value?.edge.source_y})"
 																		>
@@ -634,7 +643,16 @@
 																		)}
 																		{@const size = el.value?.edge?.style?.stroke_width ?? 1}
 																		<g
-																			fill={el.value?.style?.background_color ?? 'black'}
+																			fill={tipColor(
+																				el.value?.style?.background_color,
+																				el.value?.edge?.style?.stroke_color,
+																				'black'
+																			)}
+																			stroke={tipColor(
+																				el.value?.style?.background_color,
+																				el.value?.edge?.style?.stroke_color,
+																				'black'
+																			)}
 																			transform="rotate({target_angle} {el.value?.edge.target_x} {el
 																				.value?.edge.target_y})"
 																		>
