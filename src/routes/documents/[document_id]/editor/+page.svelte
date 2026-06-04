@@ -256,6 +256,14 @@
 		//{ name: 'Spline', id: 'spline' }
 	];
 	const activeTool = atom('select');
+	const CREATE_TOOL_ID = 'create';
+	const LAYER_PRIMITIVE_MIME_TYPE = 'application/json+renewex-layer';
+	const BLUEPRINT_MIME_TYPE = 'application/json+renewex-blueprint';
+	const CIRCLE_SHAPE_ID = '3B66E69A-057A-40B9-A1A0-9DB44EF5CE42';
+	const PRIMITIVE_CREATION_DRAG_THRESHOLD = 4;
+	const activeCreateTool = atom(undefined);
+	let primitiveCreation = atom(undefined);
+	let inlineTextEdit = atom(undefined);
 
 	const cameraSettings = atom({
 		plane: {
@@ -625,9 +633,10 @@
 				({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent))
 			)
 			.map(({ id }) => id);
+		const ids = uniqueLayerIds(layerIds);
 
-		for (const id of uniqueLayerIds(layerIds)) {
-			cast('delete_layer', id);
+		if (ids.length) {
+			cast('delete_layer', { layer_ids: ids });
 		}
 
 		clearSelection(cast);
@@ -1183,37 +1192,36 @@
 
 	function reorderSelectedLayers(dispatch, cast, target_rel, layersInOrderValue) {
 		const ids = selectedTopLevelLayerIds(layersInOrderValue);
-		ids
-			.reduce(
-				(results, id) =>
-					results.then((reordered) =>
-						dispatch('reorder_relative', {
-							id,
-							target_rel
-						})
-							.catch(() => ({ id }))
-							.then((result) => [...reordered, result])
-					),
-				Promise.resolve([])
-			)
-			.then((results) => {
-				const reorderedIds = uniqueLayerIds(results.map(({ id }) => id).filter(Boolean));
-				publishSelection(cast, reorderedIds.length ? reorderedIds : ids);
+
+		if (!ids.length) {
+			return;
+		}
+
+		dispatch('reorder_relative', {
+			ids,
+			target_rel
+		})
+			.catch(() => ({}))
+			.then((result) => {
+				publishSelection(cast, result?.ids?.length ? result.ids : ids);
 			});
 	}
 
 	function selectRelativeLayers(dispatch, cast, rel, layersInOrderValue) {
 		const ids = selectedTopLevelLayerIds(layersInOrderValue);
-		Promise.all(
-			ids.map((id) =>
-				dispatch('fetch_relative', {
-					id,
-					rel
-				}).catch(() => ({ id: null }))
-			)
-		).then((results) => {
-			publishSelection(cast, uniqueLayerIds(results.map(({ id }) => id).filter(Boolean)));
-		});
+
+		if (!ids.length) {
+			return;
+		}
+
+		dispatch('fetch_relative', {
+			ids,
+			rel
+		})
+			.catch(() => ({ ids: [] }))
+			.then((result) => {
+				publishSelection(cast, uniqueLayerIds(result?.ids ?? []));
+			});
 	}
 
 	function wrapSelectedLayersInGroup(dispatch, cast, layersInOrderValue) {
@@ -1231,9 +1239,9 @@
 				return;
 			}
 
-			for (const layer_id of restIds) {
+			if (restIds.length) {
 				cast('move_layer', {
-					layer_id,
+					layer_ids: restIds,
 					target_layer_id: groupId,
 					order: 'above',
 					relative: 'inside'
@@ -1407,6 +1415,622 @@
 		}
 
 		areaSelection.value = undefined;
+	}
+
+	function primitiveToolId(item) {
+		return item?.data?.content?.semantic_tag ?? item?.name;
+	}
+
+	function isSelectableCreatePrimitive(item) {
+		return item?.data?.mimeType === LAYER_PRIMITIVE_MIME_TYPE;
+	}
+
+	function canActivateCreatePrimitive(item) {
+		return isSelectableCreatePrimitive(item);
+	}
+
+	function isActiveCreatePrimitive(item) {
+		return activeCreateTool.value?.id === primitiveToolId(item);
+	}
+
+	function clearSelectionForNonSelectTool(toolId, cast) {
+		if (toolId !== 'select' && selectedLayers.value.length > 0) {
+			clearSelection(cast);
+		}
+	}
+
+	function activateCreatePrimitive(item, persistent = false, linkedTargetId = undefined, cast = undefined) {
+		if (!canActivateCreatePrimitive(item, linkedTargetId)) {
+			return false;
+		}
+
+		clearSelectionForNonSelectTool(CREATE_TOOL_ID, cast);
+		activeCreateTool.value = {
+			type: 'primitive',
+			id: primitiveToolId(item),
+			item,
+			persistent,
+			linkedTargetId: undefined
+		};
+		primitiveCreation.value = undefined;
+		inlineTextEdit.value = undefined;
+		activeTool.value = CREATE_TOOL_ID;
+		return true;
+	}
+
+	function blueprintToolId(blueprintId) {
+		return `blueprint:${blueprintId ?? ''}`;
+	}
+
+	function canActivateBlueprintTool(blueprintId) {
+		return typeof blueprintId === 'string' && blueprintId.length > 0;
+	}
+
+	function isActiveBlueprintTool(blueprintId) {
+		return activeCreateTool.value?.type === 'blueprint' && activeCreateTool.value?.id === blueprintToolId(blueprintId);
+	}
+
+	function activateBlueprintTool(blueprintId, persistent = false, cast = undefined) {
+		if (!canActivateBlueprintTool(blueprintId)) {
+			return false;
+		}
+
+		clearSelectionForNonSelectTool(CREATE_TOOL_ID, cast);
+		activeCreateTool.value = {
+			type: 'blueprint',
+			id: blueprintToolId(blueprintId),
+			blueprintId,
+			persistent
+		};
+		primitiveCreation.value = undefined;
+		inlineTextEdit.value = undefined;
+		activeTool.value = CREATE_TOOL_ID;
+		return true;
+	}
+
+	function selectEditorTool(toolId, cast = undefined) {
+		clearSelectionForNonSelectTool(toolId, cast);
+		activeCreateTool.value = undefined;
+		primitiveCreation.value = undefined;
+		inlineTextEdit.value = undefined;
+		activeTool.value = toolId;
+	}
+
+	function resetToSelectTool() {
+		selectEditorTool('select');
+	}
+
+	function isPrimitiveCreationDrag(creation) {
+		if (!creation?.screenStart || !creation?.screenCurrent) {
+			return false;
+		}
+
+		return (
+			Math.abs(creation.screenCurrent.x - creation.screenStart.x) >=
+				PRIMITIVE_CREATION_DRAG_THRESHOLD &&
+			Math.abs(creation.screenCurrent.y - creation.screenStart.y) >=
+				PRIMITIVE_CREATION_DRAG_THRESHOLD
+		);
+	}
+
+	function beginPrimitiveCreation(evt, liveLenses) {
+		if (!activeCreateTool.value || !evt.isPrimary || !E.isLeftButton(evt)) {
+			return false;
+		}
+
+		const start = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		rememberPasteLocation(start);
+		primitiveCreation.value = {
+			pointerId: evt.pointerId,
+			start,
+			current: start,
+			screenStart: { x: evt.clientX, y: evt.clientY },
+			screenCurrent: { x: evt.clientX, y: evt.clientY }
+		};
+		backoffValue.value = true;
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		evt.currentTarget.setPointerCapture(evt.pointerId);
+		return true;
+	}
+
+	function updatePrimitiveCreation(evt, liveLenses) {
+		if (primitiveCreation.value?.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		primitiveCreation.value = {
+			...primitiveCreation.value,
+			current: liveLenses.clientToCanvas(evt.clientX, evt.clientY),
+			screenCurrent: { x: evt.clientX, y: evt.clientY }
+		};
+		evt.preventDefault();
+		evt.stopPropagation();
+		return true;
+	}
+
+	function primitiveSupportsSizedCreation(tool) {
+		return tool?.type === 'primitive' && !!tool?.item?.data?.content?.shape_id;
+	}
+
+	function primitiveCreatesText(tool) {
+		return tool?.type === 'primitive' && typeof tool?.item?.data?.content?.body === 'string';
+	}
+
+	function textLayerUsesConnectedTool(layer) {
+		const type = renewTextType(layer);
+		return (
+			isCpnTextLayer(layer) ||
+			!!layer?.hyperlink ||
+			type === RENEW_TEXT_TYPE.INSCRIPTION ||
+			type === RENEW_TEXT_TYPE.NAME ||
+			type === RENEW_TEXT_TYPE.AUX ||
+			type === RENEW_TEXT_TYPE.COMM
+		);
+	}
+
+	function primitiveTextToolIsConnected(item) {
+		const content = item?.data?.content;
+		const type = Number(content?.renew_type);
+		return (
+			!!content?.hyperlink ||
+			content?.semantic_tag === 'de.renew.gui.CPNTextFigure' ||
+			type === RENEW_TEXT_TYPE.INSCRIPTION ||
+			type === RENEW_TEXT_TYPE.NAME ||
+			type === RENEW_TEXT_TYPE.AUX ||
+			type === RENEW_TEXT_TYPE.COMM
+		);
+	}
+
+	function primitiveTextToolMatchesLayer(item, layer) {
+		if (!primitiveCreatesText({ type: 'primitive', item })) {
+			return false;
+		}
+
+		return textLayerUsesConnectedTool(layer) === primitiveTextToolIsConnected(item);
+	}
+
+	function primitiveItemsFromGroups(groups) {
+		return (groups ?? []).flatMap((group) => group?.items ?? []);
+	}
+
+	function activateTextToolForContextEdit(layer, cast) {
+		clearSelectionForNonSelectTool(CREATE_TOOL_ID, cast);
+
+		data.primitives
+			.then((groups) => {
+				const items = primitiveItemsFromGroups(groups).filter((item) =>
+					primitiveCreatesText({ type: 'primitive', item })
+				);
+				const item =
+					items.find((candidate) => primitiveTextToolMatchesLayer(candidate, layer)) ?? items[0];
+
+				if (!item) {
+					return;
+				}
+
+				activeCreateTool.value = {
+					type: 'primitive',
+					id: primitiveToolId(item),
+					item,
+					persistent: false,
+					linkedTargetId: undefined
+				};
+				primitiveCreation.value = undefined;
+				activeTool.value = CREATE_TOOL_ID;
+			})
+			.catch(() => {
+				// Editing still works if the primitive menu data is not available yet.
+			});
+	}
+
+	function canInlineEditTextLayer(layer, allowSelectTool = false, force = false) {
+		return (
+			!!layer?.text &&
+			(force ||
+				primitiveCreatesText(activeCreateTool.value) ||
+				(allowSelectTool && activeTool.value === 'select'))
+		);
+	}
+
+	function primitivePreviewStyle(content) {
+		return {
+			background: content?.style?.background_color ?? '#70db93',
+			border: content?.style?.border_color ?? 'black'
+		};
+	}
+
+	function primitivePreviewIsEllipse(content) {
+		return content?.shape_id === CIRCLE_SHAPE_ID;
+	}
+
+	function primitiveNeedsLinkedTarget(tool) {
+		return tool?.type === 'primitive' && !!tool?.item?.data?.content?.hyperlink;
+	}
+
+	function primitiveHasLinkedTarget(tool) {
+		return !primitiveNeedsLinkedTarget(tool) || typeof tool?.linkedTargetId === 'string';
+	}
+
+	function canTargetLinkedPrimitive(tool, layer) {
+		return (
+			primitiveNeedsLinkedTarget(tool) &&
+			typeof layer?.id === 'string' &&
+			(!!layer?.box || !!layer?.edge)
+		);
+	}
+
+	function createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, layer) {
+		const tool = activeCreateTool.value;
+		if (!canTargetLinkedPrimitive(tool, layer)) {
+			return false;
+		}
+
+		const position = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		rememberPasteLocation(position);
+		createPrimitiveLayer(
+			{ ...tool, linkedTargetId: layer.id },
+			position,
+			undefined,
+			dispatch,
+			layer.id
+		);
+		backoffValue.value = true;
+
+		if (!tool.persistent) {
+			resetToSelectTool();
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		return true;
+	}
+
+	function createPrimitiveLayer(tool, position, size, dispatch, baseLayerId) {
+		const content = { ...(tool?.item?.data?.content ?? {}) };
+
+		if (!primitiveHasLinkedTarget(tool)) {
+			return;
+		}
+
+		if (content.hyperlink) {
+			content.hyperlink = tool.linkedTargetId;
+		}
+
+		const payload = {
+			base_layer_id: baseLayerId,
+			pos: position,
+			...content
+		};
+
+		if (size) {
+			payload.width = size.width;
+			payload.height = size.height;
+		}
+
+		dispatch('create_layer', payload).catch((e) => {
+			errors.value = [...errors.value, e.message ?? 'Can not create layer'];
+		});
+	}
+
+	function createBlueprintInstance(tool, position, dispatch) {
+		dispatch('insert_document', {
+			document_id: tool.blueprintId,
+			position
+		}).catch((e) => {
+			errors.value = [...errors.value, e.message ?? 'Can not insert document'];
+		});
+	}
+
+	function finishPrimitiveCreation(evt, liveLenses, dispatch, baseLayerId) {
+		if (primitiveCreation.value?.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		updatePrimitiveCreation(evt, liveLenses);
+		const creation = primitiveCreation.value;
+		const tool = activeCreateTool.value;
+
+		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+			evt.currentTarget.releasePointerCapture(evt.pointerId);
+		}
+
+		primitiveCreation.value = undefined;
+		backoffValue.value = true;
+
+		if (tool && creation) {
+			if (primitiveHasLinkedTarget(tool)) {
+				if (primitiveSupportsSizedCreation(tool) && isPrimitiveCreationDrag(creation)) {
+					const box = normalizedBox(creation);
+					createPrimitiveLayer(
+						tool,
+						{ x: box.x + box.width / 2, y: box.y + box.height / 2 },
+						{ width: box.width, height: box.height },
+						dispatch,
+						baseLayerId
+					);
+				} else if (tool.type === 'blueprint') {
+					createBlueprintInstance(tool, creation.start, dispatch);
+				} else {
+					createPrimitiveLayer(tool, creation.start, undefined, dispatch, baseLayerId);
+				}
+
+				if (!tool.persistent) {
+					resetToSelectTool();
+				}
+			}
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		return true;
+	}
+
+	function textEditorLineCount(value) {
+		return Math.max(1, String(value ?? '').split('\n').length);
+	}
+
+	function textEditorHasBlankLine(value) {
+		const text = String(value ?? '');
+		return text.includes('\n') && text.split('\n').some((line) => line.trim() === '');
+	}
+
+	function textEditorIsEmpty(value) {
+		return String(value ?? '').trim().length === 0;
+	}
+
+	function textEditorLongestLineLength(value) {
+		return Math.max(1, ...String(value ?? '').split('\n').map((line) => line.length));
+	}
+
+	function textEditorNumericFontSize(layer) {
+		const value = layer?.text?.style?.font_size ?? 20;
+		const numeric = Number(value);
+		return Number.isFinite(numeric) && numeric > 0 ? numeric : 20;
+	}
+
+	let textEditorMeasureContext;
+
+	function textEditorFontFamily(layer) {
+		return layer?.text?.style?.font_family ?? 'sans-serif';
+	}
+
+	function textEditorFontStyle(layer) {
+		return layer?.text?.style?.italic ? 'italic' : 'normal';
+	}
+
+	function textEditorFontWeight(layer) {
+		return layer?.text?.style?.bold ? 'bold' : 'normal';
+	}
+
+	function textEditorMeasureWidth(layer, body) {
+		const fallbackFontSize = textEditorNumericFontSize(layer);
+		const lines = String(body ?? '').split('\n');
+
+		if (typeof document === 'undefined') {
+			return textEditorLongestLineLength(body) * fallbackFontSize * 0.55;
+		}
+
+		if (!textEditorMeasureContext) {
+			textEditorMeasureContext = document.createElement('canvas').getContext('2d');
+		}
+
+		textEditorMeasureContext.font = `${textEditorFontStyle(layer)} ${textEditorFontWeight(
+			layer
+		)} ${fallbackFontSize}px ${textEditorFontFamily(layer)}`;
+
+		return Math.max(
+			0,
+			...lines.map((line) => textEditorMeasureContext.measureText(line || ' ').width)
+		);
+	}
+
+	function textEditorBounds(layer, bbox, scale, body = layer?.text?.body) {
+		if (!layer?.text) {
+			return null;
+		}
+
+		const padding = 2 * scale;
+		const fallbackFontSize = textEditorNumericFontSize(layer);
+		const draftLineCount = textEditorLineCount(body);
+		const draftWidth = textEditorMeasureWidth(layer, body) + fallbackFontSize * 0.4;
+		const draftHeight = fallbackFontSize * draftLineCount * 1.25;
+		const fallbackHeight = Math.max(24 * scale, fallbackFontSize * 1.6);
+		const fallbackWidth = Math.max(18 * scale, fallbackFontSize * 0.8);
+		const x = Number.isFinite(bbox?.x) ? bbox.x : layer.text.position_x;
+		const y = Number.isFinite(bbox?.y) ? bbox.y : layer.text.position_y - fallbackHeight / 2;
+		const width = Math.max(draftWidth, fallbackWidth);
+		const height = Math.max(draftHeight, fallbackHeight);
+
+		return {
+			x: x - padding,
+			y: y - padding,
+			width: width + 2 * padding,
+			height: height + 2 * padding
+		};
+	}
+
+	function textEditorRows(value) {
+		return textEditorLineCount(value);
+	}
+
+	function textEditorFontSize(layer) {
+		const value = layer?.text?.style?.font_size ?? 20;
+		if (typeof value === 'number') {
+			return `${value}px`;
+		}
+
+		const text = String(value);
+		return /^[0-9]+(\.[0-9]+)?$/.test(text) ? `${text}px` : text;
+	}
+
+	function beginInlineTextEdit(
+		evt,
+		layer,
+		bbox,
+		cast,
+		{ allowSelectTool = false, force = false, select = true } = {}
+	) {
+		if (!canInlineEditTextLayer(layer, allowSelectTool, force) || groupDrag.value !== undefined) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		backoffValue.value = true;
+		primitiveCreation.value = undefined;
+		if (inlineTextEdit.value?.id && inlineTextEdit.value.id !== layer.id) {
+			commitInlineTextEdit(cast);
+		}
+		if (select) {
+			publishSelection(cast, [layer.id]);
+		}
+		inlineTextEdit.value = {
+			id: layer.id,
+			body: layer.text.body ?? '',
+			bounds: bbox,
+			blankLines: !!layer.text?.style?.blank_lines
+		};
+		return true;
+	}
+
+	function beginContextTextEdit(evt, layer, bbox, cast) {
+		if (!layer?.text || groupDrag.value !== undefined) {
+			return false;
+		}
+
+		activateTextToolForContextEdit(layer, cast);
+		return beginInlineTextEdit(evt, layer, bbox, cast, { force: true, select: false });
+	}
+
+	function updateInlineTextEdit(value) {
+		if (!inlineTextEdit.value) {
+			return;
+		}
+
+		inlineTextEdit.value = {
+			...inlineTextEdit.value,
+			body: value
+		};
+	}
+
+	function commitInlineTextEdit(cast) {
+		const edit = inlineTextEdit.value;
+		if (!edit?.id) {
+			return;
+		}
+
+		const body = edit.body ?? '';
+		if (textEditorIsEmpty(body)) {
+			if (selectedLayers.value.includes(edit.id)) {
+				publishSelection(
+					cast,
+					selectedLayers.value.filter((id) => id !== edit.id)
+				);
+			}
+			cast('delete_layer', { layer_ids: [edit.id] });
+			inlineTextEdit.value = undefined;
+			return;
+		}
+
+		if (!edit.blankLines && textEditorHasBlankLine(body)) {
+			cast('change_style', {
+				layer_id: edit.id,
+				type: 'text',
+				attr: 'blank_lines',
+				val: true
+			});
+		}
+
+		cast('change_text_body', {
+			layer_id: edit.id,
+			val: body
+		});
+		inlineTextEdit.value = undefined;
+	}
+
+	function shouldResetTextToolAfterInlineTextDismiss(evt) {
+		return (
+			primitiveCreatesText(activeCreateTool.value) &&
+			!activeCreateTool.value?.persistent &&
+			!evt?.target?.closest?.('.editor-text-layer')
+		);
+	}
+
+	function resetTextToolAfterInlineTextDismiss(evt) {
+		if (shouldResetTextToolAfterInlineTextDismiss(evt)) {
+			resetToSelectTool();
+		}
+	}
+
+	function dismissInlineTextEditFromCanvasPointer(evt, cast) {
+		if (!inlineTextEdit.value || !evt.isPrimary || !E.isLeftButton(evt)) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		commitInlineTextEdit(cast);
+		resetTextToolAfterInlineTextDismiss(evt);
+		return true;
+	}
+
+	function commitInlineTextEditOnOutsidePointer(node, cast) {
+		function onPointerDown(evt) {
+			if (!inlineTextEdit.value || !evt.isPrimary || !E.isLeftButton(evt)) {
+				return;
+			}
+
+			if (node.contains(evt.target)) {
+				return;
+			}
+
+			if (evt.target?.closest?.('.inline-text-editor-canvas-dismiss')) {
+				return;
+			}
+
+			commitInlineTextEdit(cast);
+			resetTextToolAfterInlineTextDismiss(evt);
+		}
+
+		window.addEventListener('pointerdown', onPointerDown, true);
+
+		return {
+			destroy() {
+				window.removeEventListener('pointerdown', onPointerDown, true);
+			}
+		};
+	}
+
+	function focusInlineTextEditor(node) {
+		requestAnimationFrame(() => {
+			node.focus();
+			node.select();
+		});
+	}
+
+	function cancelPrimitiveCreation(evt) {
+		if (
+			evt &&
+			primitiveCreation.value?.pointerId === evt.pointerId &&
+			evt.currentTarget.hasPointerCapture(evt.pointerId)
+		) {
+			evt.currentTarget.releasePointerCapture(evt.pointerId);
+		}
+
+		primitiveCreation.value = undefined;
+	}
+
+	function resetPrimitiveToolFromCanvas(evt) {
+		if (!activeCreateTool.value) {
+			return;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		backoffValue.value = true;
+		resetToSelectTool();
 	}
 
 	function deleteThisDocument(evt) {
@@ -2389,17 +3013,58 @@
 											stroke-width="5"
 											{...doc.value.viewbox}
 										/>
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
 										<path
+											class="inline-text-editor-canvas-dismiss"
 											d={frameBoxPath.value}
 											fill="#ffffff00"
 											stroke="none"
 											pointer-events="all"
-											onpointerdown={(evt) => beginAreaSelection(evt, liveLenses)}
-											onpointermove={(evt) => updateAreaSelection(evt, liveLenses)}
-											onpointerup={(evt) =>
-												finishAreaSelection(evt, liveLenses, cast, layersInOrder.value, doc.value)}
-											onpointercancel={cancelAreaSelection}
-											onlostpointercapture={cancelAreaSelection}
+											onpointerdown={(evt) => {
+												if (dismissInlineTextEditFromCanvasPointer(evt, cast)) {
+													return;
+												}
+												if (
+													primitiveNeedsLinkedTarget(activeCreateTool.value) ||
+													primitiveCreatesText(activeCreateTool.value)
+												) {
+													beginPrimitiveCreation(evt, liveLenses);
+												} else {
+													beginAreaSelection(evt, liveLenses);
+												}
+											}}
+											onpointermove={(evt) => {
+												if (!updatePrimitiveCreation(evt, liveLenses)) {
+													updateAreaSelection(evt, liveLenses);
+												}
+											}}
+											onpointerup={(evt) => {
+												if (
+													!finishPrimitiveCreation(
+														evt,
+														liveLenses,
+														dispatch,
+														L.get('id', singleSelectedLayer.value)
+													)
+												) {
+													finishAreaSelection(
+														evt,
+														liveLenses,
+														cast,
+														layersInOrder.value,
+														doc.value
+													);
+												}
+											}}
+											onpointercancel={(evt) => {
+												cancelPrimitiveCreation(evt);
+												cancelAreaSelection(evt);
+											}}
+											onlostpointercapture={(evt) => {
+												cancelPrimitiveCreation(evt);
+												cancelAreaSelection(evt);
+											}}
+											oncontextmenu={resetPrimitiveToolFromCanvas}
 										/>
 										{#if showGrid.value}
 											<Grid {rotationTransform} {frameBoxObject} {cameraScale} {gridDistance} />
@@ -2423,6 +3088,9 @@
 																}}
 																onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
 																onclick={(evt) => {
+																	if (createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, el.value)) {
+																		return;
+																	}
 																	if (openTargetLocation(evt, el.value)) {
 																		return;
 																	}
@@ -2468,12 +3136,26 @@
 															{#key el.id}
 																<g
 																	role="button"
+																	class="editor-text-layer"
 																	transform={layerMoveTransform(id, layersInOrder.value)}
 																	oncontextmenu={(evt) => {
+																		if (beginContextTextEdit(evt, el.value, thisbbox.value, cast)) {
+																			return;
+																		}
 																		openTargetLocation(evt, el.value);
 																	}}
 																	onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
 																	onclick={(evt) => {
+																		if (
+																			beginInlineTextEdit(
+																				evt,
+																				el.value,
+																				thisbbox.value,
+																				cast
+																			)
+																		) {
+																			return;
+																		}
 																		if (openTargetLocation(evt, el.value)) {
 																			return;
 																		}
@@ -2499,6 +3181,7 @@
 																		optimisticValue={optimisticValue.value}
 																		bbox={thisbbox}
 																		el={el.value}
+																		showVisibleText={inlineTextEdit.value?.id !== el.value?.id}
 																	/>
 																</g>
 															{/key}
@@ -2512,6 +3195,9 @@
 																}}
 																onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
 																onclick={(evt) => {
+																	if (createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, el.value)) {
+																		return;
+																	}
 																	if (openTargetLocation(evt, el.value)) {
 																		return;
 																	}
@@ -3111,6 +3797,128 @@
 													height={selectionBox.height}
 												/>
 											</g>
+										{/if}
+
+										{#if primitiveCreation.value && primitiveSupportsSizedCreation(activeCreateTool.value) && isPrimitiveCreationDrag(primitiveCreation.value)}
+											{@const creationBox = normalizedBox(primitiveCreation.value)}
+											{@const primitiveContent = activeCreateTool.value?.item?.data?.content ?? {}}
+											{@const previewStyle = primitivePreviewStyle(primitiveContent)}
+											<g transform={rotationTransform.value}>
+												{#if primitivePreviewIsEllipse(primitiveContent)}
+													<ellipse
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														cx={creationBox.x + creationBox.width / 2}
+														cy={creationBox.y + creationBox.height / 2}
+														rx={creationBox.width / 2}
+														ry={creationBox.height / 2}
+													/>
+												{:else}
+													<rect
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														x={creationBox.x}
+														y={creationBox.y}
+														width={creationBox.width}
+														height={creationBox.height}
+													/>
+												{/if}
+											</g>
+										{/if}
+
+										{#if activeCreateTool.value && !primitiveNeedsLinkedTarget(activeCreateTool.value) && !primitiveCreatesText(activeCreateTool.value)}
+											<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+											<path
+												class="primitive-creation-hitbox"
+												d={frameBoxPath.value}
+												fill="#ffffff00"
+												stroke="none"
+												pointer-events="all"
+												onpointerdown={(evt) => beginPrimitiveCreation(evt, liveLenses)}
+												onpointermove={(evt) => updatePrimitiveCreation(evt, liveLenses)}
+												onpointerup={(evt) =>
+													finishPrimitiveCreation(
+														evt,
+														liveLenses,
+														dispatch,
+														L.get('id', singleSelectedLayer.value)
+													)}
+												onpointercancel={cancelPrimitiveCreation}
+												onlostpointercapture={cancelPrimitiveCreation}
+												oncontextmenu={resetPrimitiveToolFromCanvas}
+												onclick={(evt) => {
+													evt.preventDefault();
+													evt.stopPropagation();
+												}}
+											/>
+										{/if}
+
+										{#if inlineTextEdit.value}
+											{@const editingLayer = view(
+												['layers', 'items', L.find((el) => el.id === inlineTextEdit.value.id)],
+												doc
+											)}
+											{@const editingBounds = textEditorBounds(
+												editingLayer.value,
+												textBounds.value[inlineTextEdit.value.id],
+												cameraScale.value,
+												inlineTextEdit.value.body
+											)}
+											{#if editingLayer.value?.text && editingBounds}
+												<g transform={rotationTransform.value}>
+													<foreignObject
+														class="inline-text-editor-object"
+														transform={layerMoveTransform(
+															inlineTextEdit.value.id,
+															layersInOrder.value
+														)}
+														x={editingBounds.x}
+														y={editingBounds.y}
+														width={editingBounds.width}
+														height={editingBounds.height}
+													>
+														<textarea
+															class="inline-text-editor-control"
+															rows={textEditorRows(inlineTextEdit.value.body)}
+															wrap="off"
+															spellcheck="false"
+															style:font-size={textEditorFontSize(editingLayer.value)}
+															style:font-family={editingLayer.value.text?.style?.font_family ??
+																'sans-serif'}
+															style:font-weight={editingLayer.value.text?.style?.bold
+																? 'bold'
+																: 'normal'}
+															style:font-style={editingLayer.value.text?.style?.italic
+																? 'italic'
+																: 'normal'}
+															style:color={editingLayer.value.text?.style?.text_color ?? 'black'}
+															value={inlineTextEdit.value.body}
+															use:focusInlineTextEditor
+															use:commitInlineTextEditOnOutsidePointer={cast}
+															onpointerdown={(evt) => evt.stopPropagation()}
+															onclick={(evt) => evt.stopPropagation()}
+															oninput={(evt) => {
+																updateInlineTextEdit(evt.currentTarget.value);
+																updateText(editingLayer.value.id, evt.currentTarget.value);
+															}}
+															onblur={() => commitInlineTextEdit(cast)}
+															onkeydown={(evt) => {
+																evt.stopPropagation();
+																if (evt.key === 'Escape') {
+																	evt.preventDefault();
+																	commitInlineTextEdit(cast);
+																}
+																if ((evt.ctrlKey || evt.metaKey) && evt.key === 'Enter') {
+																	evt.preventDefault();
+																	commitInlineTextEdit(cast);
+																}
+															}}
+														></textarea>
+													</foreignObject>
+												</g>
+											{/if}
 										{/if}
 
 										{#if activeTool.value === 'select'}
@@ -3783,6 +4591,12 @@
 														transform={layerMoveTransform(id, layersInOrder.value)}
 														fill="none"
 														class="draggable"
+														oncontextmenu={(evt) => {
+															if (el.value?.text && beginContextTextEdit(evt, el.value, boxDim.value, cast)) {
+																return;
+															}
+															openTargetLocation(evt, el.value);
+														}}
 														onpointerdown={(evt) =>
 															beginLayerMove(evt, liveLenses, el.value.id, layersInOrder.value)}
 														onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
@@ -4199,6 +5013,7 @@
 										type="radio"
 										value={tool.id}
 										bind:group={activeTool.value}
+										onchange={() => selectEditorTool(tool.id, cast)}
 									/></label
 								>
 							{/each}
@@ -5488,33 +6303,6 @@
 				</div>
 
 				<div class="topsubbar">
-					{#if singleSelectedLayerType.value == 'text'}
-						{@const optimistic = view(
-							optimisticLens(singleSelectedLayer.value.id, 'textBody', ['text', 'body']),
-							combine(
-								{ optimistic: optimisticValue, real: singleSelectedLayer },
-								{ optimistic: true, real: true }
-							)
-						)}
-						<div class="toolbar" style="display: block;">
-							<label class="pretty-text">
-								<span class="pretty-text-label">Edit Text</span>
-								<textarea
-									class="pretty-text-control"
-									style="height: 100%; min-height: 6em; resize: none;  width: 100%; justify-self: stretch; flex-grow: 1; box-sizing: border-box;"
-									rows="5"
-									cols="50"
-									onblur={(evt) => {
-										optimistic.value = undefined;
-									}}
-									oninput={(evt) => {
-										updateText(singleSelectedLayer.value.id, evt.currentTarget.value);
-									}}
-									use:bindValue={optimistic}
-								></textarea>
-							</label>
-						</div>
-					{/if}
 					{#if showDebug.value}
 						{@const symbolsOpen = view('symbols', debugTabs)}
 						{@const primitivesOpen = view('primitives', debugTabs)}
@@ -5993,18 +6781,63 @@
 							{#each groups as g}
 								<div style="border-top: 1px solid gray;  padding-top: 1ex">
 									{#each g.items as item}
+										{@const linkedCreateTargetId = singleSelectedIsBoxOrEdge.value
+											? singleSelectedLayer.value.id
+											: undefined}
 										<div
-											role="application"
+											class={{
+												'create-primitive-tool': true,
+												'selectable-create': isSelectableCreatePrimitive(item),
+												'disabled-create-tool':
+													isSelectableCreatePrimitive(item) &&
+													!canActivateCreatePrimitive(item, linkedCreateTargetId),
+												'active-create-tool': isActiveCreatePrimitive(item),
+												'persistent-create-tool':
+													isActiveCreatePrimitive(item) && activeCreateTool.value?.persistent
+											}}
+											role="button"
+											tabindex={canActivateCreatePrimitive(item, linkedCreateTargetId) ? '0' : '-1'}
+											aria-disabled={!canActivateCreatePrimitive(item, linkedCreateTargetId)}
+											aria-pressed={isSelectableCreatePrimitive(item)
+												? isActiveCreatePrimitive(item)
+												: undefined}
 											style="display: grid; justify-content: center; align-content: center;"
-											draggable={!item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value}
+											draggable={isSelectableCreatePrimitive(item)}
 											style:touch-action="none"
+											onclick={(evt) => {
+												if (activateCreatePrimitive(item, false, linkedCreateTargetId, cast)) {
+													evt.preventDefault();
+													evt.stopPropagation();
+												}
+											}}
+											ondblclick={(evt) => {
+												if (activateCreatePrimitive(item, true, linkedCreateTargetId, cast)) {
+													evt.preventDefault();
+													evt.stopPropagation();
+												}
+											}}
+											onkeydown={(evt) => {
+												if (
+													canActivateCreatePrimitive(item, linkedCreateTargetId) &&
+													(evt.key === 'Enter' || evt.key === ' ')
+												) {
+													evt.preventDefault();
+													activateCreatePrimitive(item, false, linkedCreateTargetId, cast);
+												}
+											}}
 											ondragstart={(evt) => {
+												if (item.data.content.hyperlink && !linkedCreateTargetId) {
+													evt.preventDefault();
+													evt.stopPropagation();
+													return;
+												}
+
 												const d = {
 													...item.data,
 													content: {
 														...item.data.content,
 														hyperlink: item.data.content.hyperlink
-															? singleSelectedLayer.value.id
+															? linkedCreateTargetId
 															: undefined
 													}
 												};
@@ -6036,15 +6869,13 @@
 										>
 											<svg
 												class={{
-													droppable: !item.data.content.hyperlink || singleSelectedIsBoxOrEdge.value
+													droppable: isSelectableCreatePrimitive(item)
 												}}
-												style:opacity={!item.data.content.hyperlink ||
-												singleSelectedIsBoxOrEdge.value
-													? 1
-													: 0.5}
+												style:opacity={isSelectableCreatePrimitive(item) ? 1 : 0.5}
 												viewBox="-4 -4 40 40"
 												width="32"
 											>
+												<title>{item.name}</title>
 												{@html item.icon}
 											</svg>
 										</div>
@@ -6091,18 +6922,54 @@
 									{/await}
 								</label>
 								<div
-									style="width: 100%; padding: 1ex; background: #333; color: #fff; box-sizing: border-box; text-align: center;"
-									role="application"
-									style:cursor={!!selectedBlueprint.value ? 'move' : 'default'}
+									class={{
+										'create-primitive-tool': true,
+										'selectable-create': canActivateBlueprintTool(selectedBlueprint.value),
+										'disabled-create-tool': !canActivateBlueprintTool(selectedBlueprint.value),
+										'active-create-tool': isActiveBlueprintTool(selectedBlueprint.value),
+										'persistent-create-tool':
+											isActiveBlueprintTool(selectedBlueprint.value) &&
+											activeCreateTool.value?.persistent
+									}}
+									style="width: 100%; padding: 1ex; color: #fff; box-sizing: border-box; text-align: center;"
+									role="button"
+									tabindex={canActivateBlueprintTool(selectedBlueprint.value) ? '0' : '-1'}
+									aria-disabled={!canActivateBlueprintTool(selectedBlueprint.value)}
+									aria-pressed={isActiveBlueprintTool(selectedBlueprint.value)}
+									style:background={isActiveBlueprintTool(selectedBlueprint.value)
+										? '#23875d'
+										: '#333'}
+									style:cursor={!!selectedBlueprint.value ? 'pointer' : 'default'}
 									style:opacity={!!selectedBlueprint.value ? '1' : 0.5}
 									draggable={!!selectedBlueprint.value}
 									style:touch-action="none"
+									onclick={(evt) => {
+										if (activateBlueprintTool(selectedBlueprint.value, false, cast)) {
+											evt.preventDefault();
+											evt.stopPropagation();
+										}
+									}}
+									ondblclick={(evt) => {
+										if (activateBlueprintTool(selectedBlueprint.value, true, cast)) {
+											evt.preventDefault();
+											evt.stopPropagation();
+										}
+									}}
+									onkeydown={(evt) => {
+										if (
+											canActivateBlueprintTool(selectedBlueprint.value) &&
+											(evt.key === 'Enter' || evt.key === ' ')
+										) {
+											evt.preventDefault();
+											activateBlueprintTool(selectedBlueprint.value, false, cast);
+										}
+									}}
 									ondragstart={(evt) => {
 										const d = {
 											content: {
 												blueprint_id: selectedBlueprint.value
 											},
-											mimeType: 'application/json+renewex-blueprint',
+											mimeType: BLUEPRINT_MIME_TYPE,
 											alignX: 0.5,
 											alignY: 0.5
 										};
@@ -6568,6 +7435,34 @@
 		cursor: move;
 	}
 
+	.create-primitive-tool {
+		border-radius: 2px;
+		outline: 1px solid transparent;
+		outline-offset: 1px;
+	}
+
+	.create-primitive-tool.selectable-create {
+		cursor: pointer;
+	}
+
+	.create-primitive-tool.selectable-create svg {
+		cursor: pointer;
+	}
+
+	.create-primitive-tool.disabled-create-tool,
+	.create-primitive-tool.disabled-create-tool svg {
+		cursor: default;
+	}
+
+	.create-primitive-tool.active-create-tool {
+		background: #333;
+		outline-color: #333;
+	}
+
+	.create-primitive-tool.persistent-create-tool {
+		outline-style: dashed;
+	}
+
 	.tool-button {
 		border: none;
 		background: #eee;
@@ -6656,6 +7551,50 @@
 		stroke-dasharray: 6 4;
 		vector-effect: non-scaling-stroke;
 		pointer-events: none;
+	}
+
+	.primitive-creation-preview-shape {
+		stroke-width: 1;
+		vector-effect: non-scaling-stroke;
+		pointer-events: none;
+	}
+
+	.primitive-creation-hitbox {
+		cursor: crosshair;
+	}
+
+	.inline-text-editor-object {
+		overflow: visible;
+		pointer-events: all;
+	}
+
+	.inline-text-editor-control {
+		width: 100%;
+		height: 100%;
+		box-sizing: border-box;
+		resize: none;
+		overflow: hidden;
+		padding: 2px 1px;
+		border: 1px solid #23875d;
+		border-radius: 2px;
+		background: #fff;
+		line-height: 1.2;
+		white-space: pre;
+		pointer-events: all;
+		touch-action: auto !important;
+		user-select: text !important;
+		-webkit-user-select: text !important;
+		-webkit-user-modify: read-write !important;
+		-webkit-touch-callout: default !important;
+	}
+
+	.inline-text-editor-control::-webkit-scrollbar {
+		display: none;
+	}
+
+	.inline-text-editor-control:focus {
+		outline: 2px solid #23875d;
+		outline-offset: 0;
 	}
 
 	rect.selected {
@@ -6956,7 +7895,6 @@
 	.pretty-select-label::after,
 	.pretty-number-label::after,
 	.pretty-color-label::after,
-	.pretty-text-label::after,
 	.pretty-checkbox-group-head::after {
 		content: ': ';
 		color: #888;
@@ -6965,7 +7903,6 @@
 	.pretty-select-label,
 	.pretty-number-label,
 	.pretty-color-label,
-	.pretty-text-label,
 	.pretty-checkbox-group-head {
 		white-space: nowrap;
 		color: #555;
@@ -6992,33 +7929,6 @@
 		grid-area: value;
 		display: flex;
 		gap: 0.25ex;
-	}
-
-	.pretty-text {
-		display: grid;
-		grid-template-columns: [full-start] 1fr [full-end];
-		grid-template-rows: [full-start label-start] max-content [label-end value-start] max-content [value-end full-end];
-		align-items: stretch;
-		justify-items: stretch;
-		padding: 0.1ex;
-		gap: 0.1ex;
-	}
-
-	.pretty-text-label {
-		grid-area: label / full;
-		display: block;
-		text-transform: uppercase;
-	}
-
-	.pretty-text-control {
-		display: block;
-		grid-area: value / full;
-		width: 100%;
-		background: #fafafa;
-		padding: 0.5ex;
-		border: 1px solid #e0e0e0;
-		box-sizing: border-box;
-		min-width: 6em;
 	}
 
 	.delete-button {

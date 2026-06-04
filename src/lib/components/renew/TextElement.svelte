@@ -1,7 +1,7 @@
 <script>
 	import { atom, view, combine } from '$lib/reactivity/atom.svelte.js';
 	import { bindBoundingBox } from '$lib/reactivity/bindings.svelte.js';
-	const { el, optimisticValue, bbox = atom() } = $props();
+	const { el, optimisticValue, bbox = atom(), showVisibleText = true } = $props();
 
 	const alignment = {
 		left: 'start',
@@ -34,7 +34,7 @@
 </script>
 
 <g opacity={el.style?.opacity ?? '1'}>
-	{#if bbox.value}
+	{#if bbox.value && showVisibleText}
 		<rect
 			fill={el.style?.background_color ?? 'transparent'}
 			stroke={el.style?.border_color ?? 'transparent'}
