@@ -942,69 +942,15 @@
 		}
 	}
 
-	function commitLayerMove(layer_id, delta, cast, dispatch, docValue) {
-		const layer = docValue.layers.items.find((layer) => layer.id === layer_id);
-		if (!layer) {
-			return Promise.resolve();
-		}
-
-		if (layer.box) {
-			cast('update_box_size', {
-				layer_id,
-				value: {
-					position_x: layer.box.position_x + delta.x,
-					position_y: layer.box.position_y + delta.y,
-					width: layer.box.width,
-					height: layer.box.height
-				}
-			});
-			return Promise.resolve();
-		}
-
-		if (layer.text) {
-			cast('update_text_position', {
-				layer_id,
-				value: {
-					position_x: layer.text.position_x + delta.x,
-					position_y: layer.text.position_y + delta.y
-				}
-			});
-			return Promise.resolve();
-		}
-
-		if (layer.edge) {
-			const edge = layer.edge;
-			const waypoints = L.get(localProp('waypoints'), edge) ?? edge.waypoints ?? [];
-			for (const waypoint of waypoints.filter((waypoint) => waypoint?.id)) {
-				cast('update_waypoint_position', {
-					layer_id,
-					waypoint_id: waypoint.id,
-					value: {
-						x: waypoint.x + delta.x,
-						y: waypoint.y + delta.y
-					}
-				});
-			}
-
-			return dispatch('update_edge_position', {
-				layer_id,
-				value: {
-					source_x: edge.source_x + delta.x,
-					source_y: edge.source_y + delta.y,
-					target_x: edge.target_x + delta.x,
-					target_y: edge.target_y + delta.y
-				}
-			});
-		}
-
+	function commitLayerMove(layerIds, delta, dispatch) {
 		return dispatch('move_layer_relative', {
-			layer_id,
+			layer_ids: uniqueLayerIds(layerIds),
 			dx: delta.x,
 			dy: delta.y
 		});
 	}
 
-	function finishLayerMove(evt, cast, dispatch, docAtom, layersInOrderValue) {
+	function finishLayerMove(evt, dispatch, docAtom, layersInOrderValue) {
 		if (groupDrag.value?.pointerId !== evt.pointerId) {
 			return;
 		}
@@ -1014,7 +960,6 @@
 
 		const delta = groupDragDelta.value;
 		const layerIds = uniqueLayerIds(groupDrag.value.layerIds);
-		const docValue = docAtom.value;
 
 		if (!layerIds.length || (!delta.x && !delta.y)) {
 			if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
@@ -1031,9 +976,7 @@
 			evt.currentTarget.releasePointerCapture(evt.pointerId);
 		}
 
-		Promise.all(
-			layerIds.map((layer_id) => commitLayerMove(layer_id, delta, cast, dispatch, docValue))
-		).catch(() => {});
+		commitLayerMove(layerIds, delta, dispatch).catch(() => {});
 	}
 
 	function cancelLayerMove(evt) {
@@ -2490,7 +2433,7 @@
 																beginLayerMove(evt, liveLenses, id, layersInOrder.value)}
 															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 															onpointerup={(evt) =>
-																finishLayerMove(evt, cast, dispatch, doc, layersInOrder.value)}
+																finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
 															onpointercancel={cancelLayerMove}
 															onlostpointercapture={cancelLayerMove}
 															onkeydown={(evt) => {
@@ -3038,7 +2981,7 @@
 															onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
 															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 															onpointerup={(evt) =>
-																finishLayerMove(evt, cast, dispatch, doc, layersInOrder.value)}
+																finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
 															onpointercancel={cancelLayerMove}
 															onlostpointercapture={cancelLayerMove}
 														/>
@@ -3616,7 +3559,7 @@
 															beginLayerMove(evt, liveLenses, el.value.id, layersInOrder.value)}
 														onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 														onpointerup={(evt) =>
-															finishLayerMove(evt, cast, dispatch, doc, layersInOrder.value)}
+															finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
 														onpointercancel={cancelLayerMove}
 														onlostpointercapture={cancelLayerMove}
 														onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
