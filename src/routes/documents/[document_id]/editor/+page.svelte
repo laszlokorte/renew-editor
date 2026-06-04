@@ -320,14 +320,28 @@
 	let areaSelection = atom(undefined);
 	let areaSelectionDelay = undefined;
 	const AREA_SELECTION_DELAY = 180;
+	let layerClipboard = atom(null);
+	let lastPasteLocation = atom(null);
 	let groupDrag = atom(undefined);
 	let groupDragDelta = view(
 		[L.reread(({ bx, by, cx, cy }) => ({ x: cx - bx, y: cy - by })), L.valueOr({ x: 0, y: 0 })],
 		groupDrag
 	);
+	const PETRISTATION_CLIPBOARD_FORMAT = 'petristation/layer-clipboard';
+	const PETRISTATION_CLIPBOARD_STORAGE_KEY = 'petristation:layer-clipboard';
 
 	function uniqueLayerIds(ids) {
 		return [...new Set(ids.filter((id) => typeof id === 'string' && id))];
+	}
+
+	function rememberPasteLocation(pos) {
+		if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+			lastPasteLocation.value = { x: pos.x, y: pos.y };
+		}
+	}
+
+	function rememberPointerPasteLocation(evt, liveLenses) {
+		rememberPasteLocation(liveLenses.clientToCanvas(evt.clientX, evt.clientY));
 	}
 
 	function publishSelection(cast, ids) {
@@ -617,6 +631,169 @@
 		}
 
 		clearSelection(cast);
+	}
+
+	function clipboardHasLayers(clipboard) {
+		return (clipboard?.layers ?? []).length > 0;
+	}
+
+	function encodePetriStationClipboard(clipboard) {
+		return JSON.stringify({
+			format: PETRISTATION_CLIPBOARD_FORMAT,
+			version: 1,
+			clipboard
+		});
+	}
+
+	function decodePetriStationClipboard(text) {
+		if (!text) {
+			return null;
+		}
+
+		try {
+			const parsed = JSON.parse(text);
+
+			if (
+				parsed?.format === PETRISTATION_CLIPBOARD_FORMAT &&
+				clipboardHasLayers(parsed.clipboard)
+			) {
+				return parsed.clipboard;
+			}
+
+			if (parsed?.format === 'renewex/layers' && clipboardHasLayers(parsed)) {
+				return parsed;
+			}
+		} catch {
+			return null;
+		}
+
+		return null;
+	}
+
+	function writeStoredClipboard(clipboard) {
+		try {
+			localStorage.setItem(PETRISTATION_CLIPBOARD_STORAGE_KEY, encodePetriStationClipboard(clipboard));
+		} catch {
+			// Ignore storage failures; the in-page clipboard still works.
+		}
+	}
+
+	function readStoredClipboard() {
+		try {
+			return decodePetriStationClipboard(
+				localStorage.getItem(PETRISTATION_CLIPBOARD_STORAGE_KEY)
+			);
+		} catch {
+			return null;
+		}
+	}
+
+	async function writeSystemClipboard(clipboard) {
+		writeStoredClipboard(clipboard);
+
+		if (!navigator.clipboard?.writeText) {
+			return false;
+		}
+
+		try {
+			await navigator.clipboard.writeText(encodePetriStationClipboard(clipboard));
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	async function readSystemClipboard() {
+		if (navigator.clipboard?.readText) {
+			try {
+				const clipboard = decodePetriStationClipboard(await navigator.clipboard.readText());
+				if (clipboard) {
+					return clipboard;
+				}
+			} catch {
+				// Fall back to the shared same-origin clipboard below.
+			}
+		}
+
+		return readStoredClipboard();
+	}
+
+	function rememberLayerClipboard(clipboard) {
+		if (clipboardHasLayers(clipboard)) {
+			layerClipboard.value = clipboard;
+			writeSystemClipboard(clipboard);
+			return clipboard;
+		}
+
+		return null;
+	}
+
+	function clipboardOrigin(clipboard) {
+		const origin = clipboard?.origin;
+		if (origin && Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
+			return origin;
+		}
+		return { x: 0, y: 0 };
+	}
+
+	function copySelectedLayers(dispatch, layersInOrderValue) {
+		const layerIds = selectedTopLevelLayerIds(layersInOrderValue);
+		if (!layerIds.length) {
+			return Promise.resolve(null);
+		}
+
+		return dispatch('copy_layers', { layer_ids: layerIds }).then((result) => {
+			return rememberLayerClipboard(result?.clipboard);
+		});
+	}
+
+	function cutSelectedLayers(dispatch, cast, layersInOrderValue) {
+		return copySelectedLayers(dispatch, layersInOrderValue).then((clipboard) => {
+			if (clipboard) {
+				deleteSelectedLayers(cast, layersInOrderValue);
+			}
+			return clipboard;
+		});
+	}
+
+	async function pasteLayerClipboard(dispatch, cast, position = null, clipboard = null) {
+		clipboard = clipboardHasLayers(clipboard)
+			? clipboard
+			: (await readSystemClipboard()) || layerClipboard.value;
+
+		if (!clipboardHasLayers(clipboard)) {
+			return null;
+		}
+
+		layerClipboard.value = clipboard;
+
+		const pastePosition = position ?? lastPasteLocation.value ?? clipboardOrigin(clipboard);
+
+		return dispatch('paste_layers', {
+			clipboard,
+			position: pastePosition
+		}).then((result) => {
+			if (result?.layer_ids?.length) {
+				publishSelection(cast, result.layer_ids);
+			}
+			return result;
+		});
+	}
+
+	function duplicateSelectedLayers(dispatch, cast, layersInOrderValue) {
+		return copySelectedLayers(dispatch, layersInOrderValue).then((clipboard) => {
+			if (!clipboard) {
+				return null;
+			}
+
+			const origin = clipboardOrigin(clipboard);
+			return pasteLayerClipboard(
+				dispatch,
+				cast,
+				{ x: origin.x + 24, y: origin.y + 24 },
+				clipboard
+			);
+		});
 	}
 
 	let deleteShortcutContext = { cast: null, layersInOrder: null };
@@ -917,6 +1094,7 @@
 		backoffValue.value = true;
 
 		const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		rememberPasteLocation(world);
 		groupDrag.value = {
 			pointerId: evt.pointerId,
 			layerIds,
@@ -1165,6 +1343,7 @@
 		}
 
 		const start = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		rememberPasteLocation(start);
 		areaSelection.value = {
 			pointerId: evt.pointerId,
 			start,
@@ -1640,6 +1819,57 @@
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
 										disabled={selectedLayers.value.length === 0}
+										shortcut={{ ctrlKey: true, key: 'x' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cutSelectedLayers(dispatch, cast, layersInOrder.value);
+										}}>Cut</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length === 0}
+										shortcut={{ ctrlKey: true, key: 'c' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											copySelectedLayers(dispatch, layersInOrder.value);
+										}}>Copy</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: 'v' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											pasteLayerClipboard(dispatch, cast);
+										}}>Paste</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length === 0}
+										shortcut={{ ctrlKey: true, key: 'd' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											duplicateSelectedLayers(dispatch, cast, layersInOrder.value);
+										}}>Duplicate</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length === 0}
+										onclick={(evt) => {
+											evt.preventDefault();
+											deleteSelectedLayers(cast, layersInOrder.value);
+										}}
+										class="menu-bar-item-button menu-bar-item-danger">Delete</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length === 0}
 										onclick={(evt) => {
 											evt.preventDefault();
 											wrapSelectedLayersInGroup(dispatch, cast, layersInOrder.value);
@@ -1657,17 +1887,6 @@
 												layer_id: singleSelectedLayer.value.id
 											});
 										}}>Mark Layer as Thumbnail</MenuBarButton
-									>
-								</li>
-								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-								<li class="menu-bar-menu-item">
-									<MenuBarButton
-										disabled={selectedLayers.value.length === 0}
-										onclick={(evt) => {
-											evt.preventDefault();
-											deleteSelectedLayers(cast, layersInOrder.value);
-										}}
-										class="menu-bar-item-button menu-bar-item-danger">Delete</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
@@ -2169,6 +2388,12 @@
 											stroke="#eee"
 											stroke-width="5"
 											{...doc.value.viewbox}
+										/>
+										<path
+											d={frameBoxPath.value}
+											fill="#ffffff00"
+											stroke="none"
+											pointer-events="all"
 											onpointerdown={(evt) => beginAreaSelection(evt, liveLenses)}
 											onpointermove={(evt) => updateAreaSelection(evt, liveLenses)}
 											onpointerup={(evt) =>
@@ -2196,6 +2421,7 @@
 																oncontextmenu={(evt) => {
 																	openTargetLocation(evt, el.value);
 																}}
+																onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
 																onclick={(evt) => {
 																	if (openTargetLocation(evt, el.value)) {
 																		return;
@@ -2246,6 +2472,7 @@
 																	oncontextmenu={(evt) => {
 																		openTargetLocation(evt, el.value);
 																	}}
+																	onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
 																	onclick={(evt) => {
 																		if (openTargetLocation(evt, el.value)) {
 																			return;
@@ -2283,6 +2510,7 @@
 																oncontextmenu={(evt) => {
 																	openTargetLocation(evt, el.value);
 																}}
+																onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
 																onclick={(evt) => {
 																	if (openTargetLocation(evt, el.value)) {
 																		return;
