@@ -422,6 +422,6 @@
 	}
 
 	.dragging {
-		cursor: move;
+		cursor: default;
 	}
 </style>

@@ -272,19 +272,19 @@
 	}
 
 	.edge-surface.active {
-		cursor: alias;
+		cursor: default;
 		display: initial;
 	}
 
 	.edge-container.active {
-		cursor: alias;
+		cursor: default;
 	}
 
 	.socket-outer {
 		pointer-events: all;
 		fill: none;
 		stroke: none;
-		cursor: alias;
+		cursor: default;
 	}
 
 	.socket-center {

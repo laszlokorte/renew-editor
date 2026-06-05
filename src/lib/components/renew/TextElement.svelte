@@ -132,7 +132,6 @@
 	}
 
 	.editor-text-visible {
-		cursor: text;
 		pointer-events: visiblePainted;
 	}
 </style>

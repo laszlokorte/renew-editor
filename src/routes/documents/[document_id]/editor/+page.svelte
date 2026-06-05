@@ -1330,6 +1330,87 @@
 		);
 	}
 
+	function boxContainsPoint(box, point) {
+		return (
+			point.x >= box.minX &&
+			point.x <= box.maxX &&
+			point.y >= box.minY &&
+			point.y <= box.maxY
+		);
+	}
+
+	function expandBox(box, padding) {
+		return {
+			minX: box.minX - padding,
+			minY: box.minY - padding,
+			maxX: box.maxX + padding,
+			maxY: box.maxY + padding
+		};
+	}
+
+	function edgePoints(edge) {
+		const waypoints = L.get(localProp('waypoints'), edge) ?? edge.waypoints ?? [];
+		return [
+			{ x: edge.source_x, y: edge.source_y },
+			...waypoints,
+			{ x: edge.target_x, y: edge.target_y }
+		].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+	}
+
+	function edgeContainsPoint(edge, point, tolerance) {
+		const points = edgePoints(edge);
+
+		for (let i = 1; i < points.length; i++) {
+			if (
+				Geo.pointToLineDistance(point, {
+					from: points[i - 1],
+					to: points[i]
+				}) <= tolerance
+			) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	function linkedPrimitiveTargetAtPosition(
+		position,
+		layersInOrderValue,
+		docValue,
+		textBoundsValue,
+		tolerance
+	) {
+		const layerById = new Map(docValue.layers.items.map((layer) => [layer.id, layer]));
+
+		for (const layerInfo of [...layersInOrderValue].reverse()) {
+			if (layerInfo.hidden) {
+				continue;
+			}
+
+			const layer = layerById.get(layerInfo.id);
+			if (!layer?.box && !layer?.edge) {
+				continue;
+			}
+
+			const boundingBox = layerBox(layerInfo, layer, textBoundsValue);
+			if (!finiteBox(boundingBox)) {
+				continue;
+			}
+
+			const hitBox = layer.edge ? expandBox(boundingBox, tolerance) : boundingBox;
+			if (!boxContainsPoint(hitBox, position)) {
+				continue;
+			}
+
+			if (layer.box || edgeContainsPoint(layer.edge, position, tolerance)) {
+				return layer;
+			}
+		}
+
+		return undefined;
+	}
+
 	function layersInsideBox(box, layersInOrderValue, docValue, textBoundsValue) {
 		const layerById = new Map(docValue.layers.items.map((layer) => [layer.id, layer]));
 
@@ -1569,6 +1650,18 @@
 
 	function primitiveCreatesText(tool) {
 		return tool?.type === 'primitive' && typeof tool?.item?.data?.content?.body === 'string';
+	}
+
+	function activeCreateToolUsesCrosshair() {
+		return (
+			activeTool.value === CREATE_TOOL_ID &&
+			(primitiveNeedsLinkedTarget(activeCreateTool.value) ||
+				primitiveCreatesText(activeCreateTool.value))
+		);
+	}
+
+	function canvasInteractionCursor() {
+		return inlineTextEdit.value || activeCreateToolUsesCrosshair() ? 'crosshair' : undefined;
 	}
 
 	function textLayerUsesConnectedTool(layer) {
@@ -2957,10 +3050,33 @@
 						domElement={dropperDomElement}
 						onDrop={(mime, content, pos) => {
 							if (mime === 'application/json+renewex-layer') {
+								const layerContent = { ...content };
+								let baseLayerId = L.get('id', singleSelectedLayer.value);
+
+								if (layerContent.hyperlink) {
+									const linkedTargetId =
+										typeof layerContent.hyperlink === 'string'
+											? layerContent.hyperlink
+											: linkedPrimitiveTargetAtPosition(
+													pos,
+													layersInOrder.value,
+													doc.value,
+													textBounds.value,
+													12 * cameraScale.value
+												)?.id;
+
+									if (!linkedTargetId) {
+										return;
+									}
+
+									layerContent.hyperlink = linkedTargetId;
+									baseLayerId = linkedTargetId;
+								}
+
 								dispatch('create_layer', {
-									base_layer_id: L.get('id', singleSelectedLayer.value),
+									base_layer_id: baseLayerId,
 									pos,
-									...content
+									...layerContent
 								}).then((l) => {
 									publishSelection(cast, [l.id]);
 								});
@@ -3068,6 +3184,7 @@
 											d={frameBoxPath.value}
 											fill="#ffffff00"
 											stroke="none"
+											cursor={canvasInteractionCursor()}
 											pointer-events="all"
 											onpointerdown={(evt) => {
 												if (dismissInlineTextEditFromCanvasPointer(evt, cast)) {
@@ -3132,6 +3249,7 @@
 															<g
 																role="button"
 																transform={layerMoveTransform(id, layersInOrder.value)}
+																cursor={canvasInteractionCursor()}
 																oncontextmenu={(evt) => {
 																	openTargetLocation(evt, el.value);
 																}}
@@ -3187,6 +3305,7 @@
 																	role="button"
 																	class="editor-text-layer"
 																	transform={layerMoveTransform(id, layersInOrder.value)}
+																	cursor={canvasInteractionCursor()}
 																	oncontextmenu={(evt) => {
 																		if (beginContextTextEdit(evt, el.value, thisbbox.value, cast)) {
 																			return;
@@ -3239,6 +3358,7 @@
 															<g
 																role="button"
 																transform={layerMoveTransform(id, layersInOrder.value)}
+																cursor={canvasInteractionCursor()}
 																oncontextmenu={(evt) => {
 																	openTargetLocation(evt, el.value);
 																}}
@@ -3385,7 +3505,7 @@
 													{#if deep_bounding}
 														<rect
 															tabindex="-1"
-															cursor="move"
+															cursor="default"
 															x={deep_bounding.minX -
 																3 * cameraScale.value +
 																groupDragDelta.value.x}
@@ -3434,7 +3554,7 @@
 															y={el.box.position_y - cameraScale.value}
 															width={el.box.width + 2 * cameraScale.value}
 															height={el.box.height + 2 * cameraScale.value}
-															cursor="move"
+															cursor="default"
 														></rect>
 													{/if}
 													{#if el.text}
@@ -3563,7 +3683,7 @@
 														y={linkedEl.value.box.position_y - cameraScale.value}
 														width={linkedEl.value.box.width + 2 * cameraScale.value}
 														height={linkedEl.value.box.height + 2 * cameraScale.value}
-														cursor="move"
+														cursor="default"
 													></rect>
 												{/if}
 												{#if linkedEl.value?.text}
@@ -3612,7 +3732,7 @@
 														y={el.value?.box.position_y - cameraScale.value}
 														width={el.value?.box.width + 2 * cameraScale.value}
 														height={el.value?.box.height + 2 * cameraScale.value}
-														cursor="move"
+														cursor="default"
 													></rect>
 												{/if}
 												{#if el.value?.text}
@@ -4044,7 +4164,7 @@
 													{#if deep_bounding}
 														<rect
 															stroke="#0af"
-															cursor="move"
+															cursor="default"
 															stroke-dasharray="{cameraScale.value * 2} {cameraScale.value * 2}"
 															stroke-width={cameraScale.value * 2}
 															x={deep_bounding.minX -
@@ -4121,7 +4241,7 @@
 															stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
 															stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 															style:pointer-events="painted"
-															cursor="move"
+															cursor="default"
 															onpointerdown={(evt) =>
 																beginLayerMove(
 																	evt,
@@ -4245,7 +4365,7 @@
 															>
 																<circle
 																	fill="none"
-																	cursor="move"
+																	cursor="default"
 																	stroke="none"
 																	r={12 * cameraScale.value}
 																	cx={wp_proposal.x}
@@ -4256,7 +4376,7 @@
 																/>
 																<circle
 																	fill="white"
-																	cursor="move"
+																	cursor="default"
 																	stroke="#7af"
 																	stroke-width="2"
 																	pointer-events="none"
@@ -4360,7 +4480,7 @@
 															>
 																<circle
 																	fill="none"
-																	cursor="move"
+																	cursor="default"
 																	stroke="none"
 																	r={12 * cameraScale.value}
 																	cx={wp.x}
@@ -4371,7 +4491,7 @@
 																/>
 																<circle
 																	fill="white"
-																	cursor="move"
+																	cursor="default"
 																	stroke="#7af"
 																	stroke-width="2"
 																	vector-effect="non-scaling-stroke"
@@ -4459,7 +4579,7 @@
 														>
 															<circle
 																fill="none"
-																cursor="move"
+																cursor="default"
 																stroke="none"
 																pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
 																r={12 * cameraScale.value}
@@ -4467,7 +4587,7 @@
 																cy={el.value?.edge?.source_y}
 															/><circle
 																fill="white"
-																cursor="move"
+																cursor="default"
 																pointer-events="none"
 																stroke="#7af"
 																stroke-width="2"
@@ -4546,7 +4666,7 @@
 															<circle
 																fill="none"
 																stroke="none"
-																cursor="move"
+																cursor="default"
 																pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
 																r={12 * cameraScale.value}
 																cx={el.value?.edge?.target_x}
@@ -4554,7 +4674,7 @@
 															/><circle
 																fill="white"
 																stroke="#7af"
-																cursor="move"
+																cursor="default"
 																stroke-width="2"
 																pointer-events="none"
 																vector-effect="non-scaling-stroke"
@@ -6948,19 +7068,11 @@
 												}
 											}}
 											ondragstart={(evt) => {
-												if (item.data.content.hyperlink && !linkedCreateTargetId) {
-													evt.preventDefault();
-													evt.stopPropagation();
-													return;
-												}
-
 												const d = {
 													...item.data,
 													content: {
 														...item.data.content,
-														hyperlink: item.data.content.hyperlink
-															? linkedCreateTargetId
-															: undefined
+														hyperlink: item.data.content.hyperlink ? true : undefined
 													}
 												};
 
@@ -7662,7 +7774,7 @@
 
 	.draggable {
 		pointer-events: all;
-		cursor: move;
+		cursor: default;
 	}
 
 	rect.area-selection {
