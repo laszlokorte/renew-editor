@@ -873,7 +873,7 @@
 	}
 
 	function isLayerInMovingSet(layerId, layersInOrderValue) {
-		const moving = new Set(groupDrag.value?.layerIds ?? []);
+		const moving = new Set(groupDrag.value?.previewLayerIds ?? groupDrag.value?.layerIds ?? []);
 		if (!moving.size) {
 			return false;
 		}
@@ -1011,11 +1011,23 @@
 		return delta.x || delta.y ? `translate(${delta.x} ${delta.y})` : undefined;
 	}
 
-	function expandedMoveLayerIds(layerIds, layersInOrderValue) {
+	function expandedMoveLayerIds(layerIds, layersInOrderValue, docValue) {
 		const moving = new Set(layerIds);
 		for (const layerInfo of layersInOrderValue) {
 			if (layerInfo.parents.some((parent) => moving.has(parent))) {
 				moving.add(layerInfo.id);
+			}
+		}
+
+		let changed = true;
+		while (changed) {
+			changed = false;
+
+			for (const layer of docValue?.layers?.items ?? []) {
+				if (layer.hyperlink && moving.has(layer.hyperlink) && !moving.has(layer.id)) {
+					moving.add(layer.id);
+					changed = true;
+				}
 			}
 		}
 
@@ -1073,7 +1085,7 @@
 	}
 
 	function moveLayersLocally(docAtom, layerIds, delta, layersInOrderValue) {
-		const moving = expandedMoveLayerIds(layerIds, layersInOrderValue);
+		const moving = expandedMoveLayerIds(layerIds, layersInOrderValue, docAtom.value);
 		docAtom.value = {
 			...docAtom.value,
 			layers: {
@@ -1085,7 +1097,7 @@
 		};
 	}
 
-	function beginLayerMove(evt, liveLenses, layerId, layersInOrderValue) {
+	function beginLayerMove(evt, liveLenses, layerId, layersInOrderValue, docValue) {
 		if (!evt.isPrimary || !E.isLeftButton(evt)) {
 			return false;
 		}
@@ -1107,6 +1119,7 @@
 		groupDrag.value = {
 			pointerId: evt.pointerId,
 			layerIds,
+			previewLayerIds: [...expandedMoveLayerIds(layerIds, layersInOrderValue, docValue)],
 			bx: world.x,
 			by: world.y,
 			cx: world.x,
@@ -3390,7 +3403,7 @@
 															role="button"
 															onclick={(evt) => clickSelectedLayer(evt, cast, id)}
 															onpointerdown={(evt) =>
-																beginLayerMove(evt, liveLenses, id, layersInOrder.value)}
+																beginLayerMove(evt, liveLenses, id, layersInOrder.value, doc.value)}
 															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 															onpointerup={(evt) =>
 																finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
@@ -3416,6 +3429,7 @@
 													{#if el.box}
 														<rect
 															class="link-selected"
+															transform={layerMoveTransform(el.id, layersInOrder.value)}
 															x={el.box.position_x - cameraScale.value}
 															y={el.box.position_y - cameraScale.value}
 															width={el.box.width + 2 * cameraScale.value}
@@ -3429,6 +3443,7 @@
 														{#if bbox.value}
 															<rect
 																class="link-selected"
+																transform={layerMoveTransform(el.id, layersInOrder.value)}
 																x={bbox.value.x}
 																y={bbox.value.y}
 																width={bbox.value.width}
@@ -3440,6 +3455,7 @@
 													{#if el.edge}
 														<path
 															class="link-selected"
+															transform={layerMoveTransform(el.id, layersInOrder.value)}
 															d={edgePath[el.edge?.style?.smoothness ?? 'linear'](
 																el.edge,
 																L.get(localProp('waypoints'), el.edge)
@@ -3459,16 +3475,16 @@
 															)}
 															<g
 																class="link-selected"
-																transform="rotate({source_angle} {el.edge.source_x} {el.value?.edge
-																	.source_y})"
+																transform="{layerMoveTransform(el.id, layersInOrder.value) ??
+																	''} rotate({source_angle} {el.edge.source_x} {el.edge.source_y})"
 															>
 																{#await data.symbols then symbols}
 																	{@const symbol = symbols.get(
 																		el.edge?.style?.source_tip_symbol_shape_id
 																	)}
 																	{@const size =
-																		(el.value?.edge?.style?.stroke_width ?? 1) *
-																		(el.value?.edge?.style?.source_tip_size ?? 1)}
+																		(el.edge?.style?.stroke_width ?? 1) *
+																		(el.edge?.style?.source_tip_size ?? 1)}
 
 																	{#if symbol}
 																		{#each symbol.paths as path, i (i)}
@@ -3499,16 +3515,16 @@
 															)}
 															<g
 																class="link-selected"
-																transform="rotate({target_angle} {el.edge.target_x} {el.value?.edge
-																	.target_y})"
+																transform="{layerMoveTransform(el.id, layersInOrder.value) ??
+																	''} rotate({target_angle} {el.edge.target_x} {el.edge.target_y})"
 															>
 																{#await data.symbols then symbols}
 																	{@const symbol = symbols.get(
 																		el.edge?.style?.target_tip_symbol_shape_id
 																	)}
 																	{@const size =
-																		(el.value?.edge?.style?.stroke_width ?? 1) *
-																		(el.value?.edge?.style?.target_tip_size ?? 1)}
+																		(el.edge?.style?.stroke_width ?? 1) *
+																		(el.edge?.style?.target_tip_size ?? 1)}
 
 																	{#if symbol}
 																		{#each symbol.paths as path, i (i)}
@@ -4107,7 +4123,13 @@
 															style:pointer-events="painted"
 															cursor="move"
 															onpointerdown={(evt) =>
-																beginLayerMove(evt, liveLenses, el.value.id, layersInOrder.value)}
+																beginLayerMove(
+																	evt,
+																	liveLenses,
+																	el.value.id,
+																	layersInOrder.value,
+																	doc.value
+																)}
 															onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
 															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 															onpointerup={(evt) =>
@@ -4692,7 +4714,13 @@
 															openTargetLocation(evt, el.value);
 														}}
 														onpointerdown={(evt) =>
-															beginLayerMove(evt, liveLenses, el.value.id, layersInOrder.value)}
+															beginLayerMove(
+																evt,
+																liveLenses,
+																el.value.id,
+																layersInOrder.value,
+																doc.value
+															)}
 														onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
 														onpointerup={(evt) =>
 															finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
