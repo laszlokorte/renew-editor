@@ -1129,6 +1129,14 @@
 		return true;
 	}
 
+	function beginSelectionMoveFromHandle(evt, liveLenses, layerId, layersInOrderValue, docValue) {
+		if (selectedLayers.value.length <= 1) {
+			return false;
+		}
+
+		return beginLayerMove(evt, liveLenses, layerId, layersInOrderValue, docValue);
+	}
+
 	function updateLayerMove(evt, liveLenses) {
 		if (
 			evt.isPrimary &&
@@ -1140,6 +1148,15 @@
 			const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
 			update(L.set(L.props('cx', 'cy'), { cx: world.x, cy: world.y }), groupDrag);
 		}
+	}
+
+	function updateSelectionMoveFromHandle(evt, liveLenses) {
+		if (groupDrag.value?.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		updateLayerMove(evt, liveLenses);
+		return true;
 	}
 
 	function commitLayerMove(layerIds, delta, dispatch) {
@@ -1179,19 +1196,42 @@
 		commitLayerMove(layerIds, delta, dispatch).catch(() => {});
 	}
 
+	function finishSelectionMoveFromHandle(evt, dispatch, docAtom, layersInOrderValue) {
+		if (groupDrag.value?.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		finishLayerMove(evt, dispatch, docAtom, layersInOrderValue);
+		return true;
+	}
+
+	function eventPointerId(evt) {
+		return evt?.pointerId ?? evt?.currentTarget?.currentPointerId;
+	}
+
 	function cancelLayerMove(evt) {
-		if (!evt || groupDrag.value?.pointerId !== evt.pointerId || groupDrag.value?.committing) {
+		const pointerId = eventPointerId(evt);
+		if (!evt || groupDrag.value?.pointerId !== pointerId || groupDrag.value?.committing) {
 			return;
 		}
 
 		evt.stopPropagation();
 		evt.preventDefault();
 
-		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
-			evt.currentTarget.releasePointerCapture(evt.pointerId);
+		if (evt.currentTarget.hasPointerCapture(pointerId)) {
+			evt.currentTarget.releasePointerCapture(pointerId);
 		}
 
 		groupDrag.value = undefined;
+	}
+
+	function cancelSelectionMoveFromHandle(evt) {
+		if (groupDrag.value?.pointerId !== eventPointerId(evt)) {
+			return false;
+		}
+
+		cancelLayerMove(evt);
+		return true;
 	}
 
 	function clickSelectedLayer(evt, cast, id) {
@@ -4302,6 +4342,10 @@
 																	backoffValue.value = undefined;
 																}}
 																onkeydown={(evt) => {
+																	if (cancelSelectionMoveFromHandle(evt)) {
+																		return;
+																	}
+
 																	if (evt.key === 'Escape' || evt.key === 'Esc') {
 																		if (!backoffValue.value) {
 																			return;
@@ -4316,6 +4360,18 @@
 																role="button"
 																tabindex="-1"
 																onpointerdown={(evt) => {
+																	if (
+																		beginSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			el.value.id,
+																			layersInOrder.value,
+																			doc.value
+																		)
+																	) {
+																		return;
+																	}
+
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		evt.currentTarget.focus({
@@ -4337,6 +4393,10 @@
 																	}
 																}}
 																onpointermove={(evt) => {
+																	if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																		return;
+																	}
+
 																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4348,6 +4408,17 @@
 																	}
 																}}
 																onpointerup={(evt) => {
+																	if (
+																		finishSelectionMoveFromHandle(
+																			evt,
+																			dispatch,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
+																		return;
+																	}
+
 																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4370,9 +4441,7 @@
 																	r={12 * cameraScale.value}
 																	cx={wp_proposal.x}
 																	cy={wp_proposal.y}
-																	pointer-events={selectedLayers.value.length === 1
-																		? 'all'
-																		: 'none'}
+																	pointer-events="all"
 																/>
 																<circle
 																	fill="white"
@@ -4414,6 +4483,18 @@
 																	}
 																}}
 																onpointerdown={(evt) => {
+																	if (
+																		beginSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			el.value.id,
+																			layersInOrder.value,
+																			doc.value
+																		)
+																	) {
+																		return;
+																	}
+
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		evt.currentTarget.focus({
@@ -4430,6 +4511,10 @@
 																	}
 																}}
 																onpointermove={(evt) => {
+																	if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																		return;
+																	}
+
 																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4441,6 +4526,17 @@
 																	}
 																}}
 																onpointerup={(evt) => {
+																	if (
+																		finishSelectionMoveFromHandle(
+																			evt,
+																			dispatch,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
+																		return;
+																	}
+
 																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4464,6 +4560,10 @@
 																	}
 																}}
 																onkeydown={(evt) => {
+																	if (cancelSelectionMoveFromHandle(evt)) {
+																		return;
+																	}
+
 																	if (evt.key === 'Escape' || evt.key === 'Esc') {
 																		if (!backoffValue.value) {
 																			return;
@@ -4485,9 +4585,7 @@
 																	r={12 * cameraScale.value}
 																	cx={wp.x}
 																	cy={wp.y}
-																	pointer-events={selectedLayers.value.length === 1
-																		? 'all'
-																		: 'none'}
+																	pointer-events="all"
 																/>
 																<circle
 																	fill="white"
@@ -4517,6 +4615,18 @@
 																evt.stopPropagation();
 															}}
 															onpointerdown={(evt) => {
+																if (
+																	beginSelectionMoveFromHandle(
+																		evt,
+																		liveLenses,
+																		el.value.id,
+																		layersInOrder.value,
+																		doc.value
+																	)
+																) {
+																	return;
+																}
+
 																if (evt.isPrimary && E.isLeftButton(evt)) {
 																	evt.preventDefault();
 																	evt.currentTarget.focus({
@@ -4532,6 +4642,10 @@
 																}
 															}}
 															onpointermove={(evt) => {
+																if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																	return;
+																}
+
 																if (
 																	evt.isPrimary &&
 																	evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4543,6 +4657,17 @@
 																}
 															}}
 															onpointerup={(evt) => {
+																if (
+																	finishSelectionMoveFromHandle(
+																		evt,
+																		dispatch,
+																		doc,
+																		layersInOrder.value
+																	)
+																) {
+																	return;
+																}
+
 																if (
 																	evt.isPrimary &&
 																	evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4563,6 +4688,10 @@
 																}
 															}}
 															onkeydown={(evt) => {
+																if (cancelSelectionMoveFromHandle(evt)) {
+																	return;
+																}
+
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
 																	if (!backoffValue.value) {
 																		return;
@@ -4581,7 +4710,7 @@
 																fill="none"
 																cursor="default"
 																stroke="none"
-																pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
+																pointer-events="all"
 																r={12 * cameraScale.value}
 																cx={el.value?.edge?.source_x}
 																cy={el.value?.edge?.source_y}
@@ -4603,6 +4732,18 @@
 																evt.stopPropagation();
 															}}
 															onpointerdown={(evt) => {
+																if (
+																	beginSelectionMoveFromHandle(
+																		evt,
+																		liveLenses,
+																		el.value.id,
+																		layersInOrder.value,
+																		doc.value
+																	)
+																) {
+																	return;
+																}
+
 																if (evt.isPrimary && E.isLeftButton(evt)) {
 																	evt.preventDefault();
 																	evt.currentTarget.focus({
@@ -4618,6 +4759,10 @@
 																}
 															}}
 															onpointermove={(evt) => {
+																if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																	return;
+																}
+
 																if (
 																	evt.isPrimary &&
 																	evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4629,6 +4774,17 @@
 																}
 															}}
 															onpointerup={(evt) => {
+																if (
+																	finishSelectionMoveFromHandle(
+																		evt,
+																		dispatch,
+																		doc,
+																		layersInOrder.value
+																	)
+																) {
+																	return;
+																}
+
 																if (
 																	evt.isPrimary &&
 																	evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4649,6 +4805,10 @@
 																}
 															}}
 															onkeydown={(evt) => {
+																if (cancelSelectionMoveFromHandle(evt)) {
+																	return;
+																}
+
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
 																	if (!backoffValue.value) {
 																		return;
@@ -4667,7 +4827,7 @@
 																fill="none"
 																stroke="none"
 																cursor="default"
-																pointer-events={selectedLayers.value.length === 1 ? 'all' : 'none'}
+																pointer-events="all"
 																r={12 * cameraScale.value}
 																cx={el.value?.edge?.target_x}
 																cy={el.value?.edge?.target_y}
@@ -4828,7 +4988,10 @@
 														fill="none"
 														class="draggable"
 														oncontextmenu={(evt) => {
-															if (el.value?.text && beginContextTextEdit(evt, el.value, boxDim.value, cast)) {
+															if (
+																el.value?.text &&
+																beginContextTextEdit(evt, el.value, boxDim.value, cast)
+															) {
 																return;
 															}
 															openTargetLocation(evt, el.value);
@@ -4861,6 +5024,18 @@
 														{#if posVal}
 															<g
 																onpointerdown={(evt) => {
+																	if (
+																		beginSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			el.value.id,
+																			layersInOrder.value,
+																			doc.value
+																		)
+																	) {
+																		return;
+																	}
+
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		evt.currentTarget.focus({
@@ -4876,6 +5051,10 @@
 																	}
 																}}
 																onpointermove={(evt) => {
+																	if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																		return;
+																	}
+
 																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4887,6 +5066,17 @@
 																	}
 																}}
 																onpointerup={(evt) => {
+																	if (
+																		finishSelectionMoveFromHandle(
+																			evt,
+																			dispatch,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
+																		return;
+																	}
+
 																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -4908,6 +5098,10 @@
 																	backoffValue.value = undefined;
 																}}
 																onkeydown={(evt) => {
+																	if (cancelSelectionMoveFromHandle(evt)) {
+																		return;
+																	}
+
 																	if (evt.key === 'Escape' || evt.key === 'Esc') {
 																		if (!backoffValue.value) {
 																			return;
@@ -4929,10 +5123,8 @@
 																<circle
 																	fill="none"
 																	stroke="none"
-																	cursor="move"
-																	pointer-events={selectedLayers.value.length === 1
-																		? 'all'
-																		: 'none'}
+																	cursor="default"
+																	pointer-events="all"
 																	vector-effect="non-scaling-stroke"
 																	r={cameraScale.value * 12}
 																	cx={posVal.x}
@@ -4941,7 +5133,7 @@
 																<circle
 																	fill="white"
 																	stroke="#7af"
-																	cursor="move"
+																	cursor="default"
 																	pointer-events="none"
 																	vector-effect="non-scaling-stroke"
 																	stroke-width="2"
