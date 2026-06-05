@@ -1253,11 +1253,7 @@
 		dispatch('reorder_relative', {
 			ids,
 			target_rel
-		})
-			.catch(() => ({}))
-			.then((result) => {
-				publishSelection(cast, result?.ids?.length ? result.ids : ids);
-			});
+		}).catch(() => ({}));
 	}
 
 	function selectRelativeLayers(dispatch, cast, rel, layersInOrderValue) {
