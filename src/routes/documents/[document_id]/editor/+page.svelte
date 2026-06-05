@@ -609,21 +609,12 @@
 		);
 	}
 
-	function mergeAreaSelection(cast, ids, toggle) {
-		if (!toggle) {
+	function mergeAreaSelection(cast, ids, add) {
+		if (!add) {
 			return publishSelection(cast, ids);
 		}
 
-		const selected = new Set(selectedLayers.value);
-		for (const id of uniqueLayerIds(ids)) {
-			if (selected.has(id)) {
-				selected.delete(id);
-			} else {
-				selected.add(id);
-			}
-		}
-
-		return publishSelection(cast, [...selected]);
+		return publishSelection(cast, [...selectedLayers.value, ...ids]);
 	}
 
 	function deleteSelectedLayers(cast, layersInOrderValue) {
@@ -1243,6 +1234,27 @@
 		backoffValue.value = undefined;
 	}
 
+	function layerIdAtPointer(evt, ignoredIds = new Set()) {
+		for (const element of document.elementsFromPoint?.(evt.clientX, evt.clientY) ?? []) {
+			const layerElement = element.closest?.('[data-editor-layer-id]');
+			const id = layerElement?.dataset?.editorLayerId;
+			if (id && !ignoredIds.has(id)) {
+				return id;
+			}
+		}
+
+		return undefined;
+	}
+
+	function clickSelectedLayerHitbox(evt, cast, id) {
+		if (!evt.shiftKey) {
+			clickSelectedLayer(evt, cast, id);
+			return;
+		}
+
+		clickSelectedLayer(evt, cast, layerIdAtPointer(evt, new Set([id])) ?? id);
+	}
+
 	function reorderSelectedLayers(dispatch, cast, target_rel, layersInOrderValue) {
 		const ids = selectedTopLevelLayerIds(layersInOrderValue);
 
@@ -1475,8 +1487,16 @@
 		}
 	}
 
+	function isAreaSelectionPointer(evt) {
+		if (evt.shiftKey && !evt.metaKey && !evt.ctrlKey && !evt.altKey) {
+			return E.isLeftButton(evt, true);
+		}
+
+		return E.isLeftButton(evt);
+	}
+
 	function beginAreaSelection(evt, liveLenses) {
-		if (activeTool.value !== 'select' || !evt.isPrimary || !E.isLeftButton(evt)) {
+		if (activeTool.value !== 'select' || !evt.isPrimary || !isAreaSelectionPointer(evt)) {
 			return;
 		}
 
@@ -1487,7 +1507,7 @@
 			start,
 			current: start,
 			active: false,
-			toggle: evt.shiftKey
+			add: evt.shiftKey
 		};
 
 		evt.currentTarget.setPointerCapture(evt.pointerId);
@@ -1522,7 +1542,7 @@
 		if (areaSelection.value.active) {
 			const box = normalizedBox(areaSelection.value);
 			const ids = layersInsideBox(box, layersInOrderValue, docValue, textBounds.value);
-			mergeAreaSelection(cast, ids, areaSelection.value.toggle);
+			mergeAreaSelection(cast, ids, areaSelection.value.add);
 			backoffValue.value = true;
 		}
 
@@ -3284,6 +3304,7 @@
 														{#if el.value?.box}
 															<g
 																role="button"
+																data-editor-layer-id={el.value?.id}
 																transform={layerMoveTransform(id, layersInOrder.value)}
 																cursor={canvasInteractionCursor()}
 																oncontextmenu={(evt) => {
@@ -3340,6 +3361,7 @@
 																<g
 																	role="button"
 																	class="editor-text-layer"
+																	data-editor-layer-id={el.value?.id}
 																	transform={layerMoveTransform(id, layersInOrder.value)}
 																	cursor={canvasInteractionCursor()}
 																	oncontextmenu={(evt) => {
@@ -3393,6 +3415,7 @@
 														{#if el.value?.edge}
 															<g
 																role="button"
+																data-editor-layer-id={el.value?.id}
 																transform={layerMoveTransform(id, layersInOrder.value)}
 																cursor={canvasInteractionCursor()}
 																oncontextmenu={(evt) => {
@@ -3557,7 +3580,7 @@
 															fill="transparent"
 															pointer-events="all"
 															role="button"
-															onclick={(evt) => clickSelectedLayer(evt, cast, id)}
+															onclick={(evt) => clickSelectedLayerHitbox(evt, cast, id)}
 															onpointerdown={(evt) =>
 																beginLayerMove(evt, liveLenses, id, layersInOrder.value, doc.value)}
 															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
@@ -5005,7 +5028,7 @@
 															finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
 														onpointercancel={cancelLayerMove}
 														onlostpointercapture={cancelLayerMove}
-														onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
+														onclick={(evt) => clickSelectedLayerHitbox(evt, cast, el.value.id)}
 														onkeydown={(evt) => {
 															if (evt.key === 'Escape' || evt.key === 'Esc') {
 																cancelLayerMove(evt);
