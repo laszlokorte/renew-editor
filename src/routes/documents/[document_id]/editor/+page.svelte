@@ -1281,7 +1281,10 @@
 		})
 			.catch(() => ({ ids: [] }))
 			.then((result) => {
-				publishSelection(cast, uniqueLayerIds(result?.ids ?? []));
+				const relativeIds = uniqueLayerIds(result?.ids ?? []);
+				if (relativeIds.length) {
+					publishSelection(cast, relativeIds);
+				}
 			});
 	}
 
