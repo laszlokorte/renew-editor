@@ -337,6 +337,7 @@
 	);
 	const PETRISTATION_CLIPBOARD_FORMAT = 'petristation/layer-clipboard';
 	const PETRISTATION_CLIPBOARD_STORAGE_KEY = 'petristation:layer-clipboard';
+	const SYSTEM_CLIPBOARD_WITHOUT_LAYERS = {};
 
 	function uniqueLayerIds(ids) {
 		return [...new Set(ids.filter((id) => typeof id === 'string' && id))];
@@ -710,6 +711,7 @@
 				if (clipboard) {
 					return clipboard;
 				}
+				return SYSTEM_CLIPBOARD_WITHOUT_LAYERS;
 			} catch {
 				// Fall back to the shared same-origin clipboard below.
 			}
@@ -736,15 +738,19 @@
 		return { x: 0, y: 0 };
 	}
 
-	function copySelectedLayers(dispatch, layersInOrderValue) {
+	function fetchSelectedLayerClipboard(dispatch, layersInOrderValue) {
 		const layerIds = selectedTopLevelLayerIds(layersInOrderValue);
 		if (!layerIds.length) {
 			return Promise.resolve(null);
 		}
 
 		return dispatch('copy_layers', { layer_ids: layerIds }).then((result) => {
-			return rememberLayerClipboard(result?.clipboard);
+			return clipboardHasLayers(result?.clipboard) ? result.clipboard : null;
 		});
+	}
+
+	function copySelectedLayers(dispatch, layersInOrderValue) {
+		return fetchSelectedLayerClipboard(dispatch, layersInOrderValue).then(rememberLayerClipboard);
 	}
 
 	function cutSelectedLayers(dispatch, cast, layersInOrderValue) {
@@ -756,16 +762,30 @@
 		});
 	}
 
-	async function pasteLayerClipboard(dispatch, cast, position = null, clipboard = null) {
+	async function pasteLayerClipboard(
+		dispatch,
+		cast,
+		position = null,
+		clipboard = null,
+		{ rememberClipboard = true } = {}
+	) {
 		clipboard = clipboardHasLayers(clipboard)
 			? clipboard
-			: (await readSystemClipboard()) || layerClipboard.value;
+			: await readSystemClipboard();
+
+		if (clipboard === SYSTEM_CLIPBOARD_WITHOUT_LAYERS) {
+			clipboard = null;
+		} else {
+			clipboard = clipboard || layerClipboard.value;
+		}
 
 		if (!clipboardHasLayers(clipboard)) {
 			return null;
 		}
 
-		layerClipboard.value = clipboard;
+		if (rememberClipboard) {
+			layerClipboard.value = clipboard;
+		}
 
 		const pastePosition = position ?? lastPasteLocation.value ?? clipboardOrigin(clipboard);
 
@@ -781,7 +801,7 @@
 	}
 
 	function duplicateSelectedLayers(dispatch, cast, layersInOrderValue) {
-		return copySelectedLayers(dispatch, layersInOrderValue).then((clipboard) => {
+		return fetchSelectedLayerClipboard(dispatch, layersInOrderValue).then((clipboard) => {
 			if (!clipboard) {
 				return null;
 			}
@@ -791,7 +811,8 @@
 				dispatch,
 				cast,
 				{ x: origin.x + 24, y: origin.y + 24 },
-				clipboard
+				clipboard,
+				{ rememberClipboard: false }
 			);
 		});
 	}
