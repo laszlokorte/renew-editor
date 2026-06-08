@@ -2885,7 +2885,7 @@
 										<span class="submenu-arrow">&gt;</span>
 									</button>
 									<ul class="menu-bar-menu submenu-menu">
-										{#each [{ label: 'Connected', rel: 'all' }, { label: 'Connected Target Node', rel: 'target' }, { label: 'Connected Source Node', rel: 'source' }, { label: 'Connected Nodes', rel: 'nodes' }, { label: 'Connected Outgoing Edges', rel: 'outgoing' }, { label: 'Connected Incoming Edges', rel: 'incoming' }, { label: 'Connected Edges', rel: 'edges' }] as { label, rel }}
+										{#each [{ label: 'Any Connected', rel: 'any' }, { label: 'All Connected', rel: 'all' }, { label: 'Connected Target Node', rel: 'target' }, { label: 'Connected Source Node', rel: 'source' }, { label: 'Connected Nodes', rel: 'nodes' }, { label: 'Connected Outgoing Edges', rel: 'outgoing' }, { label: 'Connected Incoming Edges', rel: 'incoming' }, { label: 'Connected Edges', rel: 'edges' }] as { label, rel }}
 											<li class="menu-bar-menu-item">
 												<MenuBarButton
 													disabled={selectedLayers.value.length === 0}
@@ -2938,6 +2938,21 @@
 											</li>
 										{/each}
 									</ul>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length === 0}
+										onclick={(evt) => {
+											evt.preventDefault();
+											selectRelativeLayers(
+												dispatch,
+												cast,
+												'fetch_reachable',
+												'all',
+												layersInOrder.value
+											);
+										}}>All reachable</MenuBarButton
+									>
 								</li>
 							</ul>
 						</li>
