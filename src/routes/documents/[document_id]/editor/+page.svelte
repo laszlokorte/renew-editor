@@ -2835,15 +2835,6 @@
 						<li class="menu-bar-item" tabindex="-1">
 							Selection
 							<ul class="menu-bar-menu">
-								<li class="menu-bar-menu-item">
-									<MenuBarButton
-										disabled={selectedHyperlinkedIds.value.length === 0}
-										onclick={(evt) => {
-											evt.preventDefault();
-											publishSelection(cast, selectedHyperlinkedIds.value);
-										}}>Select Linked</MenuBarButton
-									>
-								</li>
 								{#each [{ label: 'Parent', rel: 'parent' }, { label: 'First Sibling', rel: 'sibling_first' }, { label: 'Last Sibling', rel: 'sibling_last' }, { label: 'Sibling Below', rel: 'sibling_prev' }, { label: 'Sibling Above', rel: 'sibling_next' }, { label: 'First Child', rel: 'child_first' }, { label: 'Last Child', rel: 'child_last' }] as { label, rel }}
 									<li class="menu-bar-menu-item">
 										<MenuBarButton
@@ -2868,7 +2859,7 @@
 										<span class="submenu-arrow">&gt;</span>
 									</button>
 									<ul class="menu-bar-menu submenu-menu">
-										{#each [{ label: 'All Ancestors', rel: 'ancestors' }, { label: 'All Siblings', rel: 'siblings' }, { label: 'Siblings Before', rel: 'siblings_before' }, { label: 'Siblings After', rel: 'siblings_after' }, { label: 'All Direct Children', rel: 'direct_children' }, { label: 'All Deep Children', rel: 'deep_children' }, { label: 'All Leaf Children', rel: 'leafs' }] as { label, rel }}
+										{#each [{ label: 'Root', rel: 'root' }, { label: 'All Ancestors', rel: 'ancestors' }, { label: 'All Siblings', rel: 'siblings' }, { label: 'Siblings Before', rel: 'siblings_before' }, { label: 'Siblings After', rel: 'siblings_after' }, { label: 'All Direct Children', rel: 'direct_children' }, { label: 'All Deep Children', rel: 'deep_children' }, { label: 'All Leaf Children', rel: 'leafs' }] as { label, rel }}
 											<li class="menu-bar-menu-item">
 												<MenuBarButton
 													disabled={selectedLayers.value.length === 0}
@@ -2920,7 +2911,16 @@
 										<span class="submenu-arrow">&gt;</span>
 									</button>
 									<ul class="menu-bar-menu submenu-menu">
-										{#each [{ label: 'Deep Linking', rel: 'deep' }, { label: 'Linking', rel: 'direct' }] as { label, rel }}
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedHyperlinkedIds.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													publishSelection(cast, selectedHyperlinkedIds.value);
+												}}>Select Link (Outgoing)</MenuBarButton
+											>
+										</li>
+										{#each [{ label: 'Incoming Links (Deep)', rel: 'deep' }, { label: 'Incoming Links', rel: 'direct' }] as { label, rel }}
 											<li class="menu-bar-menu-item">
 												<MenuBarButton
 													disabled={selectedLayers.value.length === 0}
