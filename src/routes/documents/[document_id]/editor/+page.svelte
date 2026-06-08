@@ -2868,7 +2868,7 @@
 										<span class="submenu-arrow">&gt;</span>
 									</button>
 									<ul class="menu-bar-menu submenu-menu">
-										{#each [{ label: 'All Direct Children', rel: 'direct_children' }, { label: 'All Deep Children', rel: 'deep_children' }, { label: 'All Connected', rel: 'connected' }] as { label, rel }}
+										{#each [{ label: 'All Ancestors', rel: 'ancestors' }, { label: 'All Siblings', rel: 'siblings' }, { label: 'Siblings Before', rel: 'siblings_before' }, { label: 'Siblings After', rel: 'siblings_after' }, { label: 'All Direct Children', rel: 'direct_children' }, { label: 'All Deep Children', rel: 'deep_children' }, { label: 'All Leaf Children', rel: 'leafs' }] as { label, rel }}
 											<li class="menu-bar-menu-item">
 												<MenuBarButton
 													disabled={selectedLayers.value.length === 0}
@@ -2881,7 +2881,7 @@
 															rel,
 															layersInOrder.value
 														);
-													}}>Select {label}</MenuBarButton
+													}}>{label}</MenuBarButton
 												>
 											</li>
 										{/each}
@@ -2920,7 +2920,7 @@
 										<span class="submenu-arrow">&gt;</span>
 									</button>
 									<ul class="menu-bar-menu submenu-menu">
-										{#each [{ label: 'Deep Linking', rel: 'deep_linking' }, { label: 'Linking', rel: 'linking' }] as { label, rel }}
+										{#each [{ label: 'Deep Linking', rel: 'deep' }, { label: 'Linking', rel: 'direct' }] as { label, rel }}
 											<li class="menu-bar-menu-item">
 												<MenuBarButton
 													disabled={selectedLayers.value.length === 0}
@@ -2929,7 +2929,7 @@
 														selectRelativeLayers(
 															dispatch,
 															cast,
-															'fetch_relative_hyperlink',
+															'fetch_linked',
 															rel,
 															layersInOrder.value
 														);
