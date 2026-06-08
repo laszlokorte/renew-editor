@@ -673,7 +673,10 @@
 
 	function writeStoredClipboard(clipboard) {
 		try {
-			localStorage.setItem(PETRISTATION_CLIPBOARD_STORAGE_KEY, encodePetriStationClipboard(clipboard));
+			localStorage.setItem(
+				PETRISTATION_CLIPBOARD_STORAGE_KEY,
+				encodePetriStationClipboard(clipboard)
+			);
 		} catch {
 			// Ignore storage failures; the in-page clipboard still works.
 		}
@@ -681,9 +684,7 @@
 
 	function readStoredClipboard() {
 		try {
-			return decodePetriStationClipboard(
-				localStorage.getItem(PETRISTATION_CLIPBOARD_STORAGE_KEY)
-			);
+			return decodePetriStationClipboard(localStorage.getItem(PETRISTATION_CLIPBOARD_STORAGE_KEY));
 		} catch {
 			return null;
 		}
@@ -769,9 +770,7 @@
 		clipboard = null,
 		{ rememberClipboard = true } = {}
 	) {
-		clipboard = clipboardHasLayers(clipboard)
-			? clipboard
-			: await readSystemClipboard();
+		clipboard = clipboardHasLayers(clipboard) ? clipboard : await readSystemClipboard();
 
 		if (clipboard === SYSTEM_CLIPBOARD_WITHOUT_LAYERS) {
 			clipboard = null;
@@ -1289,14 +1288,14 @@
 		}).catch(() => ({}));
 	}
 
-	function selectRelativeLayers(dispatch, cast, rel, layersInOrderValue) {
+	function selectRelativeLayers(dispatch, cast, command, rel, layersInOrderValue) {
 		const ids = selectedTopLevelLayerIds(layersInOrderValue);
 
 		if (!ids.length) {
 			return;
 		}
 
-		dispatch('fetch_relative', {
+		dispatch(command, {
 			ids,
 			rel
 		})
@@ -1403,12 +1402,7 @@
 	}
 
 	function boxContainsPoint(box, point) {
-		return (
-			point.x >= box.minX &&
-			point.x <= box.maxX &&
-			point.y >= box.minY &&
-			point.y <= box.maxY
-		);
+		return point.x >= box.minX && point.x <= box.maxX && point.y >= box.minY && point.y <= box.maxY;
 	}
 
 	function expandBox(box, padding) {
@@ -1613,7 +1607,12 @@
 		}
 	}
 
-	function activateCreatePrimitive(item, persistent = false, linkedTargetId = undefined, cast = undefined) {
+	function activateCreatePrimitive(
+		item,
+		persistent = false,
+		linkedTargetId = undefined,
+		cast = undefined
+	) {
 		if (!canActivateCreatePrimitive(item, linkedTargetId)) {
 			return false;
 		}
@@ -1641,7 +1640,10 @@
 	}
 
 	function isActiveBlueprintTool(blueprintId) {
-		return activeCreateTool.value?.type === 'blueprint' && activeCreateTool.value?.id === blueprintToolId(blueprintId);
+		return (
+			activeCreateTool.value?.type === 'blueprint' &&
+			activeCreateTool.value?.id === blueprintToolId(blueprintId)
+		);
 	}
 
 	function activateBlueprintTool(blueprintId, persistent = false, cast = undefined) {
@@ -1967,7 +1969,12 @@
 	}
 
 	function textEditorLongestLineLength(value) {
-		return Math.max(1, ...String(value ?? '').split('\n').map((line) => line.length));
+		return Math.max(
+			1,
+			...String(value ?? '')
+				.split('\n')
+				.map((line) => line.length)
+		);
 	}
 
 	function textEditorNumericFontSize(layer) {
@@ -2843,11 +2850,95 @@
 											disabled={selectedLayers.value.length === 0}
 											onclick={(evt) => {
 												evt.preventDefault();
-												selectRelativeLayers(dispatch, cast, rel, layersInOrder.value);
+												selectRelativeLayers(
+													dispatch,
+													cast,
+													'fetch_relative',
+													rel,
+													layersInOrder.value
+												);
 											}}>Select {label}</MenuBarButton
 										>
 									</li>
 								{/each}
+
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Select Family</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'All Direct Children', rel: 'direct_children' }, { label: 'All Deep Children', rel: 'deep_children' }, { label: 'All Connected', rel: 'connected' }] as { label, rel }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														selectRelativeLayers(
+															dispatch,
+															cast,
+															'fetch_relative_many',
+															rel,
+															layersInOrder.value
+														);
+													}}>Select {label}</MenuBarButton
+												>
+											</li>
+										{/each}
+									</ul>
+								</li>
+
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Select Connected </span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'Connected', rel: 'all' }, { label: 'Connected Target Node', rel: 'target' }, { label: 'Connected Source Node', rel: 'source' }, { label: 'Connected Nodes', rel: 'nodes' }, { label: 'Connected Outgoing Edges', rel: 'outgoing' }, { label: 'Connected Incoming Edges', rel: 'incoming' }, { label: 'Connected Edges', rel: 'edges' }] as { label, rel }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														selectRelativeLayers(
+															dispatch,
+															cast,
+															'fetch_relative_graph',
+															rel,
+															layersInOrder.value
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+									</ul>
+								</li>
+
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Select Linked</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'Deep Linking', rel: 'deep_linking' }, { label: 'Linking', rel: 'linking' }] as { label, rel }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														selectRelativeLayers(
+															dispatch,
+															cast,
+															'fetch_relative_hyperlink',
+															rel,
+															layersInOrder.value
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+									</ul>
+								</li>
 							</ul>
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
@@ -3334,9 +3425,17 @@
 																oncontextmenu={(evt) => {
 																	openTargetLocation(evt, el.value);
 																}}
-																onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
+																onpointerdown={(evt) =>
+																	rememberPointerPasteLocation(evt, liveLenses)}
 																onclick={(evt) => {
-																	if (createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, el.value)) {
+																	if (
+																		createLinkedPrimitiveOnLayer(
+																			evt,
+																			liveLenses,
+																			dispatch,
+																			el.value
+																		)
+																	) {
 																		return;
 																	}
 																	if (openTargetLocation(evt, el.value)) {
@@ -3394,16 +3493,10 @@
 																		}
 																		openTargetLocation(evt, el.value);
 																	}}
-																	onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
+																	onpointerdown={(evt) =>
+																		rememberPointerPasteLocation(evt, liveLenses)}
 																	onclick={(evt) => {
-																		if (
-																			beginInlineTextEdit(
-																				evt,
-																				el.value,
-																				thisbbox.value,
-																				cast
-																			)
-																		) {
+																		if (beginInlineTextEdit(evt, el.value, thisbbox.value, cast)) {
 																			return;
 																		}
 																		if (openTargetLocation(evt, el.value)) {
@@ -3445,9 +3538,17 @@
 																oncontextmenu={(evt) => {
 																	openTargetLocation(evt, el.value);
 																}}
-																onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
+																onpointerdown={(evt) =>
+																	rememberPointerPasteLocation(evt, liveLenses)}
 																onclick={(evt) => {
-																	if (createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, el.value)) {
+																	if (
+																		createLinkedPrimitiveOnLayer(
+																			evt,
+																			liveLenses,
+																			dispatch,
+																			el.value
+																		)
+																	) {
 																		return;
 																	}
 																	if (openTargetLocation(evt, el.value)) {
@@ -4181,6 +4282,19 @@
 											)}
 											{#if editingLayer.value?.text && editingBounds}
 												<g transform={rotationTransform.value}>
+													<rect
+														class="inline-text-editor-rect"
+														rx="5"
+														ry="5"
+														transform={layerMoveTransform(
+															inlineTextEdit.value.id,
+															layersInOrder.value
+														)}
+														x={editingBounds.x}
+														y={editingBounds.y}
+														width={editingBounds.width}
+														height={editingBounds.height}
+													></rect>
 													<foreignObject
 														class="inline-text-editor-object"
 														transform={layerMoveTransform(
@@ -4211,12 +4325,12 @@
 															use:focusInlineTextEditor
 															use:commitInlineTextEditOnOutsidePointer={cast}
 															onpointerdown={(evt) => evt.stopPropagation()}
+															onblur={(evt) => commitInlineTextEdit(cast)}
 															onclick={(evt) => evt.stopPropagation()}
 															oninput={(evt) => {
 																updateInlineTextEdit(evt.currentTarget.value);
 																updateText(editingLayer.value.id, evt.currentTarget.value);
 															}}
-															onblur={() => commitInlineTextEdit(cast)}
 															onkeydown={(evt) => {
 																evt.stopPropagation();
 																if (evt.key === 'Escape') {
@@ -8037,17 +8151,25 @@
 		pointer-events: all;
 	}
 
+	.inline-text-editor-rect {
+		fill: #23875d;
+		stroke-width: 0;
+		vector-effect: non-scaling-stroke;
+	}
+
 	.inline-text-editor-control {
 		width: 100%;
 		height: 100%;
 		box-sizing: border-box;
 		resize: none;
 		overflow: hidden;
-		padding: 2px 1px;
-		border: 1px solid #23875d;
+		padding: 0;
+		border: none;
+		outline: 1px solid #23875d;
 		border-radius: 2px;
 		background: #fff;
 		line-height: 1.2;
+		border: 1px solid transparent;
 		white-space: pre;
 		pointer-events: all;
 		touch-action: auto !important;
@@ -8439,5 +8561,31 @@
 	}
 	.hierarchy-panel {
 		grid-template-rows: auto 1fr auto auto auto;
+	}
+
+	.submenu-menu {
+	}
+
+	.menu-bar-menu::before {
+		content: '';
+		position: absolute;
+		left: -2em;
+		right: -2em;
+		bottom: -2em;
+		top: 0;
+		z-index: 10;
+	}
+	.menu-bar-menu-item {
+		z-index: 200;
+	}
+
+	.submenu-menu::before {
+		content: '';
+		position: absolute;
+		z-index: 5;
+		left: -1em;
+		right: -2em;
+		bottom: -2em;
+		top: -2em;
 	}
 </style>
