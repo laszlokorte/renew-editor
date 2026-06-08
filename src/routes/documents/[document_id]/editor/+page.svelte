@@ -2954,6 +2954,36 @@
 										}}>All reachable</MenuBarButton
 									>
 								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length === 0}
+										onclick={(evt) => {
+											evt.preventDefault();
+											selectRelativeLayers(
+												dispatch,
+												cast,
+												'fetch_reachable',
+												'uplink',
+												layersInOrder.value
+											);
+										}}>All reachable (uplink)</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length === 0}
+										onclick={(evt) => {
+											evt.preventDefault();
+											selectRelativeLayers(
+												dispatch,
+												cast,
+												'fetch_reachable',
+												'downlink',
+												layersInOrder.value
+											);
+										}}>All reachable (downlink)</MenuBarButton
+									>
+								</li>
 							</ul>
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
