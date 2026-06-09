@@ -1470,21 +1470,12 @@
 	function layersInsideBox(box, layersInOrderValue, docValue, textBoundsValue) {
 		const layerById = new Map(docValue.layers.items.map((layer) => [layer.id, layer]));
 
-		const selected = new Set(
-			layersInOrderValue
-				.filter(({ hidden }) => !hidden)
-				.filter((layerInfo) => {
-					const boundingBox = layerBox(layerInfo, layerById.get(layerInfo.id), textBoundsValue);
-					return finiteBox(boundingBox) && boxContainsBox(box, boundingBox);
-				})
-				.map(({ id }) => id)
-		);
-
 		return layersInOrderValue
 			.filter(({ hidden }) => !hidden)
-			.filter(
-				({ id, parents }) => selected.has(id) && !parents.some((parent) => selected.has(parent))
-			)
+			.filter((layerInfo) => {
+				const boundingBox = layerBox(layerInfo, layerById.get(layerInfo.id), textBoundsValue);
+				return finiteBox(boundingBox) && boxContainsBox(box, boundingBox);
+			})
 			.map(({ id }) => id);
 	}
 
@@ -1652,6 +1643,18 @@
 		inlineTextEdit.value = undefined;
 		activeTool.value = CREATE_TOOL_ID;
 		return true;
+	}
+
+	function selectBlueprintTool(blueprintId, cast = undefined) {
+		selectedBlueprint.value = blueprintId || undefined;
+
+		if (activateBlueprintTool(selectedBlueprint.value, false, cast)) {
+			return;
+		}
+
+		if (activeCreateTool.value?.type === 'blueprint') {
+			selectEditorTool('select');
+		}
 	}
 
 	function selectEditorTool(toolId, cast = undefined) {
@@ -7620,10 +7623,11 @@
 												</div>
 											</div>
 											<select
-												bind:value={selectedBlueprint.value}
+												value={selectedBlueprint.value ?? ''}
 												style="-webkit-appearance: none; width: 3em; max-width: 100%; height: 3em; opacity: 0;grid-area: 1 / 1 / span 1 / span 1;"
+												onchange={(evt) => selectBlueprintTool(evt.currentTarget.value, cast)}
 											>
-												<option value={null}></option>
+												<option value=""></option>
 												{#each bp.entries() as [id, s]}
 													<option value={id}>{s.name}</option>
 												{/each}
@@ -7636,6 +7640,7 @@
 								<div
 									class={{
 										'create-primitive-tool': true,
+										'blueprint-create-tool': true,
 										'selectable-create': canActivateBlueprintTool(selectedBlueprint.value),
 										'disabled-create-tool': !canActivateBlueprintTool(selectedBlueprint.value),
 										'active-create-tool': isActiveBlueprintTool(selectedBlueprint.value),
@@ -7648,9 +7653,6 @@
 									tabindex={canActivateBlueprintTool(selectedBlueprint.value) ? '0' : '-1'}
 									aria-disabled={!canActivateBlueprintTool(selectedBlueprint.value)}
 									aria-pressed={isActiveBlueprintTool(selectedBlueprint.value)}
-									style:background={isActiveBlueprintTool(selectedBlueprint.value)
-										? '#23875d'
-										: '#333'}
 									style:cursor={!!selectedBlueprint.value ? 'pointer' : 'default'}
 									style:opacity={!!selectedBlueprint.value ? '1' : 0.5}
 									draggable={!!selectedBlueprint.value}
@@ -8166,9 +8168,16 @@
 		cursor: default;
 	}
 
+	.create-primitive-tool.blueprint-create-tool {
+		background: #eee;
+		border: 1px solid #aaa;
+		color: #000;
+	}
+
 	.create-primitive-tool.active-create-tool {
 		background: #333;
 		outline-color: #333;
+		color: #fff;
 	}
 
 	.create-primitive-tool.persistent-create-tool {
