@@ -822,9 +822,24 @@
 
 	let deleteShortcutContext = { cast: null, layersInOrder: null };
 
-	function syncDeleteShortcutContext(cast, layersInOrder) {
-		deleteShortcutContext = { cast, layersInOrder };
-		return null;
+	function setDeleteShortcutContext(context) {
+		deleteShortcutContext = context ?? { cast: null, layersInOrder: null };
+	}
+
+	function deleteShortcutContextAction(_node, context) {
+		setDeleteShortcutContext(context);
+
+		return {
+			update: setDeleteShortcutContext,
+			destroy() {
+				if (
+					deleteShortcutContext.cast === context?.cast &&
+					deleteShortcutContext.layersInOrder === context?.layersInOrder
+				) {
+					setDeleteShortcutContext(null);
+				}
+			}
+		};
 	}
 
 	function isEditableTarget(el) {
@@ -2433,7 +2448,11 @@
 				}
 			}, 20)}
 			{@const layersInOrder = view(L.reread(walkDocument), doc)}
-			{@const _deleteShortcutContext = syncDeleteShortcutContext(cast, layersInOrder)}
+			<span
+				aria-hidden="true"
+				style="display: none"
+				use:deleteShortcutContextAction={{ cast, layersInOrder }}
+			></span>
 			{@const _layerMoveCommitSync = clearCommittedLayerMove(doc.value)}
 			{@const extension = view(
 				[
