@@ -442,17 +442,16 @@
 					{/each}
 				</ul>
 			</header>
-			<div class="overlay">
-				{#if liveErrors.value.length}
-					<section class="simulation-errors" aria-label="Simulation messages" aria-live="polite">
-						<div class="simulation-errors-header">
-							<strong>Simulation messages</strong>
-							<button class="simulation-error-button" type="button" onclick={discardAllLiveErrors}>
-								Dismiss all
-							</button>
-						</div>
-						<ol class="simulation-error-list">
-							{#each groupLiveErrors(liveErrors.value) as item (item.signature)}
+			{#if liveErrors.value.length}
+				<section class="simulation-errors" aria-label="Simulation messages" aria-live="polite">
+					<div class="simulation-errors-header">
+						<strong>Simulation messages</strong>
+						<button class="simulation-error-button" type="button" onclick={discardAllLiveErrors}>
+							Dismiss all
+						</button>
+					</div>
+					<ol class="simulation-error-list">
+						{#each groupLiveErrors(liveErrors.value) as item (item.signature)}
 							<li class="simulation-error" role="alert">
 								<div class="simulation-error-body">
 									<div class="simulation-error-title">
@@ -463,10 +462,7 @@
 									</div>
 									<span>{item.error.message}</span>
 									{#if item.error.detail}
-										<details class="simulation-error-detail">
-											<summary>Details</summary>
-											<p>{item.error.detail}</p>
-										</details>
+										<p class="simulation-error-detail">{item.error.detail}</p>
 									{/if}
 								</div>
 								<div class="simulation-error-actions">
@@ -486,10 +482,11 @@
 									</button>
 								</div>
 							</li>
-							{/each}
-						</ol>
-					</section>
-				{/if}
+						{/each}
+					</ol>
+				</section>
+			{/if}
+			<div class="overlay">
 				<div class="topbar">
 					<div class="toolbar">
 						{#if simulation.value.running}
@@ -1167,14 +1164,14 @@
 		display: grid;
 		place-content: stretch;
 		place-items: stretch;
-		z-index: -1;
+		z-index: 0;
 		grid-template-rows: auto auto;
 		grid-auto-rows: 1fr;
 		overflow: hidden;
 	}
 
 	.simulation-errors {
-		position: absolute;
+		position: fixed;
 		left: 50%;
 		bottom: 1.25rem;
 		transform: translateX(-50%);
@@ -1183,7 +1180,7 @@
 		gap: 0.5rem;
 		width: min(42rem, calc(100vw - 2rem));
 		max-height: min(45vh, 24rem);
-		z-index: 1000;
+		z-index: 20000;
 		pointer-events: auto;
 		overflow: hidden;
 		background: #fff8f5;
@@ -1232,6 +1229,11 @@
 		-webkit-user-select: text !important;
 	}
 
+	.simulation-errors * {
+		user-select: text !important;
+		-webkit-user-select: text !important;
+	}
+
 	.simulation-error-body {
 		display: grid;
 		gap: 0.25rem;
@@ -1265,16 +1267,6 @@
 	}
 
 	.simulation-error-detail {
-		margin-top: 0.2rem;
-	}
-
-	.simulation-error-detail summary {
-		cursor: pointer;
-		user-select: none !important;
-		-webkit-user-select: none !important;
-	}
-
-	.simulation-error-body p {
 		margin-top: 0.35rem;
 	}
 
@@ -1291,8 +1283,6 @@
 		padding: 0.45rem 0.6rem;
 		cursor: pointer;
 		font: inherit;
-		user-select: none !important;
-		-webkit-user-select: none !important;
 	}
 
 	.simulation-error-button:hover,

@@ -286,9 +286,17 @@ export class LiveState {
 	}
 
 	castAction(name, payload) {
-		this.channel.push(`lvs_evt:${name}`, payload, 500).receive('error', (payload) => {
-			this.emitServerError(payload);
-		});
+		this.channel
+			.push(`lvs_evt:${name}`, payload ?? {}, 30_000)
+			.receive('error', (payload) => {
+				this.emitServerError(payload);
+			})
+			.receive('timeout', () => {
+				this.emitServerError({
+					error: 'timeout',
+					message: 'The live action did not complete in time.'
+				});
+			});
 	}
 
 	pushCustomEvent(event) {
