@@ -1,10 +1,10 @@
 <script>
 	import LiveResourceInner from './LiveResourceInner.svelte';
-	const { socket, resource, children, debug = false } = $props();
+	const { socket, resource, children, debug = false, errors = undefined } = $props();
 </script>
 
 {#key resource.id}
-	<LiveResourceInner {socket} {resource} {debug}>
+	<LiveResourceInner {socket} {resource} {debug} {errors}>
 		{#snippet children(content, presence, actions)}
 			{@render children(content, presence, actions)}
 		{/snippet}

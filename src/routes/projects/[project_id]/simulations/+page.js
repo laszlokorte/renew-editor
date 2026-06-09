@@ -6,6 +6,7 @@ import simulationApi from '$lib/api/simulations.js';
 import documentApi from '$lib/api/documents.js';
 import { cachedResource } from '$lib/api/resource_cache.js';
 import { downloadFile } from '$lib/io/download';
+import { describeError, errorPageBody, formatErrorMessage } from '$lib/errors';
 
 export const ssr = false;
 
@@ -26,7 +27,7 @@ function createCommands(project, api, fetchFn) {
 					});
 				})
 				.catch((e) => {
-					alert(e.message);
+					alert(formatErrorMessage(e, 'Simulation export failed'));
 				});
 		},
 
@@ -51,15 +52,8 @@ export async function load({ fetch, params, parent }) {
 				formalisms: cachedResource('formalisms:list', () => api.listFormalisms())
 			}))
 			.catch((e) => {
-				if (e.error == 'http') {
-					return error(e.status, {
-						message: e.original.errors.detail
-					});
-				} else {
-					return error(503, {
-						message: 'Service Unavailable'
-					});
-				}
+				const description = describeError(e, 'Simulations could not be loaded');
+				return error(description.status || 503, errorPageBody(e, 'Simulations could not be loaded'));
 			});
 	} else {
 		return redirect(307, resolve(`/auth`));

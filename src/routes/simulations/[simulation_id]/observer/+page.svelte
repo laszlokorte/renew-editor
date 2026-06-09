@@ -44,12 +44,14 @@
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
 	import { preventDefault } from 'svelte/legacy';
 	import Thumbnail from './Thumbnail.svelte';
+	import { describeError } from '$lib/errors';
 
 	const { data } = $props();
 
 	const currentInstance = atom(null);
 	const textBounds = atom({});
 	const expandedPlaces = atom({});
+	const liveErrors = atom([]);
 
 	const cameraSettings = atom({
 		plane: {
@@ -130,6 +132,50 @@
 	const showInstances = view(['showInstances', L.valueOr(true)], viewOptions);
 	const showLog = view(['showLog', L.valueOr(false)], viewOptions);
 	const gridDistanceExp = view(logLens(2), gridDistance);
+
+	function liveErrorSignature(error) {
+		const currentError = describeError(error);
+		return JSON.stringify([
+			currentError.status,
+			currentError.title,
+			currentError.message,
+			currentError.detail
+		]);
+	}
+
+	function groupLiveErrors(errors) {
+		const groups = new Map();
+
+		for (const rawError of errors) {
+			const error = describeError(rawError);
+			const signature = liveErrorSignature(rawError);
+			const existing = groups.get(signature);
+
+			if (existing) {
+				existing.count += 1;
+			} else {
+				groups.set(signature, { signature, error, count: 1 });
+			}
+		}
+
+		return [...groups.values()];
+	}
+
+	function formatLiveError(error) {
+		return [error.title, error.message, error.detail].filter(Boolean).join('\n\n');
+	}
+
+	function copyLiveError(error) {
+		navigator.clipboard?.writeText(formatLiveError(error));
+	}
+
+	function discardLiveError(signature) {
+		update((errors) => errors.filter((error) => liveErrorSignature(error) !== signature), liveErrors);
+	}
+
+	function discardAllLiveErrors() {
+		liveErrors.value = [];
+	}
 </script>
 
 <div class="full-page">
@@ -141,7 +187,7 @@
 		connectionState={data.connectionState}
 	/>
 
-	<LiveResource socket={data.live_socket} resource={data.simulation}>
+	<LiveResource socket={data.live_socket} resource={data.simulation} errors={liveErrors}>
 		{#snippet children(simulation, presence, { dispatch, cast })}
 			{@const nets = view(['shadow_net_system', 'content', 'nets'], simulation)}
 			{@const net_instances = view('net_instances', simulation)}
@@ -397,6 +443,53 @@
 				</ul>
 			</header>
 			<div class="overlay">
+				{#if liveErrors.value.length}
+					<section class="simulation-errors" aria-label="Simulation messages" aria-live="polite">
+						<div class="simulation-errors-header">
+							<strong>Simulation messages</strong>
+							<button class="simulation-error-button" type="button" onclick={discardAllLiveErrors}>
+								Dismiss all
+							</button>
+						</div>
+						<ol class="simulation-error-list">
+							{#each groupLiveErrors(liveErrors.value) as item (item.signature)}
+							<li class="simulation-error" role="alert">
+								<div class="simulation-error-body">
+									<div class="simulation-error-title">
+										<strong>{item.error.title}</strong>
+										{#if item.count > 1}
+											<span class="simulation-error-count">{item.count}x</span>
+										{/if}
+									</div>
+									<span>{item.error.message}</span>
+									{#if item.error.detail}
+										<details class="simulation-error-detail">
+											<summary>Details</summary>
+											<p>{item.error.detail}</p>
+										</details>
+									{/if}
+								</div>
+								<div class="simulation-error-actions">
+									<button
+										class="simulation-error-button"
+										type="button"
+										onclick={() => copyLiveError(item.error)}
+									>
+										Copy
+									</button>
+									<button
+										class="simulation-error-button"
+										type="button"
+										onclick={() => discardLiveError(item.signature)}
+									>
+										Dismiss
+									</button>
+								</div>
+							</li>
+							{/each}
+						</ol>
+					</section>
+				{/if}
 				<div class="topbar">
 					<div class="toolbar">
 						{#if simulation.value.running}
@@ -1080,6 +1173,133 @@
 		overflow: hidden;
 	}
 
+	.simulation-errors {
+		position: absolute;
+		left: 50%;
+		bottom: 1.25rem;
+		transform: translateX(-50%);
+		display: grid;
+		grid-template-rows: auto minmax(0, 1fr);
+		gap: 0.5rem;
+		width: min(42rem, calc(100vw - 2rem));
+		max-height: min(45vh, 24rem);
+		z-index: 1000;
+		pointer-events: auto;
+		overflow: hidden;
+		background: #fff8f5;
+		border: 1px solid #d3482f;
+		border-left: 0.4rem solid #d3482f;
+		box-shadow: 0 8px 24px #0003;
+		scrollbar-width: thin;
+		user-select: text !important;
+		-webkit-user-select: text !important;
+	}
+
+	.simulation-errors-header {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.65rem 0.75rem 0;
+		color: #2e1009;
+	}
+
+	.simulation-error-list {
+		display: grid;
+		gap: 0.5rem;
+		min-height: 0;
+		margin: 0;
+		padding: 0 0.75rem 0.75rem;
+		overflow: auto;
+		list-style: none;
+	}
+
+	.simulation-error {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.5rem;
+		align-items: start;
+		padding: 0.65rem 0.75rem;
+		background: #ffe7df;
+		border: 1px solid #efad9d;
+		color: #2e1009;
+		user-select: text !important;
+		-webkit-user-select: text !important;
+	}
+
+	.simulation-error * {
+		user-select: text !important;
+		-webkit-user-select: text !important;
+	}
+
+	.simulation-error-body {
+		display: grid;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.simulation-error-title {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.simulation-error-body strong {
+		overflow-wrap: anywhere;
+	}
+
+	.simulation-error-count {
+		padding: 0.05rem 0.35rem;
+		background: #d3482f;
+		color: white;
+		font-size: 0.85rem;
+		line-height: 1.4;
+	}
+
+	.simulation-error-body span,
+	.simulation-error-body p {
+		margin: 0;
+		line-height: 1.35;
+		overflow-wrap: anywhere;
+	}
+
+	.simulation-error-detail {
+		margin-top: 0.2rem;
+	}
+
+	.simulation-error-detail summary {
+		cursor: pointer;
+		user-select: none !important;
+		-webkit-user-select: none !important;
+	}
+
+	.simulation-error-body p {
+		margin-top: 0.35rem;
+	}
+
+	.simulation-error-actions {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: end;
+	}
+
+	.simulation-error-button {
+		background: #2f2f2f;
+		border: 0;
+		color: white;
+		padding: 0.45rem 0.6rem;
+		cursor: pointer;
+		font: inherit;
+		user-select: none !important;
+		-webkit-user-select: none !important;
+	}
+
+	.simulation-error-button:hover,
+	.simulation-error-button:focus-visible {
+		background: #111;
+	}
+
 	.header {
 		background: #23875d;
 		color: #fff;
@@ -1225,6 +1445,7 @@
 	}
 
 	.overlay {
+		position: relative;
 		z-index: 100;
 		display: grid;
 		grid-template-columns:

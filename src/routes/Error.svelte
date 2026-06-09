@@ -4,8 +4,13 @@
 
 	import authState from '$lib/components/auth/local_state.svelte.js';
 	import LoginForm from '$lib/components/auth/LoginForm.svelte';
+	import { describeError } from '$lib/errors';
 
 	import { resolve } from '$app/paths';
+	const displayedError = $derived(
+		describeError({ status: page.status, ...(page.error ?? {}) })
+	);
+
 	function onLogin(auth) {
 		return new Promise((res) => {
 			goto(resolve('/'), { invalidateAll: true }).then((_) => {
@@ -16,7 +21,12 @@
 </script>
 
 <div>
-	<h1 class="center">Error {page.status}: {page.error.message}</h1>
+	<h1 class="center">{displayedError.title}{displayedError.status ? ` ${displayedError.status}` : ''}</h1>
+	<p class="center">{displayedError.message}</p>
+
+	{#if displayedError.detail}
+		<p class="center detail">{displayedError.detail}</p>
+	{/if}
 
 	{#if page.status === 401 || page.status === 403}
 		{#if authState.value}
@@ -41,6 +51,11 @@
 <style>
 	.center {
 		text-align: center;
+	}
+
+	.detail {
+		color: #666;
+		font-size: 0.9em;
 	}
 
 	hr {

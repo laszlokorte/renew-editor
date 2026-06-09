@@ -4,6 +4,7 @@ import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
 import projectApi from '$lib/api/projects.js';
 import { downloadFile } from '$lib/io/download';
+import { describeError, errorPageBody, formatErrorMessage } from '$lib/errors';
 
 export const ssr = false;
 
@@ -28,7 +29,7 @@ function createCommands(api, fetchFn) {
 					});
 				})
 				.catch((e) => {
-					alert(e.message);
+					alert(formatErrorMessage(e, 'Project export failed'));
 				});
 		},
 
@@ -50,15 +51,8 @@ export async function load({ fetch }) {
 				commands: createCommands(api, fetch)
 			}))
 			.catch((e) => {
-				if (e.error == 'http') {
-					return error(e.status, {
-						message: e.original.errors.detail
-					});
-				} else {
-					return error(503, {
-						message: 'Service Unavailable'
-					});
-				}
+				const description = describeError(e, 'Projects could not be loaded');
+				return error(description.status || 503, errorPageBody(e, 'Projects could not be loaded'));
 			});
 	} else {
 		return redirect(307, resolve('/auth'));

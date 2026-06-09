@@ -5,6 +5,7 @@ import authState from '$lib/components/auth/local_state.svelte.js';
 import documentApi from '$lib/api/documents.js';
 import LiveState from '$lib/api/livestate';
 import { downloadFile } from '$lib/io/download';
+import { describeError, errorPageBody, formatErrorMessage } from '$lib/errors';
 
 export const ssr = false;
 
@@ -29,7 +30,7 @@ function createCommands(api, project, fetchFn) {
 					});
 				})
 				.catch((e) => {
-					alert(e.message);
+					alert(formatErrorMessage(e, 'Document export failed'));
 				});
 		},
 
@@ -51,15 +52,8 @@ export async function load({ params, fetch, parent }) {
 				commands: createCommands(api, project, fetch)
 			}))
 			.catch((e) => {
-				if (e.error == 'http') {
-					return error(e.status, {
-						message: e.original.errors.detail
-					});
-				} else {
-					return error(503, {
-						message: 'Service Unavailable'
-					});
-				}
+				const description = describeError(e, 'Documents could not be loaded');
+				return error(description.status || 503, errorPageBody(e, 'Documents could not be loaded'));
 			});
 	} else {
 		return redirect(307, `${resolve('/auth')}`);

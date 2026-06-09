@@ -4,6 +4,7 @@ import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
 import simulationApi from '$lib/api/simulations.js';
 import { downloadFile } from '$lib/io/download';
+import { describeError, errorPageBody, formatErrorMessage } from '$lib/errors';
 
 export const ssr = false;
 
@@ -20,7 +21,7 @@ function createCommands(fetchFn, sim) {
 					});
 				})
 				.catch((e) => {
-					alert(e.message);
+					alert(formatErrorMessage(e, 'Compiled shadow net export failed'));
 				});
 		},
 		duplicate() {
@@ -43,9 +44,13 @@ export async function load({ params, fetch }) {
 			contentType: 'application/json'
 		})
 			.catch((e) => {
-				throw error(503, {
-					message: e.message
-				});
+				throw error(
+					503,
+					errorPageBody(
+						{ error: 'network', original: e, message: e.message },
+						'Simulation could not be loaded'
+					)
+				);
 			})
 			.then((r) => {
 				if (r.ok) {
@@ -76,17 +81,31 @@ export async function load({ params, fetch }) {
 					return r
 						.json()
 						.catch((e) => {
-							throw error(r.status, { message: 'Unknown Error', details: e });
+							throw error(
+								r.status,
+								errorPageBody(
+									{ error: 'json', status: r.status, original: e },
+									'Simulation could not be loaded'
+								)
+							);
 						})
 						.then((e) => {
-							throw error(r.status, { message: e.message, details: e });
+							throw error(
+								r.status,
+								errorPageBody(
+									{ error: 'http', status: r.status, original: e },
+									'Simulation could not be loaded'
+								)
+							);
 						});
 				}
 			})
 			.catch((e) => {
-				return error(e?.status ?? 418, {
-					message: e?.body?.message ?? e.message
-				});
+				const description = describeError(e, e?.body?.message ?? e.message);
+				return error(
+					description.status || e?.status || 418,
+					errorPageBody(e, 'Simulation could not be loaded')
+				);
 			});
 	} else {
 		return redirect(307, resolve(`/auth`));

@@ -61,6 +61,7 @@
 	} from '$lib/components/camera/lenses';
 	import Navigator from '$lib/components/camera/Navigator.svelte';
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
+	import { describeError } from '$lib/errors';
 
 	const { data } = $props();
 
@@ -323,6 +324,9 @@
 	const cameraZoom = view('z', cameraFocus);
 
 	let errors = atom([]);
+	function queueError(error, fallbackMessage) {
+		errors.value = [...errors.value, describeError(error, fallbackMessage)];
+	}
 
 	let selectedLayers = atom([]);
 	let areaSelection = atom(undefined);
@@ -1935,7 +1939,7 @@
 				}
 			})
 			.catch((e) => {
-				errors.value = [...errors.value, e.message ?? 'Can not create layer'];
+				queueError(e, 'Layer could not be created');
 			});
 	}
 
@@ -1944,7 +1948,7 @@
 			document_id: tool.blueprintId,
 			position
 		}).catch((e) => {
-			errors.value = [...errors.value, e.message ?? 'Can not insert document'];
+			queueError(e, 'Document could not be inserted');
 		});
 	}
 
@@ -2315,7 +2319,7 @@
 		}
 
 		data.commands.deleteDocument().catch((e) => {
-			update((e) => [...e, e.message], errors);
+			queueError(e, 'Document could not be deleted');
 		});
 	}
 
@@ -2327,7 +2331,7 @@
 			.simulateDocument(currentFormalism.value)
 			.catch((e) => {
 				console.error(e);
-				update((errs) => [...errs, e.message], errors);
+				queueError(e, 'Simulation could not be started');
 			})
 			.then(() => {
 				startingSimulation = false;
@@ -2335,7 +2339,7 @@
 	}
 
 	function causeError(e) {
-		update((e) => [...e, 'Some Error'], errors);
+		queueError('Test error');
 	}
 
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
@@ -3399,7 +3403,7 @@
 										}
 									})
 									.catch((e) => {
-										errors.value = ['Can not insert file'];
+										queueError(e, 'File could not be inserted');
 									});
 							};
 							reader.readAsText(file);

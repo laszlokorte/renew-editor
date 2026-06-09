@@ -1,4 +1,5 @@
 import { fetchJson } from './json';
+import { extractServerMessage } from '$lib/errors';
 
 export default function (fetchFn, routes, token) {
 	return {
@@ -62,7 +63,7 @@ export default function (fetchFn, routes, token) {
 							};
 						})
 						.then((json) => {
-							throw { error: 'http', status: r.status, message: json.message, original: json };
+							throw { error: 'http', status: r.status, message: extractServerMessage(json), original: json };
 						});
 				}
 			});

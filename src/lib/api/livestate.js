@@ -286,7 +286,9 @@ export class LiveState {
 	}
 
 	castAction(name, payload) {
-		this.channel.push(`lvs_evt:${name}`, payload, 500);
+		this.channel.push(`lvs_evt:${name}`, payload, 500).receive('error', (payload) => {
+			this.emitServerError(payload);
+		});
 	}
 
 	pushCustomEvent(event) {

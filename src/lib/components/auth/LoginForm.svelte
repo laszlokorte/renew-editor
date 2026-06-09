@@ -1,6 +1,7 @@
 <script>
 	import { goto } from '$app/navigation';
 	import { authenticate } from '$lib/api/auth.js';
+	import { describeError } from '$lib/errors';
 	import { getMetas } from '../../../env.js';
 	import { page } from '$app/state';
 
@@ -50,7 +51,7 @@
 		const formData = Object.fromEntries(new FormData(form).entries());
 
 		if (!formData.api_url) {
-			currentError = { error: 'url', message: 'Invalid API URL' };
+			currentError = describeError('Invalid API URL');
 		} else {
 			inProgress = true;
 
@@ -63,7 +64,7 @@
 				})
 				.catch((e) => {
 					auth.logout();
-					currentError = e;
+					currentError = describeError(e, 'Login failed');
 				})
 				.then(() => {
 					inProgress = false;
@@ -75,8 +76,14 @@
 <form onsubmit={onSubmit}>
 	{#if currentError}
 		<dl class="error-message">
-			<dt><strong>Error: </strong></dt>
+			<dt>
+				<strong>{currentError.title}{currentError.status ? ` ${currentError.status}` : ''}: </strong>
+			</dt>
 			<dd>{currentError.message}</dd>
+			{#if currentError.detail}
+				<dt><span hidden>Details</span></dt>
+				<dd class="detail">{currentError.detail}</dd>
+			{/if}
 		</dl>
 	{/if}
 
@@ -210,5 +217,10 @@
 		padding: 1ex;
 		width: 100%;
 		box-sizing: border-box;
+	}
+
+	.detail {
+		color: #770000;
+		font-size: 0.9em;
 	}
 </style>

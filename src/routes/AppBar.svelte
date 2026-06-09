@@ -3,6 +3,7 @@
 	import * as env from '../env';
 	import CurrentAuthState from './auth/CurrentAuthState.svelte';
 	import { atom, update } from '$lib/reactivity/atom.svelte';
+	import { describeError } from '$lib/errors';
 
 	import SplashScreen from '$lib/components/splashscreen/SplashScreen.svelte';
 
@@ -108,8 +109,13 @@
 
 	<div>
 		{#if errors.value.length}
+			{@const currentError = describeError(errors.value[0])}
 			<div class="error">
-				Error: <span>{errors.value[0]}</span>
+				<strong>{currentError.title}{currentError.status ? ` ${currentError.status}` : ''}:</strong>
+				<span>{currentError.message}</span>
+				{#if currentError.detail}
+					<small>{currentError.detail}</small>
+				{/if}
 				<button class="error-discard" onclick={discardError}
 					>Discard
 					{#if errors.value.length > 1}
@@ -214,6 +220,17 @@
 		display: flex;
 		gap: 1em;
 		align-items: baseline;
+		max-width: 52vw;
+		flex-wrap: wrap;
+	}
+
+	.error span {
+		overflow-wrap: anywhere;
+	}
+
+	.error small {
+		color: #f4cccc;
+		overflow-wrap: anywhere;
 	}
 
 	.error-discard {

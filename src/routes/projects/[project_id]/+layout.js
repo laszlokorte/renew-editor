@@ -4,6 +4,7 @@ import { resolve } from '$app/paths';
 import { redirect, error } from '@sveltejs/kit';
 import authState from '$lib/components/auth/local_state.svelte.js';
 import projectApi from '$lib/api/projects';
+import { errorPageBody } from '$lib/errors';
 
 export async function load({ fetch, params }) {
 	// 	const api = projectApi(fetch, authState.routes, authState.authHeader);
@@ -17,9 +18,13 @@ export async function load({ fetch, params }) {
 			contentType: 'application/json'
 		})
 			.catch((e) => {
-				throw error(503, {
-					message: e.message
-				});
+				throw error(
+					503,
+					errorPageBody(
+						{ error: 'network', original: e, message: e.message },
+						'Project could not be loaded'
+					)
+				);
 			})
 			.then((r) => {
 				if (r.ok) {
@@ -29,7 +34,7 @@ export async function load({ fetch, params }) {
 						};
 					});
 				} else {
-					throw error(404, 'Not Found');
+					throw error(404, errorPageBody({ error: 'http', status: 404 }, 'Project not found'));
 				}
 			});
 	} else {

@@ -5,13 +5,14 @@ import authState from '$lib/components/auth/local_state.svelte.js';
 import documentApi from '$lib/api/documents.js';
 import { cachedResource } from '$lib/api/resource_cache.js';
 import { downloadFile } from '$lib/io/download';
+import { describeError, errorPageBody, formatErrorMessage } from '$lib/errors';
 import defaultSyntax from './defaultSyntax.json';
 
 export const ssr = false;
 
 function loadLinkJson(api, link, label) {
 	if (!link?.href) {
-		return Promise.reject(new Error(`${label} not defined`));
+		return Promise.reject({ error: 'link', message: `${label} link is missing` });
 	}
 
 	return api.loadJson(link.href);
@@ -19,7 +20,7 @@ function loadLinkJson(api, link, label) {
 
 function cachedLinkJson(api, link, label) {
 	if (!link?.href) {
-		return Promise.reject(new Error(`${label} not defined`));
+		return Promise.reject({ error: 'link', message: `${label} link is missing` });
 	}
 
 	return cachedResource(`${label}:${link.href}`, () => api.loadJson(link.href));
@@ -124,7 +125,10 @@ function createCommands(fetchFn, doc) {
 						})
 						.catch((e) => {
 							console.error(e);
-							w.document.querySelector('.status').textContent = 'Error: ' + (e?.message ?? e);
+							w.document.querySelector('.status').textContent = formatErrorMessage(
+								e,
+								'Simulation could not be created'
+							);
 						});
 				})
 				.catch(() => {
@@ -145,7 +149,7 @@ function createCommands(fetchFn, doc) {
 					});
 				})
 				.catch((e) => {
-					alert(e.message);
+					alert(formatErrorMessage(e, 'JSON export failed'));
 				});
 		},
 		downloadStruct(svg) {
@@ -157,7 +161,7 @@ function createCommands(fetchFn, doc) {
 					});
 				})
 				.catch((e) => {
-					alert(e.message);
+					alert(formatErrorMessage(e, 'Document structure export failed'));
 				});
 		},
 		exportRenew(svg) {
@@ -169,7 +173,7 @@ function createCommands(fetchFn, doc) {
 					});
 				})
 				.catch((e) => {
-					alert(e.message);
+					alert(formatErrorMessage(e, 'Renew export failed'));
 				});
 		},
 		uploadSvg(svg) {
@@ -192,9 +196,13 @@ export async function load({ params, fetch }) {
 			contentType: 'application/json'
 		})
 			.catch((e) => {
-				throw error(503, {
-					message: e.message
-				});
+				throw error(
+					503,
+					errorPageBody(
+						{ error: 'network', original: e, message: e.message },
+						'Document could not be loaded'
+					)
+				);
 			})
 			.then((r) => {
 				if (r.ok) {
@@ -248,17 +256,31 @@ export async function load({ params, fetch }) {
 					return r
 						.json()
 						.catch((e) => {
-							throw error(r.status || 420, { message: 'Unknown Error', details: e });
+							throw error(
+								r.status || 420,
+								errorPageBody(
+									{ error: 'json', status: r.status || 420, original: e },
+									'Document could not be loaded'
+								)
+							);
 						})
 						.then((e) => {
-							throw error(r.status || 420, { message: e.message, details: e });
+							throw error(
+								r.status || 420,
+								errorPageBody(
+									{ error: 'http', status: r.status || 420, original: e },
+									'Document could not be loaded'
+								)
+							);
 						});
 				}
 			})
 			.catch((e) => {
-				return error(e.status || 420, {
-					message: e?.body?.message ?? e.message
-				});
+				const description = describeError(e, e?.body?.message ?? e.message);
+				return error(
+					description.status || e.status || 420,
+					errorPageBody(e, 'Document could not be loaded')
+				);
 			});
 	} else {
 		return redirect(307, resolve(`/auth`));

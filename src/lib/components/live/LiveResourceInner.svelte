@@ -1,9 +1,9 @@
 <script>
 	import { onMount, untrack } from 'svelte';
 	import makeLive from '$lib/api/make_live.svelte.js';
-	const { socket, resource, children, debug = false } = $props();
+	const { socket, resource, children, debug = false, errors = undefined } = $props();
 
-	const liveState = makeLive(socket, resource);
+	const liveState = makeLive(socket, resource, { errors });
 
 	function dispatch(action, payload) {
 		if (debug) {
@@ -29,5 +29,5 @@
 </script>
 
 {#key resource.id}
-	{@render children(liveState.content, liveState.presence, { dispatch, cast })}
+	{@render children(liveState.content, liveState.presence, { dispatch, cast, errors: liveState.errors })}
 {/key}
