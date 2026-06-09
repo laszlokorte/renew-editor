@@ -1310,26 +1310,16 @@
 
 	function wrapSelectedLayersInGroup(dispatch, cast, layersInOrderValue) {
 		const ids = selectedTopLevelLayerIds(layersInOrderValue);
-		const [firstId, ...restIds] = ids;
 
-		if (!firstId) {
+		if (!ids.length) {
 			return;
 		}
 
 		dispatch('create_layer', {
-			child_layer_id: firstId
+			layer_ids: ids
 		}).then(({ id: groupId }) => {
 			if (!groupId) {
 				return;
-			}
-
-			if (restIds.length) {
-				cast('move_layer', {
-					layer_ids: restIds,
-					target_layer_id: groupId,
-					order: 'above',
-					relative: 'inside'
-				});
 			}
 
 			publishSelection(cast, [groupId]);
