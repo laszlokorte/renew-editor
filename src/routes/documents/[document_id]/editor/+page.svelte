@@ -1732,6 +1732,14 @@
 		return tool?.type === 'primitive' && typeof tool?.item?.data?.content?.body === 'string';
 	}
 
+	function shouldInlineEditCreatedPrimitive(tool) {
+		return primitiveCreatesText(tool);
+	}
+
+	function keepCreateToolWhileEditingCreatedPrimitive(tool) {
+		return shouldInlineEditCreatedPrimitive(tool) && !tool?.persistent;
+	}
+
 	function activeCreateToolUsesCrosshair() {
 		return (
 			activeTool.value === CREATE_TOOL_ID &&
@@ -1847,6 +1855,26 @@
 		);
 	}
 
+	function canCreateUnlinkedTextPrimitive(tool) {
+		return primitiveCreatesText(tool) && !primitiveNeedsLinkedTarget(tool);
+	}
+
+	function createUnlinkedTextPrimitiveAtEvent(evt, liveLenses, dispatch, baseLayerId) {
+		const tool = activeCreateTool.value;
+		if (!canCreateUnlinkedTextPrimitive(tool)) {
+			return false;
+		}
+
+		const position = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		rememberPasteLocation(position);
+		createPrimitiveLayer(tool, position, undefined, dispatch, baseLayerId);
+		backoffValue.value = true;
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		return true;
+	}
+
 	function createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, layer) {
 		const tool = activeCreateTool.value;
 		if (!canTargetLinkedPrimitive(tool, layer)) {
@@ -1864,7 +1892,7 @@
 		);
 		backoffValue.value = true;
 
-		if (!tool.persistent) {
+		if (!tool.persistent && !keepCreateToolWhileEditingCreatedPrimitive(tool)) {
 			resetToSelectTool();
 		}
 
@@ -1875,9 +1903,14 @@
 
 	function createPrimitiveLayer(tool, position, size, dispatch, baseLayerId) {
 		const content = { ...(tool?.item?.data?.content ?? {}) };
+		const editCreatedPrimitive = shouldInlineEditCreatedPrimitive(tool);
 
 		if (!primitiveHasLinkedTarget(tool)) {
 			return;
+		}
+
+		if (editCreatedPrimitive) {
+			content.body = '';
 		}
 
 		if (content.hyperlink) {
@@ -1895,9 +1928,20 @@
 			payload.height = size.height;
 		}
 
-		dispatch('create_layer', payload).catch((e) => {
-			errors.value = [...errors.value, e.message ?? 'Can not create layer'];
-		});
+		dispatch('create_layer', payload)
+			.then((layer) => {
+				if (editCreatedPrimitive && layer?.id) {
+					inlineTextEdit.value = {
+						id: layer.id,
+						body: '',
+						bounds: { lockToTextPosition: true },
+						blankLines: !!content?.style?.blank_lines
+					};
+				}
+			})
+			.catch((e) => {
+				errors.value = [...errors.value, e.message ?? 'Can not create layer'];
+			});
 	}
 
 	function createBlueprintInstance(tool, position, dispatch) {
@@ -1942,7 +1986,7 @@
 					createPrimitiveLayer(tool, creation.start, undefined, dispatch, baseLayerId);
 				}
 
-				if (!tool.persistent) {
+				if (!tool.persistent && !keepCreateToolWhileEditingCreatedPrimitive(tool)) {
 					resetToSelectTool();
 				}
 			}
@@ -2024,8 +2068,14 @@
 		const draftHeight = fallbackFontSize * draftLineCount * 1.25;
 		const fallbackHeight = Math.max(24 * scale, fallbackFontSize * 1.6);
 		const fallbackWidth = Math.max(18 * scale, fallbackFontSize * 0.8);
-		const x = Number.isFinite(bbox?.x) ? bbox.x : layer.text.position_x;
-		const y = Number.isFinite(bbox?.y) ? bbox.y : layer.text.position_y - fallbackHeight / 2;
+		const useTextPosition = bbox?.lockToTextPosition;
+		const x = !useTextPosition && Number.isFinite(bbox?.x) ? bbox.x : layer.text.position_x;
+		const y =
+			!useTextPosition && Number.isFinite(bbox?.y)
+				? bbox.y
+				: useTextPosition
+					? layer.text.position_y
+					: layer.text.position_y - fallbackHeight / 2;
 		const width = Math.max(draftWidth, fallbackWidth);
 		const height = Math.max(draftHeight, fallbackHeight);
 
@@ -3131,7 +3181,12 @@
 						onDrop={(mime, content, pos) => {
 							if (mime === 'application/json+renewex-layer') {
 								const layerContent = { ...content };
+								const editDroppedText = typeof layerContent.body === 'string';
 								let baseLayerId = L.get('id', singleSelectedLayer.value);
+
+								if (editDroppedText) {
+									layerContent.body = '';
+								}
 
 								if (layerContent.hyperlink) {
 									const linkedTargetId =
@@ -3158,7 +3213,16 @@
 									pos,
 									...layerContent
 								}).then((l) => {
-									publishSelection(cast, [l.id]);
+									if (editDroppedText && l?.id) {
+										inlineTextEdit.value = {
+											id: l.id,
+											body: '',
+											bounds: { lockToTextPosition: true },
+											blankLines: !!layerContent?.style?.blank_lines
+										};
+									} else {
+										publishSelection(cast, [l.id]);
+									}
 								});
 							} else if (mime === 'application/json+renewex-blueprint') {
 								dispatch('insert_document', {
@@ -3339,6 +3403,16 @@
 																	if (createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, el.value)) {
 																		return;
 																	}
+																	if (
+																		createUnlinkedTextPrimitiveAtEvent(
+																			evt,
+																			liveLenses,
+																			dispatch,
+																			el.value?.id
+																		)
+																	) {
+																		return;
+																	}
 																	if (openTargetLocation(evt, el.value)) {
 																		return;
 																	}
@@ -3406,6 +3480,16 @@
 																		) {
 																			return;
 																		}
+																		if (
+																			createUnlinkedTextPrimitiveAtEvent(
+																				evt,
+																				liveLenses,
+																				dispatch,
+																				el.value?.id
+																			)
+																		) {
+																			return;
+																		}
 																		if (openTargetLocation(evt, el.value)) {
 																			return;
 																		}
@@ -3448,6 +3532,16 @@
 																onpointerdown={(evt) => rememberPointerPasteLocation(evt, liveLenses)}
 																onclick={(evt) => {
 																	if (createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, el.value)) {
+																		return;
+																	}
+																	if (
+																		createUnlinkedTextPrimitiveAtEvent(
+																			evt,
+																			liveLenses,
+																			dispatch,
+																			el.value?.id
+																		)
+																	) {
 																		return;
 																	}
 																	if (openTargetLocation(evt, el.value)) {
@@ -4175,7 +4269,7 @@
 											)}
 											{@const editingBounds = textEditorBounds(
 												editingLayer.value,
-												textBounds.value[inlineTextEdit.value.id],
+												inlineTextEdit.value.bounds ?? textBounds.value[inlineTextEdit.value.id],
 												cameraScale.value,
 												inlineTextEdit.value.body
 											)}
