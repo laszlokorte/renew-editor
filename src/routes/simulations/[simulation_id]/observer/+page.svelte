@@ -52,6 +52,8 @@
 	const textBounds = atom({});
 	const expandedPlaces = atom({});
 	const liveErrors = atom([]);
+	const bindingSelection = atom(null);
+	const bindingDialogPosition = atom(null);
 
 	const cameraSettings = atom({
 		plane: {
@@ -113,6 +115,8 @@
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 
 	let cameraScroller = atom(undefined);
+	let lastBindingAutoRefreshSignature = null;
+	let bindingAutoRefreshQueued = false;
 
 	const logLens = (base) =>
 		L.lens(
@@ -170,11 +174,370 @@
 	}
 
 	function discardLiveError(signature) {
-		update((errors) => errors.filter((error) => liveErrorSignature(error) !== signature), liveErrors);
+		update(
+			(errors) => errors.filter((error) => liveErrorSignature(error) !== signature),
+			liveErrors
+		);
 	}
 
 	function discardAllLiveErrors() {
 		liveErrors.value = [];
+	}
+
+	function appendLiveError(error) {
+		liveErrors.value = [...liveErrors.value, error];
+	}
+
+	function isTransitionLayer(layer) {
+		return layer?.semantic_tag === 'de.renew.gui.TransitionFigure';
+	}
+
+	function transitionCommandPayload(netInstance, transitionLayer, bindingIndex = undefined) {
+		const payload = {
+			net_instance_label: netInstance?.label,
+			transition_id: transitionLayer?.id
+		};
+
+		if (bindingIndex !== undefined) {
+			payload.binding_index = bindingIndex;
+		}
+
+		return payload;
+	}
+
+	function canCommandTransition(simulation, netInstance, transitionLayer) {
+		return simulation?.running && netInstance?.label && isTransitionLayer(transitionLayer);
+	}
+
+	function shortBindingText(binding) {
+		const text = `${binding ?? ''}`.replace(/\s+/g, '');
+		return text.length > 50 ? `${text.slice(0, 47)}...` : text;
+	}
+
+	function transitionInstanceFromBinding(binding) {
+		const firstLine = `${binding ?? ''}`.split('\n')[0];
+		const bindingStart = firstLine.indexOf('{');
+
+		return bindingStart >= 0 ? firstLine.slice(0, bindingStart) : firstLine;
+	}
+
+	function bindingSelectionTitle(selection) {
+		if (selection?.transition_instance) {
+			return `${selection.transition_instance}'s possible bindings`;
+		}
+
+		const fallback = transitionInstanceFromBinding(selection?.bindings?.[0]);
+		if (fallback) {
+			return `${fallback}'s possible bindings`;
+		}
+
+		return `${selection?.net_instance_label ?? ''}.${selection?.transition_id ?? ''}'s possible bindings`;
+	}
+
+	function selectedBindingText(selection) {
+		return selection?.bindings?.[Number(selection?.selected_index ?? 0)] ?? '';
+	}
+
+	function bindingDialogStyle(position) {
+		if (!position) {
+			return '';
+		}
+
+		return `left: ${position.x}px; top: ${position.y}px; transform: none;`;
+	}
+
+	function closeBindingSelection() {
+		bindingSelection.value = null;
+		bindingDialogPosition.value = null;
+		lastBindingAutoRefreshSignature = null;
+	}
+
+	function startBindingDialogDrag(evt) {
+		if (evt.button !== 0) {
+			return;
+		}
+
+		const dialog = evt.currentTarget.closest('.binding-dialog');
+		if (!dialog) {
+			return;
+		}
+
+		evt.preventDefault();
+
+		const rect = dialog.getBoundingClientRect();
+		const startX = evt.clientX;
+		const startY = evt.clientY;
+		const originX = rect.left;
+		const originY = rect.top;
+
+		function clampPosition(x, y) {
+			const margin = 8;
+			const maxX = Math.max(margin, window.innerWidth - rect.width - margin);
+			const maxY = Math.max(margin, window.innerHeight - rect.height - margin);
+
+			return {
+				x: Math.min(Math.max(margin, x), maxX),
+				y: Math.min(Math.max(margin, y), maxY)
+			};
+		}
+
+		function move(moveEvt) {
+			bindingDialogPosition.value = clampPosition(
+				originX + moveEvt.clientX - startX,
+				originY + moveEvt.clientY - startY
+			);
+		}
+
+		function stop() {
+			window.removeEventListener('pointermove', move);
+			window.removeEventListener('pointerup', stop);
+			window.removeEventListener('pointercancel', stop);
+		}
+
+		bindingDialogPosition.value = clampPosition(originX, originY);
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', stop);
+		window.addEventListener('pointercancel', stop);
+	}
+
+	function netInstanceForBinding(selection, simulation, netInstance = null) {
+		if (netInstance?.label === selection?.net_instance_label) {
+			return netInstance;
+		}
+
+		return simulation?.net_instances?.find((instance) => instance.label === selection?.net_instance_label);
+	}
+
+	function netInstanceTokenSignature(netInstance) {
+		return (netInstance?.tokens ?? [])
+			.map((token) => [token.id, token.place_id, token.value])
+			.sort(([a], [b]) => `${a}`.localeCompare(`${b}`));
+	}
+
+	function bindingAutoRefreshSignature(selection, simulation, netInstance = null) {
+		if (!selection || !simulation?.running) {
+			return null;
+		}
+
+		const selectedInstance = netInstanceForBinding(selection, simulation, netInstance);
+
+		return JSON.stringify([
+			selection.net_instance_label,
+			selection.transition_id,
+			simulation.running,
+			simulation.timestep,
+			simulation.is_playing,
+			selectedInstance?.id,
+			netInstanceTokenSignature(selectedInstance)
+		]);
+	}
+
+	function scheduleBindingSelectionRefresh(dispatch, delay = 0) {
+		const refresh = () => {
+			const selection = bindingSelection.value;
+
+			if (!selection || selection.loading || selection.refreshing) {
+				return;
+			}
+
+			void updateBindingSelection(dispatch, selection, { showLoading: false });
+		};
+
+		if (delay > 0) {
+			setTimeout(refresh, delay);
+		} else {
+			queueMicrotask(refresh);
+		}
+	}
+
+	function autoRefreshBindingSelection(dispatch, simulation, netInstance = null) {
+		const selection = bindingSelection.value;
+		const signature = bindingAutoRefreshSignature(selection, simulation, netInstance);
+
+		if (!signature) {
+			lastBindingAutoRefreshSignature = null;
+			return '';
+		}
+
+		if (selection.loading || selection.refreshing || signature === lastBindingAutoRefreshSignature) {
+			return '';
+		}
+
+		lastBindingAutoRefreshSignature = signature;
+
+		if (bindingAutoRefreshQueued) {
+			return '';
+		}
+
+		bindingAutoRefreshQueued = true;
+
+		queueMicrotask(() => {
+			bindingAutoRefreshQueued = false;
+			scheduleBindingSelectionRefresh(dispatch);
+		});
+
+		return '';
+	}
+
+	async function updateBindingSelection(
+		dispatch,
+		selection = bindingSelection.value,
+		{ showLoading = true } = {}
+	) {
+		if (!selection) {
+			return;
+		}
+
+		const selectedIndex = Number(selection.selected_index ?? 0);
+
+		bindingSelection.value = {
+			...selection,
+			loading: showLoading,
+			refreshing: !showLoading,
+			error: null
+		};
+
+		try {
+			const response = await dispatch('transition_bindings', {
+				net_instance_label: selection.net_instance_label,
+				transition_id: selection.transition_id
+			});
+			const bindings = response?.bindings ?? [];
+			const nextIndex = Math.min(selectedIndex, Math.max(bindings.length - 1, 0));
+			const currentSelection = bindingSelection.value;
+
+			if (
+				!currentSelection ||
+				currentSelection.net_instance_label !== selection.net_instance_label ||
+				currentSelection.transition_id !== selection.transition_id
+			) {
+				return;
+			}
+
+			bindingSelection.value = {
+				...currentSelection,
+				transition_instance:
+					response?.transition_instance ??
+					transitionInstanceFromBinding(bindings[0]) ??
+					selection.transition_instance,
+				bindings,
+				selected_index: nextIndex,
+				loading: false,
+				refreshing: false,
+				error: response?.error ?? null
+			};
+		} catch (error) {
+			const described = describeError(error);
+			const currentSelection = bindingSelection.value;
+
+			if (
+				!currentSelection ||
+				currentSelection.net_instance_label !== selection.net_instance_label ||
+				currentSelection.transition_id !== selection.transition_id
+			) {
+				return;
+			}
+
+			bindingSelection.value = {
+				...currentSelection,
+				loading: false,
+				refreshing: false,
+				error: described.detail || described.message || described.title
+			};
+		}
+	}
+
+	async function openBindingSelection(dispatch, simulation, netInstance, transitionLayer) {
+		if (!canCommandTransition(simulation, netInstance, transitionLayer)) {
+			return;
+		}
+
+		const payload = transitionCommandPayload(netInstance, transitionLayer);
+
+		bindingSelection.value = {
+			net_instance_label: payload.net_instance_label,
+			transition_id: payload.transition_id,
+			transition_instance: null,
+			bindings: [],
+			selected_index: 0,
+			loading: true,
+			error: null
+		};
+
+		await updateBindingSelection(dispatch, bindingSelection.value);
+		lastBindingAutoRefreshSignature = bindingAutoRefreshSignature(bindingSelection.value, simulation);
+	}
+
+	async function fireTransition(
+		dispatch,
+		simulation,
+		netInstance,
+		transitionLayer,
+		bindingIndex = undefined
+	) {
+		if (!canCommandTransition(simulation, netInstance, transitionLayer)) {
+			return false;
+		}
+
+		try {
+			const response = await dispatch(
+				'fire_transition',
+				transitionCommandPayload(netInstance, transitionLayer, bindingIndex)
+			);
+
+			if (response?.error) {
+				appendLiveError({
+					title: 'Simulation Error',
+					message: 'Transition could not be fired',
+					detail: response.error
+				});
+			}
+
+			const fired = response?.fired === true;
+
+			if (fired && bindingSelection.value) {
+				scheduleBindingSelectionRefresh(dispatch, 150);
+				scheduleBindingSelectionRefresh(dispatch, 500);
+			}
+
+			return fired;
+		} catch (error) {
+			appendLiveError(error);
+			return false;
+		}
+	}
+
+	async function fireSelectedBinding(dispatch, bindingIndex) {
+		const selection = bindingSelection.value;
+
+		if (!selection) {
+			return;
+		}
+
+		let response;
+
+		try {
+			response = await dispatch('fire_transition', {
+				net_instance_label: selection.net_instance_label,
+				transition_id: selection.transition_id,
+				binding_index: bindingIndex
+			});
+		} catch (error) {
+			const described = describeError(error);
+			bindingSelection.value = {
+				...selection,
+				error: described.detail || described.message || described.title
+			};
+			appendLiveError(error);
+			return;
+		}
+
+		if (response?.fired === true) {
+			scheduleBindingSelectionRefresh(dispatch, 150);
+			scheduleBindingSelectionRefresh(dispatch, 500);
+		} else if (response?.error) {
+			bindingSelection.value = { ...selection, error: response.error };
+		}
 	}
 </script>
 
@@ -199,6 +562,7 @@
 			{@const current_net_id = view(['links', 'shadow_net', 'id'], current_instance)}
 
 			{@const current_instance_href = view('href', current_instance)}
+			{@html autoRefreshBindingSelection(dispatch, simulation.value)}
 
 			<header class="header">
 				<div class="header-titel">
@@ -394,6 +758,18 @@
 								</li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
+										shortcut={{ ctrlKey: true, shiftKey: true, key: 'i' }}
+										disabled={!simulation.value.running || !current_instance.value?.label}
+										onclick={(evt) => {
+											evt.preventDefault();
+											cast('net_step', {
+												net_instance_label: current_instance.value?.label
+											});
+										}}>Net Step</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
 										shortcut={{ ctrlKey: true, key: 'p' }}
 										disabled={!simulation.value.running || simulation.value.is_playing === true}
 										onclick={(evt) => {
@@ -486,6 +862,80 @@
 					</ol>
 				</section>
 			{/if}
+			{#if bindingSelection.value}
+				<section
+					class="binding-dialog-backdrop"
+					role="presentation"
+				>
+					<div
+						class="binding-dialog"
+						role="dialog"
+						aria-modal="true"
+						aria-label={bindingSelectionTitle(bindingSelection.value)}
+						style={bindingDialogStyle(bindingDialogPosition.value)}
+					>
+						<div class="binding-dialog-header" onpointerdown={startBindingDialogDrag}>
+							<span>{bindingSelectionTitle(bindingSelection.value)}</span>
+						</div>
+
+						<div class="binding-dialog-content">
+							<select
+								class="binding-list"
+								size="10"
+								disabled={bindingSelection.value.loading}
+								bind:value={bindingSelection.value.selected_index}
+								ondblclick={() =>
+									void fireSelectedBinding(dispatch, bindingSelection.value.selected_index)}
+							>
+								{#each bindingSelection.value.bindings as binding, bindingIndex}
+									<option value={bindingIndex}>{shortBindingText(binding)}</option>
+								{/each}
+							</select>
+
+							<textarea
+								class="binding-detail"
+								readonly
+								value={selectedBindingText(bindingSelection.value)}
+							></textarea>
+						</div>
+
+						{#if bindingSelection.value.loading}
+							<p class="binding-dialog-status">Loading bindings...</p>
+						{:else if bindingSelection.value.error}
+							<p class="binding-dialog-error">{bindingSelection.value.error}</p>
+						{:else if !bindingSelection.value.bindings.length}
+							<p class="binding-dialog-status">No enabled binding found.</p>
+						{/if}
+
+						<div class="binding-dialog-actions">
+							<button
+								class="binding-dialog-button"
+								type="button"
+								disabled={!bindingSelection.value.bindings.length || bindingSelection.value.loading}
+								onclick={() =>
+									void fireSelectedBinding(dispatch, bindingSelection.value.selected_index)}
+							>
+								Fire
+							</button>
+							<button
+								class="binding-dialog-button"
+								type="button"
+								disabled={bindingSelection.value.loading}
+								onclick={() => void updateBindingSelection(dispatch)}
+							>
+								Update
+							</button>
+							<button
+								class="binding-dialog-button"
+								type="button"
+								onclick={closeBindingSelection}
+							>
+								Close
+							</button>
+						</div>
+					</div>
+				</section>
+			{/if}
 			<div class="overlay">
 				<div class="topbar">
 					<div class="toolbar">
@@ -510,6 +960,19 @@
 
 										cast('step');
 									}}>Step</button
+								>
+
+								<button
+									class="tool-button"
+									disabled={simulation.value.is_playing || !current_instance.value?.label}
+									type="button"
+									onclick={(evt) => {
+										evt.preventDefault();
+
+										cast('net_step', {
+											net_instance_label: current_instance.value?.label
+										});
+									}}>Net Step</button
 								>
 
 								<button
@@ -616,9 +1079,38 @@
 																	stroke-dasharray={el.value?.style?.border_dash_array ?? 'none'}
 																	stroke-width={el.value?.style?.border_width ?? '1'}
 																	opacity={el.value?.style?.opacity ?? '1'}
+																	cursor="default"
 																	onclick={(evt) => {
 																		evt.preventDefault();
 																		update((x) => !x, expanded);
+																	}}
+																	ondblclick={(evt) => {
+																		if (!isTransitionLayer(el.value)) {
+																			return;
+																		}
+
+																		evt.preventDefault();
+																		evt.stopPropagation();
+																		void openBindingSelection(
+																			dispatch,
+																			simulation.value,
+																			current_instance.value,
+																			el.value
+																		);
+																	}}
+																	oncontextmenu={(evt) => {
+																		if (!isTransitionLayer(el.value)) {
+																			return;
+																		}
+
+																		evt.preventDefault();
+																		evt.stopPropagation();
+																		void fireTransition(
+																			dispatch,
+																			simulation.value,
+																			current_instance.value,
+																			el.value
+																		);
 																	}}
 																	onkeydown={(evt) => {
 																		if (evt.key === 'Space') {
@@ -768,6 +1260,11 @@
 											<g transform={rotationTransform.value}>
 												<LiveResource socket={data.live_socket} resource={current_instance.value}>
 													{#snippet children(instance, _presence, {})}
+														{@html autoRefreshBindingSelection(
+															dispatch,
+															simulation.value,
+															instance.value
+														)}
 														{@const places = view(
 															[
 																'tokens',
@@ -943,6 +1440,11 @@
 
 												<LiveResource socket={data.live_socket} resource={current_instance.value}>
 													{#snippet children(instance, _presence, {})}
+														{@html autoRefreshBindingSelection(
+															dispatch,
+															simulation.value,
+															instance.value
+														)}
 														{@const places = view(
 															[
 																'tokens',
@@ -1170,6 +1672,179 @@
 		overflow: hidden;
 	}
 
+	.binding-dialog-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 30000;
+		display: grid;
+		place-items: center;
+		background: #0001;
+		padding: 2rem;
+		pointer-events: none;
+	}
+
+	.binding-dialog {
+		position: fixed;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		display: grid;
+		grid-template-rows: auto minmax(7rem, 1fr) auto auto;
+		gap: 0;
+		width: min(34rem, calc(100vw - 4rem));
+		min-height: 11rem;
+		max-height: min(70vh, 26rem);
+		overflow: hidden;
+		background: #eeeeee;
+		color: #111111;
+		border: 1px solid #888888;
+		border-radius: 6px;
+		box-shadow: 0 0.75rem 2rem #0004;
+		font-family: Arial, sans-serif;
+		font-size: 0.9rem;
+		user-select: text;
+		-webkit-user-select: text;
+		pointer-events: auto;
+	}
+
+	.binding-dialog * {
+		user-select: text;
+		-webkit-user-select: text;
+	}
+
+	.binding-dialog-header {
+		padding: 0.25rem 0.45rem;
+		background: linear-gradient(#f8f8f8, #dedede);
+		border-bottom: 1px solid #999999;
+		cursor: move;
+		font-size: 0.86rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		user-select: none;
+		-webkit-user-select: none;
+	}
+
+	.binding-dialog-header * {
+		user-select: none;
+		-webkit-user-select: none;
+	}
+
+	.binding-dialog p {
+		margin: 0;
+		padding: 0.35rem 0.5rem 0;
+		line-height: 1.35;
+	}
+
+	.binding-dialog-error {
+		color: #8a1b0c;
+		white-space: pre-wrap;
+	}
+
+	.binding-dialog-status {
+		color: #333333;
+	}
+
+	.binding-dialog-content {
+		display: grid;
+		grid-template-columns: minmax(10rem, 1fr) 0.65rem minmax(10rem, 1fr);
+		min-height: 7rem;
+		background: #eeeeee;
+	}
+
+	.binding-dialog-content::before {
+		content: "";
+		grid-column: 2;
+		grid-row: 1;
+		border-left: 1px solid #888888;
+		border-right: 1px solid #ffffff;
+		background: repeating-linear-gradient(
+			to bottom,
+			#9aa7b3 0,
+			#9aa7b3 2px,
+			transparent 2px,
+			transparent 5px
+		);
+	}
+
+	.binding-list,
+	.binding-detail {
+		min-width: 0;
+		height: 100%;
+		margin: 0;
+		border: 1px solid #999999;
+		border-top: 0;
+		border-radius: 0;
+		background: #ffffff;
+		color: #111111;
+		font-family: 'Courier New', monospace;
+		font-size: 0.84rem;
+		line-height: 1.25;
+	}
+
+	.binding-list {
+		grid-column: 1;
+		padding: 0;
+	}
+
+	.binding-detail {
+		grid-column: 3;
+		box-sizing: border-box;
+		resize: none;
+		padding: 0.2rem;
+		white-space: pre;
+		overflow: auto;
+	}
+
+	.binding-dialog-actions {
+		display: flex;
+		justify-content: center;
+		gap: 0.35rem;
+		padding: 0.45rem;
+		border-top: 1px solid #c4c4c4;
+		background: #eeeeee;
+	}
+
+	.binding-dialog-button {
+		min-width: 4.7rem;
+		padding: 0.2rem 0.7rem;
+		border: 1px solid #7d99b5;
+		background: linear-gradient(#ffffff, #d7eafa);
+		color: #111111;
+		cursor: pointer;
+		font: inherit;
+	}
+
+	.binding-dialog-button:disabled {
+		border-color: #aaaaaa;
+		background: #dddddd;
+		color: #777777;
+		cursor: default;
+	}
+
+	.binding-dialog-button:not(:disabled):hover,
+	.binding-dialog-button:not(:disabled):focus-visible {
+		background: linear-gradient(#ffffff, #c2ddf4);
+	}
+
+	.binding-button {
+		width: 100%;
+		padding: 0.55rem 0.7rem;
+		background: #f7f7f7;
+		border: 1px solid #bbb;
+		color: #111;
+		cursor: pointer;
+		font: inherit;
+		text-align: left;
+		overflow-wrap: anywhere;
+	}
+
+	.binding-button:hover,
+	.binding-button:focus-visible {
+		background: #e8f2ff;
+		border-color: #5797d6;
+	}
+
 	.simulation-errors {
 		position: fixed;
 		left: 50%;
@@ -1268,6 +1943,7 @@
 
 	.simulation-error-detail {
 		margin-top: 0.35rem;
+		white-space: pre-wrap;
 	}
 
 	.simulation-error-actions {
@@ -1639,6 +2315,7 @@
 		fill: white;
 		fill-opacity: 0.7;
 		stroke-width: 8;
+		pointer-events: none;
 	}
 
 	@keyframes transition-fade-out {

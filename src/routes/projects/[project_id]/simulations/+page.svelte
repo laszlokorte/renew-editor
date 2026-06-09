@@ -3,7 +3,8 @@
 	import AppBar from '../../../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
-	import { atom } from '$lib/reactivity/atom.svelte';
+	import { atom, update } from '$lib/reactivity/atom.svelte';
+	import { describeError } from '$lib/errors';
 
 	const { data } = $props();
 	const { project } = data;
@@ -14,11 +15,56 @@
 	let importing = $state(false);
 	let importingDocuments = $state([]);
 	let importError = atom(undefined);
+	const liveErrors = atom([]);
 
 	function showCreateForm(evt) {
 		evt.preventDefault();
 
 		createFormVisible = true;
+	}
+
+	function liveErrorSignature(error) {
+		const currentError = describeError(error);
+		return JSON.stringify([
+			currentError.status,
+			currentError.title,
+			currentError.message,
+			currentError.detail
+		]);
+	}
+
+	function groupLiveErrors(errors) {
+		const groups = new Map();
+
+		for (const rawError of errors) {
+			const error = describeError(rawError);
+			const signature = liveErrorSignature(rawError);
+			const existing = groups.get(signature);
+
+			if (existing) {
+				existing.count += 1;
+			} else {
+				groups.set(signature, { signature, error, count: 1 });
+			}
+		}
+
+		return [...groups.values()];
+	}
+
+	function formatLiveError(error) {
+		return [error.title, error.message, error.detail].filter(Boolean).join('\n\n');
+	}
+
+	function copyLiveError(error) {
+		navigator.clipboard?.writeText(formatLiveError(error));
+	}
+
+	function discardLiveError(signature) {
+		update((errors) => errors.filter((error) => liveErrorSignature(error) !== signature), liveErrors);
+	}
+
+	function discardAllLiveErrors() {
+		liveErrors.value = [];
 	}
 </script>
 
@@ -43,10 +89,10 @@
 				const formData = new FormData(evt.currentTarget);
 				const document_ids = formData.getAll('document_ids');
 				importing = true;
-				importError.value = false;
+				importError.value = undefined;
 				createSimulation(document_ids, formData.get('main_net_name'), formData.get('formalism'))
 					.catch((e) => {
-						importError.value = e.message;
+						importError.value = describeError(e, 'Simulation could not be created');
 					})
 					.then(() => {
 						importing = false;
@@ -55,7 +101,14 @@
 		>
 			<h3>Create Simulation</h3>
 			{#if importError.value}
-				<p style="color: #a00">{importError.value}</p>
+				{@const currentImportError = importError.value}
+				<div class="form-error" role="alert">
+					<strong>{currentImportError.title}</strong>
+					<span>{currentImportError.message}</span>
+					{#if currentImportError.detail}
+						<p>{currentImportError.detail}</p>
+					{/if}
+				</div>
 			{/if}
 			<div>
 				{#if importing}
@@ -147,12 +200,57 @@
 		</div>
 	</header>
 
+	{#if liveErrors.value.length}
+		<section class="simulation-errors" aria-label="Simulation messages" aria-live="polite">
+			<div class="simulation-errors-header">
+				<strong>Simulation messages</strong>
+				<button class="simulation-error-button" type="button" onclick={discardAllLiveErrors}>
+					Dismiss all
+				</button>
+			</div>
+			<ol class="simulation-error-list">
+				{#each groupLiveErrors(liveErrors.value) as item (item.signature)}
+					<li class="simulation-error" role="alert">
+						<div class="simulation-error-body">
+							<div class="simulation-error-title">
+								<strong>{item.error.title}</strong>
+								{#if item.count > 1}
+									<span class="simulation-error-count">{item.count}x</span>
+								{/if}
+							</div>
+							<span>{item.error.message}</span>
+							{#if item.error.detail}
+								<p class="simulation-error-detail">{item.error.detail}</p>
+							{/if}
+						</div>
+						<div class="simulation-error-actions">
+							<button
+								class="simulation-error-button"
+								type="button"
+								onclick={() => copyLiveError(item.error)}
+							>
+								Copy
+							</button>
+							<button
+								class="simulation-error-button"
+								type="button"
+								onclick={() => discardLiveError(item.signature)}
+							>
+								Dismiss
+							</button>
+						</div>
+					</li>
+				{/each}
+			</ol>
+		</section>
+	{/if}
+
 	<div class="scrollable">
 		<div class="title">
 			<strong>Id</strong>
 		</div>
 
-		<LiveResource socket={data.live_socket} resource={data.simulations}>
+		<LiveResource socket={data.live_socket} resource={data.simulations} errors={liveErrors}>
 			{#snippet children(simulations, _presence, { dispatch, cast })}
 				{#if simulations.value.items.length == 0}
 					<div style="padding: 2em; text-align: center;">No Simulations yet</div>
@@ -330,6 +428,142 @@
 
 	.upload-form {
 		margin: 0;
+	}
+
+	.form-error {
+		display: grid;
+		gap: 0.35rem;
+		margin: 0 0 1rem;
+		padding: 0.65rem 0.75rem;
+		background: #ffe7df;
+		border: 1px solid #d3482f;
+		border-left: 0.4rem solid #d3482f;
+		color: #2e1009;
+		user-select: text;
+		-webkit-user-select: text;
+	}
+
+	.form-error p {
+		margin: 0;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+
+	.simulation-errors {
+		position: fixed;
+		left: 50%;
+		bottom: 1.25rem;
+		transform: translateX(-50%);
+		display: grid;
+		grid-template-rows: auto minmax(0, 1fr);
+		gap: 0.5rem;
+		width: min(42rem, calc(100vw - 2rem));
+		max-height: min(45vh, 24rem);
+		z-index: 20000;
+		pointer-events: auto;
+		overflow: hidden;
+		background: #fff8f5;
+		border: 1px solid #d3482f;
+		border-left: 0.4rem solid #d3482f;
+		box-shadow: 0 8px 24px #0003;
+		scrollbar-width: thin;
+		user-select: text !important;
+		-webkit-user-select: text !important;
+	}
+
+	.simulation-errors-header {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.65rem 0.75rem 0;
+		color: #2e1009;
+	}
+
+	.simulation-error-list {
+		display: grid;
+		gap: 0.5rem;
+		min-height: 0;
+		margin: 0;
+		padding: 0 0.75rem 0.75rem;
+		overflow: auto;
+		list-style: none;
+	}
+
+	.simulation-error {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.5rem;
+		align-items: start;
+		padding: 0.65rem 0.75rem;
+		background: #ffe7df;
+		border: 1px solid #efad9d;
+		color: #2e1009;
+		user-select: text !important;
+		-webkit-user-select: text !important;
+	}
+
+	.simulation-error *,
+	.simulation-errors * {
+		user-select: text !important;
+		-webkit-user-select: text !important;
+	}
+
+	.simulation-error-body {
+		display: grid;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.simulation-error-title {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.simulation-error-body strong {
+		overflow-wrap: anywhere;
+	}
+
+	.simulation-error-count {
+		padding: 0.05rem 0.35rem;
+		background: #d3482f;
+		color: white;
+		font-size: 0.85rem;
+		line-height: 1.4;
+	}
+
+	.simulation-error-body span,
+	.simulation-error-body p {
+		margin: 0;
+		line-height: 1.35;
+		overflow-wrap: anywhere;
+	}
+
+	.simulation-error-detail {
+		margin-top: 0.35rem;
+		white-space: pre-wrap;
+	}
+
+	.simulation-error-actions {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: end;
+	}
+
+	.simulation-error-button {
+		background: #2f2f2f;
+		border: 0;
+		color: white;
+		padding: 0.45rem 0.6rem;
+		cursor: pointer;
+		font: inherit;
+	}
+
+	.simulation-error-button:hover,
+	.simulation-error-button:focus-visible {
+		background: #111;
 	}
 
 	.list-item {

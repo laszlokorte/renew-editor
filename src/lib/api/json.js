@@ -29,6 +29,7 @@ export function fetchJson(fetchFn, url, method = "GET", headers = {}, body = und
 					error: 'http',
 					status: r.status,
 					message: extractServerMessage(json),
+					detail: json.detail,
 					original: json
 				};
 			});

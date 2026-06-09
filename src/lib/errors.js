@@ -168,7 +168,7 @@ function withOperationContext(description, fallbackMessage) {
 	return {
 		...description,
 		message: operationMessage,
-		detail: [description.message, description.detail].filter(Boolean).join(' ')
+		detail: [description.message, description.detail].filter(Boolean).join('\n\n')
 	};
 }
 
@@ -267,11 +267,18 @@ function describeErrorWithoutContext(error, fallbackMessage) {
 
 	if (error.error === 'http' || status) {
 		const statusDescription = describeHttpStatus(Number(status));
+		const explicitDetail =
+			formatPayloadValue(error.detail) ||
+			formatPayloadValue(error.original?.detail) ||
+			formatPayloadValue(error.body?.detail);
+
 		return {
 			kind: 'http',
 			title: statusDescription.title,
 			message: serverMessage || statusDescription.message,
-			detail: serverMessage && serverMessage !== statusDescription.message ? statusDescription.message : '',
+			detail:
+				explicitDetail ||
+				(serverMessage && serverMessage !== statusDescription.message ? statusDescription.message : ''),
 			status
 		};
 	}
