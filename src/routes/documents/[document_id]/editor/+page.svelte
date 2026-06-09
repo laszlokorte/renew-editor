@@ -1276,32 +1276,32 @@
 	}
 
 	function reorderSelectedLayers(dispatch, cast, target_rel, layersInOrderValue) {
-		const ids = selectedTopLevelLayerIds(layersInOrderValue);
+		const layerIds = selectedTopLevelLayerIds(layersInOrderValue);
 
-		if (!ids.length) {
+		if (!layerIds.length) {
 			return;
 		}
 
 		dispatch('reorder_relative', {
-			ids,
+			layer_ids: layerIds,
 			target_rel
 		}).catch(() => ({}));
 	}
 
 	function selectRelativeLayers(dispatch, cast, command, rel, layersInOrderValue) {
-		const ids = selectedTopLevelLayerIds(layersInOrderValue);
+		const layerIds = selectedTopLevelLayerIds(layersInOrderValue);
 
-		if (!ids.length) {
+		if (!layerIds.length) {
 			return;
 		}
 
 		dispatch(command, {
-			ids,
+			layer_ids: layerIds,
 			rel
 		})
-			.catch(() => ({ ids: [] }))
+			.catch(() => ({ layer_ids: [] }))
 			.then((result) => {
-				const relativeIds = uniqueLayerIds(result?.ids ?? []);
+				const relativeIds = uniqueLayerIds(result?.layer_ids ?? []);
 				if (relativeIds.length) {
 					publishSelection(cast, relativeIds);
 				}
@@ -7189,7 +7189,7 @@
 										}
 
 										cast('move_layer', {
-											layer_id: sourceId,
+											layer_ids: [sourceId],
 											target_layer_id: id,
 											order: 'below',
 											relative: 'outside'
@@ -7292,7 +7292,7 @@
 											}
 
 											cast('move_layer', {
-												layer_id: sourceId,
+												layer_ids: [sourceId],
 												target_layer_id: id,
 												order: 'above',
 												relative: 'inside'
@@ -7371,7 +7371,7 @@
 												}
 
 												cast('move_layer', {
-													layer_id: sourceId,
+													layer_ids: [sourceId],
 													target_layer_id: p,
 													order: 'above',
 													relative: 'outside'
