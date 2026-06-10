@@ -329,6 +329,9 @@
 	);
 	const PETRISTATION_CLIPBOARD_FORMAT = 'petristation/layer-clipboard';
 	const PETRISTATION_CLIPBOARD_STORAGE_KEY = 'petristation:layer-clipboard';
+	const PETRISTATION_CLIPBOARD_RNW_STORAGE_KEY = 'petristation:layer-clipboard-rnw';
+	const RENEW_RNW_CLIPBOARD_FORMAT = 'renew/rnw';
+	const CLIPBOARD_RNW_TEXT = Symbol('clipboardRnwText');
 	const SYSTEM_CLIPBOARD_WITHOUT_LAYERS = {};
 
 	function uniqueLayerIds(ids) {
@@ -630,6 +633,36 @@
 		return (clipboard?.layers ?? []).length > 0;
 	}
 
+	function looksLikeRenewRnw(text) {
+		return typeof text === 'string' && /^\s*\d+\s+[\w.$]+Drawing\b/.test(text);
+	}
+
+	function renewRnwClipboard(text) {
+		return {
+			format: RENEW_RNW_CLIPBOARD_FORMAT,
+			rnw: text
+		};
+	}
+
+	function isRenewRnwClipboard(clipboard) {
+		return clipboard?.format === RENEW_RNW_CLIPBOARD_FORMAT && looksLikeRenewRnw(clipboard.rnw);
+	}
+
+	function attachRnwClipboardText(clipboard, rnwText) {
+		if (clipboardHasLayers(clipboard) && looksLikeRenewRnw(rnwText)) {
+			Object.defineProperty(clipboard, CLIPBOARD_RNW_TEXT, {
+				value: rnwText,
+				configurable: true
+			});
+		}
+
+		return clipboard;
+	}
+
+	function rnwClipboardText(clipboard) {
+		return looksLikeRenewRnw(clipboard?.[CLIPBOARD_RNW_TEXT]) ? clipboard[CLIPBOARD_RNW_TEXT] : null;
+	}
+
 	function encodePetriStationClipboard(clipboard) {
 		return JSON.stringify({
 			format: PETRISTATION_CLIPBOARD_FORMAT,
@@ -663,12 +696,18 @@
 		return null;
 	}
 
-	function writeStoredClipboard(clipboard) {
+	function writeStoredClipboard(clipboard, rnwText = null) {
 		try {
 			localStorage.setItem(
 				PETRISTATION_CLIPBOARD_STORAGE_KEY,
 				encodePetriStationClipboard(clipboard)
 			);
+
+			if (looksLikeRenewRnw(rnwText)) {
+				localStorage.setItem(PETRISTATION_CLIPBOARD_RNW_STORAGE_KEY, rnwText);
+			} else {
+				localStorage.removeItem(PETRISTATION_CLIPBOARD_RNW_STORAGE_KEY);
+			}
 		} catch {
 			// Ignore storage failures; the in-page clipboard still works.
 		}
@@ -682,15 +721,25 @@
 		}
 	}
 
+	function readStoredClipboardRnwText() {
+		try {
+			const text = localStorage.getItem(PETRISTATION_CLIPBOARD_RNW_STORAGE_KEY);
+			return looksLikeRenewRnw(text) ? text : null;
+		} catch {
+			return null;
+		}
+	}
+
 	async function writeSystemClipboard(clipboard) {
-		writeStoredClipboard(clipboard);
+		const rnwText = rnwClipboardText(clipboard);
+		writeStoredClipboard(clipboard, rnwText);
 
 		if (!navigator.clipboard?.writeText) {
 			return false;
 		}
 
 		try {
-			await navigator.clipboard.writeText(encodePetriStationClipboard(clipboard));
+			await navigator.clipboard.writeText(rnwText || encodePetriStationClipboard(clipboard));
 			return true;
 		} catch {
 			return false;
@@ -700,10 +749,20 @@
 	async function readSystemClipboard() {
 		if (navigator.clipboard?.readText) {
 			try {
-				const clipboard = decodePetriStationClipboard(await navigator.clipboard.readText());
+				const text = await navigator.clipboard.readText();
+				const clipboard = decodePetriStationClipboard(text);
 				if (clipboard) {
 					return clipboard;
 				}
+
+				if (looksLikeRenewRnw(text)) {
+					if (text === readStoredClipboardRnwText()) {
+						return readStoredClipboard() || renewRnwClipboard(text);
+					}
+
+					return renewRnwClipboard(text);
+				}
+
 				return SYSTEM_CLIPBOARD_WITHOUT_LAYERS;
 			} catch {
 				// Fall back to the shared same-origin clipboard below.
@@ -711,6 +770,12 @@
 		}
 
 		return readStoredClipboard();
+	}
+
+	function importRenewRnwClipboard(dispatch, rnwText) {
+		return dispatch('import_rnw_clipboard', { content: rnwText }).then((result) => {
+			return clipboardHasLayers(result?.clipboard) ? result.clipboard : null;
+		});
 	}
 
 	function rememberLayerClipboard(clipboard) {
@@ -738,7 +803,9 @@
 		}
 
 		return dispatch('copy_layers', { layer_ids: layerIds }).then((result) => {
-			return clipboardHasLayers(result?.clipboard) ? result.clipboard : null;
+			return clipboardHasLayers(result?.clipboard)
+				? attachRnwClipboardText(result.clipboard, result.rnw)
+				: null;
 		});
 	}
 
@@ -763,6 +830,10 @@
 		{ rememberClipboard = true } = {}
 	) {
 		clipboard = clipboardHasLayers(clipboard) ? clipboard : await readSystemClipboard();
+
+		if (isRenewRnwClipboard(clipboard)) {
+			clipboard = await importRenewRnwClipboard(dispatch, clipboard.rnw);
+		}
 
 		if (clipboard === SYSTEM_CLIPBOARD_WITHOUT_LAYERS) {
 			clipboard = null;
