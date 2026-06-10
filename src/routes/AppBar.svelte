@@ -1,6 +1,6 @@
 <script>
 	import { resolve } from '$app/paths';
-	import * as env from '../env';
+	import * as env from '../envvars';
 	import CurrentAuthState from './auth/CurrentAuthState.svelte';
 	import { atom, update } from '$lib/reactivity/atom.svelte';
 	import { describeError } from '$lib/errors';

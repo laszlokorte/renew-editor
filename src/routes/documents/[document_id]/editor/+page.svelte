@@ -8786,9 +8786,6 @@
 		grid-template-rows: auto 1fr auto auto auto;
 	}
 
-	.submenu-menu {
-	}
-
 	.menu-bar-menu::before {
 		content: '';
 		position: absolute;

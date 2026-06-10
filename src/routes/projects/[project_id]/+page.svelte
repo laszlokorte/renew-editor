@@ -1,7 +1,7 @@
 <script>
 	import { resolve } from '$app/paths';
 	import AppBar from '../../AppBar.svelte';
-	import * as env from '../../../env';
+	import * as env from '../../../envvars';
 
 	const { data } = $props();
 	const { project } = data;

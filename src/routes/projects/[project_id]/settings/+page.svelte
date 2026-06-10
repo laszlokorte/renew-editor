@@ -1,7 +1,7 @@
 <script>
 	import { resolve } from '$app/paths';
 	import AppBar from '../../../AppBar.svelte';
-	import * as env from '../../../../env';
+	import * as env from '../../../../envvars';
 
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
 	const appTitle = env.APP_NAME;

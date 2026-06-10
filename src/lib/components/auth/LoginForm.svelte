@@ -1,8 +1,7 @@
 <script>
-	import { goto } from '$app/navigation';
 	import { authenticate } from '$lib/api/auth.js';
 	import { describeError } from '$lib/errors';
-	import { getMetas } from '../../../env.js';
+	import { getMetas } from '../../../envvars.js';
 	import { page } from '$app/state';
 
 	const { auth, onSuccess } = $props();
@@ -77,7 +76,9 @@
 	{#if currentError}
 		<dl class="error-message">
 			<dt>
-				<strong>{currentError.title}{currentError.status ? ` ${currentError.status}` : ''}: </strong>
+				<strong
+					>{currentError.title}{currentError.status ? ` ${currentError.status}` : ''}:
+				</strong>
 			</dt>
 			<dd>{currentError.message}</dd>
 			{#if currentError.detail}

@@ -1,11 +1,9 @@
 <script>
-	import * as env from '../env';
-	import CurrentAuthState from './auth/CurrentAuthState.svelte';
-	const favicon = '/favicon.svg';
+	import * as env from '../envvars';
 
 	const appTitle = env.APP_NAME;
 
-	const { children, data } = $props();
+	const { children } = $props();
 </script>
 
 <svelte:head>
