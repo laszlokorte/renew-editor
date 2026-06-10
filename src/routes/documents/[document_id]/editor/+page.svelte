@@ -101,18 +101,6 @@
 	const dropperDomElement = atom(undefined);
 
 	const optimisticValue = atom(null);
-	const optimisticLens = (id, attr, persistentLens) => {
-		return L.lens(
-			(store) =>
-				store && store.optimistic && store.optimistic.id === id && store.optimistic.attr === attr
-					? store.optimistic.value
-					: L.get(persistentLens, store.real),
-			(newValue, { optimistic, real }) => ({
-				optimistic: newValue === undefined ? undefined : { id, attr, value: newValue },
-				real: newValue === undefined ? real : L.set(persistentLens, newValue, real)
-			})
-		);
-	};
 
 	function hasTransferContent(trans, type) {
 		return [...trans.types].includes(type);

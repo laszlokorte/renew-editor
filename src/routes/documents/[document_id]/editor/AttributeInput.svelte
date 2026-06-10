@@ -9,9 +9,9 @@
 				store && store.optimistic && store.optimistic.id === id && store.optimistic.attr === attr
 					? store.optimistic.value
 					: L.get(persistentLens, store.real),
-			(newValue, { optimistic, real }) => ({
+			(newValue, { real }) => ({
 				optimistic: newValue === undefined ? undefined : { id, attr, value: newValue },
-				real: newValue === undefined ? real : L.set(persistentLens, newValue, real)
+				real
 			})
 		);
 	};
