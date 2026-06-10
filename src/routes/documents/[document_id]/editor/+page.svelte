@@ -774,7 +774,15 @@
 		return readStoredClipboard();
 	}
 
-	function pasteRenewRnwClipboard(dispatch, position, rnwText) {
+	function selectInsertedLayers(cast, result) {
+		if (result?.layer_ids?.length) {
+			publishSelection(cast, result.layer_ids);
+		}
+
+		return result;
+	}
+
+	function pasteRenewRnwClipboard(dispatch, cast, position, rnwText) {
 		const pastePosition = position ?? lastPasteLocation.value ?? { x: 0, y: 0 };
 
 		return dispatch('insert_file', {
@@ -782,7 +790,7 @@
 			file_name: 'clipboard.rnw',
 			x: pastePosition.x,
 			y: pastePosition.y
-		});
+		}).then((result) => selectInsertedLayers(cast, result));
 	}
 
 	function rememberLayerClipboard(clipboard) {
@@ -839,7 +847,7 @@
 		clipboard = clipboardHasLayers(clipboard) ? clipboard : await readSystemClipboard();
 
 		if (isRenewRnwClipboard(clipboard)) {
-			return pasteRenewRnwClipboard(dispatch, position, clipboard.rnw);
+			return pasteRenewRnwClipboard(dispatch, cast, position, clipboard.rnw);
 		}
 
 		if (clipboard === SYSTEM_CLIPBOARD_WITHOUT_LAYERS) {
@@ -861,12 +869,7 @@
 		return dispatch('paste_layers', {
 			clipboard,
 			position: pastePosition
-		}).then((result) => {
-			if (result?.layer_ids?.length) {
-				publishSelection(cast, result.layer_ids);
-			}
-			return result;
-		});
+		}).then((result) => selectInsertedLayers(cast, result));
 	}
 
 	function duplicateSelectedLayers(dispatch, cast, layersInOrderValue) {
@@ -2024,16 +2027,18 @@
 			});
 	}
 
-	function createBlueprintInstance(tool, position, dispatch) {
+	function createBlueprintInstance(tool, position, dispatch, cast) {
 		dispatch('insert_document', {
 			document_id: tool.blueprintId,
 			position
-		}).catch((e) => {
-			queueError(e, 'Document could not be inserted');
-		});
+		})
+			.then((result) => selectInsertedLayers(cast, result))
+			.catch((e) => {
+				queueError(e, 'Document could not be inserted');
+			});
 	}
 
-	function finishPrimitiveCreation(evt, liveLenses, dispatch, baseLayerId) {
+	function finishPrimitiveCreation(evt, liveLenses, dispatch, cast, baseLayerId) {
 		if (primitiveCreation.value?.pointerId !== evt.pointerId) {
 			return false;
 		}
@@ -2061,7 +2066,7 @@
 						baseLayerId
 					);
 				} else if (tool.type === 'blueprint') {
-					createBlueprintInstance(tool, creation.start, dispatch);
+					createBlueprintInstance(tool, creation.start, dispatch, cast);
 				} else {
 					createPrimitiveLayer(tool, creation.start, undefined, dispatch, baseLayerId);
 				}
@@ -3446,7 +3451,11 @@
 								dispatch('insert_document', {
 									document_id: content.blueprint_id,
 									position: pos
-								});
+								})
+									.then((result) => selectInsertedLayers(cast, result))
+									.catch((e) => {
+										queueError(e, 'Document could not be inserted');
+									});
 							}
 						}}
 						onDropFile={(file, pos) => {
@@ -3479,12 +3488,12 @@
 												});
 											});
 										} else {
-											return cast('insert_file', {
+											return dispatch('insert_file', {
 												content: doc.data,
 												file_name: file.name,
 												x: pos.x,
 												y: pos.y
-											});
+											}).then((result) => selectInsertedLayers(cast, result));
 										}
 									})
 									.catch((e) => {
@@ -3572,6 +3581,7 @@
 														evt,
 														liveLenses,
 														dispatch,
+														cast,
 														L.get('id', singleSelectedLayer.value)
 													)
 												) {
@@ -4478,6 +4488,7 @@
 														evt,
 														liveLenses,
 														dispatch,
+														cast,
 														L.get('id', singleSelectedLayer.value)
 													)}
 												onpointercancel={cancelPrimitiveCreation}
