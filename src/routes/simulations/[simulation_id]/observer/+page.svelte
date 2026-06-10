@@ -54,6 +54,7 @@
 	const liveErrors = atom([]);
 	const bindingSelection = atom(null);
 	const bindingDialogPosition = atom(null);
+	let netInstanceActions = null;
 
 	const cameraSettings = atom({
 		plane: {
@@ -209,6 +210,53 @@
 		return simulation?.running && netInstance?.label && isTransitionLayer(transitionLayer);
 	}
 
+	function rememberNetInstanceActions(netInstance, actions) {
+		if (
+			netInstance?.id &&
+			actions?.dispatch &&
+			(netInstanceActions?.id !== netInstance.id ||
+				netInstanceActions?.dispatch !== actions.dispatch)
+		) {
+			netInstanceActions = {
+				id: netInstance.id,
+				dispatch: actions.dispatch,
+				cast: actions.cast
+			};
+		}
+
+		return '';
+	}
+
+	function activeNetInstanceActions(netInstance) {
+		return netInstanceActions?.id === netInstance?.id ? netInstanceActions : null;
+	}
+
+	function netInstanceDispatch(fallbackDispatch, netInstance) {
+		return activeNetInstanceActions(netInstance)?.dispatch ?? fallbackDispatch;
+	}
+
+	function bindingSelectionDispatch(fallbackDispatch, selection, simulation) {
+		return netInstanceDispatch(fallbackDispatch, netInstanceForBinding(selection, simulation));
+	}
+
+	async function performNetStep(fallbackCast, netInstance) {
+		const actions = activeNetInstanceActions(netInstance);
+
+		if (actions?.dispatch) {
+			try {
+				await actions.dispatch('net_step', {});
+			} catch (error) {
+				appendLiveError(error);
+			}
+
+			return;
+		}
+
+		fallbackCast('net_step', {
+			net_instance_label: netInstance?.label
+		});
+	}
+
 	function shortBindingText(binding) {
 		const text = `${binding ?? ''}`.replace(/\s+/g, '');
 		return text.length > 50 ? `${text.slice(0, 47)}...` : text;
@@ -305,7 +353,9 @@
 			return netInstance;
 		}
 
-		return simulation?.net_instances?.find((instance) => instance.label === selection?.net_instance_label);
+		return simulation?.net_instances?.find(
+			(instance) => instance.label === selection?.net_instance_label
+		);
 	}
 
 	function netInstanceTokenSignature(netInstance) {
@@ -359,7 +409,11 @@
 			return '';
 		}
 
-		if (selection.loading || selection.refreshing || signature === lastBindingAutoRefreshSignature) {
+		if (
+			selection.loading ||
+			selection.refreshing ||
+			signature === lastBindingAutoRefreshSignature
+		) {
 			return '';
 		}
 
@@ -465,7 +519,11 @@
 		};
 
 		await updateBindingSelection(dispatch, bindingSelection.value);
-		lastBindingAutoRefreshSignature = bindingAutoRefreshSignature(bindingSelection.value, simulation);
+		lastBindingAutoRefreshSignature = bindingAutoRefreshSignature(
+			bindingSelection.value,
+			simulation,
+			netInstance
+		);
 	}
 
 	async function fireTransition(
@@ -494,12 +552,6 @@
 			}
 
 			const fired = response?.fired === true;
-
-			if (fired && bindingSelection.value) {
-				scheduleBindingSelectionRefresh(dispatch, 150);
-				scheduleBindingSelectionRefresh(dispatch, 500);
-			}
-
 			return fired;
 		} catch (error) {
 			appendLiveError(error);
@@ -532,10 +584,7 @@
 			return;
 		}
 
-		if (response?.fired === true) {
-			scheduleBindingSelectionRefresh(dispatch, 150);
-			scheduleBindingSelectionRefresh(dispatch, 500);
-		} else if (response?.error) {
+		if (response?.fired !== true && response?.error) {
 			bindingSelection.value = { ...selection, error: response.error };
 		}
 	}
@@ -562,7 +611,6 @@
 			{@const current_net_id = view(['links', 'shadow_net', 'id'], current_instance)}
 
 			{@const current_instance_href = view('href', current_instance)}
-			{@html autoRefreshBindingSelection(dispatch, simulation.value)}
 
 			<header class="header">
 				<div class="header-titel">
@@ -762,9 +810,7 @@
 										disabled={!simulation.value.running || !current_instance.value?.label}
 										onclick={(evt) => {
 											evt.preventDefault();
-											cast('net_step', {
-												net_instance_label: current_instance.value?.label
-											});
+											void performNetStep(cast, current_instance.value);
 										}}>Net Step</MenuBarButton
 									>
 								</li>
@@ -863,10 +909,7 @@
 				</section>
 			{/if}
 			{#if bindingSelection.value}
-				<section
-					class="binding-dialog-backdrop"
-					role="presentation"
-				>
+				<section class="binding-dialog-backdrop" role="presentation">
 					<div
 						class="binding-dialog"
 						role="dialog"
@@ -885,7 +928,10 @@
 								disabled={bindingSelection.value.loading}
 								bind:value={bindingSelection.value.selected_index}
 								ondblclick={() =>
-									void fireSelectedBinding(dispatch, bindingSelection.value.selected_index)}
+									void fireSelectedBinding(
+										bindingSelectionDispatch(dispatch, bindingSelection.value, simulation.value),
+										bindingSelection.value.selected_index
+									)}
 							>
 								{#each bindingSelection.value.bindings as binding, bindingIndex}
 									<option value={bindingIndex}>{shortBindingText(binding)}</option>
@@ -913,7 +959,10 @@
 								type="button"
 								disabled={!bindingSelection.value.bindings.length || bindingSelection.value.loading}
 								onclick={() =>
-									void fireSelectedBinding(dispatch, bindingSelection.value.selected_index)}
+									void fireSelectedBinding(
+										bindingSelectionDispatch(dispatch, bindingSelection.value, simulation.value),
+										bindingSelection.value.selected_index
+									)}
 							>
 								Fire
 							</button>
@@ -921,15 +970,14 @@
 								class="binding-dialog-button"
 								type="button"
 								disabled={bindingSelection.value.loading}
-								onclick={() => void updateBindingSelection(dispatch)}
+								onclick={() =>
+									void updateBindingSelection(
+										bindingSelectionDispatch(dispatch, bindingSelection.value, simulation.value)
+									)}
 							>
 								Update
 							</button>
-							<button
-								class="binding-dialog-button"
-								type="button"
-								onclick={closeBindingSelection}
-							>
+							<button class="binding-dialog-button" type="button" onclick={closeBindingSelection}>
 								Close
 							</button>
 						</div>
@@ -969,9 +1017,7 @@
 									onclick={(evt) => {
 										evt.preventDefault();
 
-										cast('net_step', {
-											net_instance_label: current_instance.value?.label
-										});
+										void performNetStep(cast, current_instance.value);
 									}}>Net Step</button
 								>
 
@@ -1092,7 +1138,7 @@
 																		evt.preventDefault();
 																		evt.stopPropagation();
 																		void openBindingSelection(
-																			dispatch,
+																			netInstanceDispatch(dispatch, current_instance.value),
 																			simulation.value,
 																			current_instance.value,
 																			el.value
@@ -1106,7 +1152,7 @@
 																		evt.preventDefault();
 																		evt.stopPropagation();
 																		void fireTransition(
-																			dispatch,
+																			netInstanceDispatch(dispatch, current_instance.value),
 																			simulation.value,
 																			current_instance.value,
 																			el.value
@@ -1258,10 +1304,15 @@
 											</g>
 
 											<g transform={rotationTransform.value}>
-												<LiveResource socket={data.live_socket} resource={current_instance.value}>
-													{#snippet children(instance, _presence, {})}
+												<LiveResource
+													socket={data.live_socket}
+													resource={current_instance.value}
+													errors={liveErrors}
+												>
+													{#snippet children(instance, _presence, actions)}
+														{@html rememberNetInstanceActions(instance.value, actions)}
 														{@html autoRefreshBindingSelection(
-															dispatch,
+															actions.dispatch,
 															simulation.value,
 															instance.value
 														)}
@@ -1438,10 +1489,15 @@
 											>
 												<em>No visual Net Data available, falling back to text output:</em>
 
-												<LiveResource socket={data.live_socket} resource={current_instance.value}>
-													{#snippet children(instance, _presence, {})}
+												<LiveResource
+													socket={data.live_socket}
+													resource={current_instance.value}
+													errors={liveErrors}
+												>
+													{#snippet children(instance, _presence, actions)}
+														{@html rememberNetInstanceActions(instance.value, actions)}
 														{@html autoRefreshBindingSelection(
-															dispatch,
+															actions.dispatch,
 															simulation.value,
 															instance.value
 														)}
@@ -1753,7 +1809,7 @@
 	}
 
 	.binding-dialog-content::before {
-		content: "";
+		content: '';
 		grid-column: 2;
 		grid-row: 1;
 		border-left: 1px solid #888888;
