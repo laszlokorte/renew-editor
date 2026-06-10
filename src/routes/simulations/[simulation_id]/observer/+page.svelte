@@ -2,12 +2,10 @@
 	import * as L from 'partial.lenses';
 	import * as R from 'ramda';
 	import { resolve } from '$app/paths';
-	import { onMount } from 'svelte';
 	import AppBar from '../../../AppBar.svelte';
 	import { numberSvgFormat } from '$lib/svg/formatter';
 
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
-	import { autofocusIf } from '$lib/reactivity/bindings.svelte';
 	import {
 		atom,
 		storedAtom,
@@ -19,30 +17,20 @@
 		update,
 		readCombined
 	} from '$lib/reactivity/atom.svelte';
-	import { choice } from 'partial.lenses';
-	import { propEq } from 'ramda';
 
-	import Modal from '$lib/components/modal/Modal.svelte';
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
 	import CameraScroller from '$lib/components/viewport/CameraScroller.svelte';
 	import Minimap from '$lib/components/editor/overlays/minimap/Minimap.svelte';
 
-	import { buildPath, buildCoord } from '$lib/components/renew/symbols';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
 	import { edgeAngle, edgePath, tipColor } from '$lib/components/renew/edges.js';
 	import { walkDocument } from '$lib/components/renew/document.js';
 
 	import MenuBarButton from '$lib/components/menubar/MenuBarButton.svelte';
-	import {
-		frameBoxLens,
-		panMovementLens,
-		rotateMovementLens,
-		zoomMovementLens
-	} from '$lib/components/camera/lenses';
+	import { frameBoxLens } from '$lib/components/camera/lenses';
 	import Navigator from '$lib/components/camera/Navigator.svelte';
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
-	import { preventDefault } from 'svelte/legacy';
 	import Thumbnail from './Thumbnail.svelte';
 	import { describeError } from '$lib/errors';
 
@@ -1215,8 +1203,10 @@
 																			L.get('waypoints', el.value?.edge)
 																		)}
 																		pointer-events="stroke"
-																		fill="none"
 																		stroke="none"
+																		fill={el.value?.edge?.cyclic
+																			? (el.value?.style?.background_color ?? 'none')
+																			: 'none'}
 																		stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
 																			10 * cameraScale.value}
 																	/>
@@ -1426,6 +1416,7 @@
 																			<svg
 																				{...pos.value}
 																				width="30"
+																				overflow="visible"
 																				height="30"
 																				transform="translate({-70 + (ti % 4) * 35},{-70 +
 																					(ti >> 2) * 35})"

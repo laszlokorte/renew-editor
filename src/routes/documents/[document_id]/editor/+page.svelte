@@ -660,7 +660,9 @@
 	}
 
 	function rnwClipboardText(clipboard) {
-		return looksLikeRenewRnw(clipboard?.[CLIPBOARD_RNW_TEXT]) ? clipboard[CLIPBOARD_RNW_TEXT] : null;
+		return looksLikeRenewRnw(clipboard?.[CLIPBOARD_RNW_TEXT])
+			? clipboard[CLIPBOARD_RNW_TEXT]
+			: null;
 	}
 
 	function encodePetriStationClipboard(clipboard) {
@@ -8563,6 +8565,7 @@
 		opacity: 0;
 		min-width: 10em;
 		-webkit-appearance: none;
+		appearance: none;
 	}
 
 	.pretty-number {

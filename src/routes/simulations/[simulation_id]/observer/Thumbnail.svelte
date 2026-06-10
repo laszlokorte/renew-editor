@@ -1,6 +1,5 @@
 <script>
 	import * as L from 'partial.lenses';
-	import * as R from 'ramda';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
 	import { edgeAngle, edgePath, tipColor } from '$lib/components/renew/edges.js';
@@ -12,6 +11,7 @@
 
 <svg
 	{...document.viewbox}
+	overflow="visible"
 	viewBox="{document.viewbox.x} {document.viewbox.y} {document.viewbox.width} {document.viewbox
 		.height}"
 >
@@ -65,7 +65,7 @@
 							L.get('waypoints', layer.edge)
 						)}
 						pointer-events="stroke"
-						fill="none"
+						fill={layer.edge?.cyclic ? (layer.style?.background_color ?? 'none') : 'none'}
 						stroke="none"
 						stroke-width={(layer.edge?.style?.stroke_width ?? 1) * 1 + 10}
 					/>
