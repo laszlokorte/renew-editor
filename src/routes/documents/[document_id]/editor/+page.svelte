@@ -774,9 +774,14 @@
 		return readStoredClipboard();
 	}
 
-	function importRenewRnwClipboard(dispatch, rnwText) {
-		return dispatch('import_rnw_clipboard', { content: rnwText }).then((result) => {
-			return clipboardHasLayers(result?.clipboard) ? result.clipboard : null;
+	function pasteRenewRnwClipboard(dispatch, position, rnwText) {
+		const pastePosition = position ?? lastPasteLocation.value ?? { x: 0, y: 0 };
+
+		return dispatch('insert_file', {
+			content: rnwText,
+			file_name: 'clipboard.rnw',
+			x: pastePosition.x,
+			y: pastePosition.y
 		});
 	}
 
@@ -834,7 +839,7 @@
 		clipboard = clipboardHasLayers(clipboard) ? clipboard : await readSystemClipboard();
 
 		if (isRenewRnwClipboard(clipboard)) {
-			clipboard = await importRenewRnwClipboard(dispatch, clipboard.rnw);
+			return pasteRenewRnwClipboard(dispatch, position, clipboard.rnw);
 		}
 
 		if (clipboard === SYSTEM_CLIPBOARD_WITHOUT_LAYERS) {
