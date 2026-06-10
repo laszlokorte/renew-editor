@@ -3603,7 +3603,7 @@
 														{/if}
 														{#if el.value?.text}
 															{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
-															{#key el.id}
+															{#key el.value?.id}
 																<g
 																	role="button"
 																	class="editor-text-layer"

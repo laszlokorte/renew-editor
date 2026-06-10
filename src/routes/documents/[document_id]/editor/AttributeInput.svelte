@@ -1,20 +1,7 @@
 <script>
 	import * as L from 'partial.lenses';
-	import { view, combine } from '$lib/reactivity/atom.svelte';
 	import { bindValue } from '$lib/reactivity/bindings.svelte';
 	const { cast, cmd, type, attr, path, singleSelectedLayer, optimisticValue } = $props();
-	const optimisticLens = (id, attr, persistentLens) => {
-		return L.lens(
-			(store) =>
-				store && store.optimistic && store.optimistic.id === id && store.optimistic.attr === attr
-					? store.optimistic.value
-					: L.get(persistentLens, store.real),
-			(newValue, { real }) => ({
-				optimistic: newValue === undefined ? undefined : { id, attr, value: newValue },
-				real
-			})
-		);
-	};
 	function debounce(callback, delay) {
 		let timer;
 
@@ -26,14 +13,25 @@
 		};
 	}
 	const debouncedCast = debounce(cast, 100);
+	const optimisticAttr = path.join('__');
 
-	const optimistic = view(
-		optimisticLens(singleSelectedLayer.value.id, path.join('__'), path),
-		combine(
-			{ optimistic: optimisticValue, real: singleSelectedLayer },
-			{ optimistic: true, real: true }
-		)
-	);
+	const optimistic = {
+		get value() {
+			const currentLayerId = singleSelectedLayer.value.id;
+			const optimistic = optimisticValue.value;
+
+			return optimistic && optimistic.id === currentLayerId && optimistic.attr === optimisticAttr
+				? optimistic.value
+				: L.get(path, singleSelectedLayer.value);
+		},
+		set value(newValue) {
+			const currentLayerId = singleSelectedLayer.value.id;
+			optimisticValue.value =
+				newValue === undefined
+					? undefined
+					: { id: currentLayerId, attr: optimisticAttr, value: newValue };
+		}
+	};
 </script>
 
 {#key singleSelectedLayer.value.id}
