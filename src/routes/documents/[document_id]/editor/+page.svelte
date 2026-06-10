@@ -331,7 +331,7 @@
 	const PETRISTATION_CLIPBOARD_STORAGE_KEY = 'petristation:layer-clipboard';
 	const PETRISTATION_CLIPBOARD_RNW_STORAGE_KEY = 'petristation:layer-clipboard-rnw';
 	const RENEW_RNW_CLIPBOARD_FORMAT = 'renew/rnw';
-	const CLIPBOARD_RNW_TEXT = Symbol('clipboardRnwText');
+	const CLIPBOARD_RNW_TEXT = globalThis.Symbol('clipboardRnwText');
 	const SYSTEM_CLIPBOARD_WITHOUT_LAYERS = {};
 
 	function uniqueLayerIds(ids) {
