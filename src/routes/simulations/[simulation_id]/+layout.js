@@ -65,7 +65,7 @@ export async function load({ params, fetch }) {
 								return new Map(
 									socket_schemas.socket_schemas.map((s) => [
 										s.id,
-										{ name: s.name, sockets: s.sockets }
+										{ name: s.name, stencil: s.stencil, sockets: s.sockets }
 									])
 								);
 							}),

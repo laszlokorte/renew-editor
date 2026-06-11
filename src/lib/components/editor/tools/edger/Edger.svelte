@@ -5,12 +5,11 @@
 	import { atom, view, combine, read } from '$lib/reactivity/atom.svelte.js';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 
-	const defaultTargetTipSymbolShapeId = '84DC6617-D555-4BAB-BA33-04A5FA442F00';
-
 	const {
 		sockets,
 		symbols,
-		targetTipSymbolShapeId = defaultTargetTipSymbolShapeId,
+		sourceTipSymbolShapeId = null,
+		targetTipSymbolShapeId = null,
 		rotationTransform,
 		cameraScale,
 		frameBoxPath,
@@ -109,11 +108,18 @@
 	let preventNextClick = $state(false);
 	let reversePreview = $state(false);
 
-	function isRoundedSocket(socket) {
-		const tag = socket?.box?.semantic_tag ?? socket?.id?.semantic_tag ?? '';
-		const shape = socket?.box?.shape ?? '';
+	function socketStencil(socket) {
+		return (
+			socket?.socket_schema?.stencil ??
+			socket?.socketSchema?.stencil ??
+			socket?.stencil ??
+			socket?.id?.stencil ??
+			null
+		);
+	}
 
-		return /PlaceFigure|EllipseFigure|CircleFigure|FAStateFigure/.test(`${tag} ${shape}`);
+	function isCenterSocket(socket, centerX, centerY) {
+		return Math.abs(socket.x - centerX) < 0.001 && Math.abs(socket.y - centerY) < 0.001;
 	}
 
 	function edgeEndpoint(socket, toward) {
@@ -127,15 +133,21 @@
 		const centerY = box.y + box.height / 2;
 		const dx = toward.x - centerX;
 		const dy = toward.y - centerY;
+		const stencil = socketStencil(socket);
+
+		if (!['ellipse', 'rect'].includes(stencil) || !isCenterSocket(socket, centerX, centerY)) {
+			return socket;
+		}
 
 		if (dx === 0 && dy === 0) {
 			return { ...socket, x: centerX, y: centerY };
 		}
 
-		if (isRoundedSocket(socket)) {
+		if (stencil === 'ellipse') {
 			const radiusX = box.width / 2;
 			const radiusY = box.height / 2;
-			const scale = 1 / Math.sqrt((dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY));
+			const scale =
+				1 / Math.sqrt((dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY));
 
 			return {
 				...socket,
@@ -186,10 +198,10 @@
 		const point = edgeArrowPoint(source, target, reverse);
 
 		return {
-			x: point.x - 1,
-			y: point.y - 1,
-			width: 2,
-			height: 2
+			x: point.x - 4,
+			y: point.y - 4,
+			width: 8,
+			height: 8
 		};
 	}
 
@@ -250,6 +262,14 @@
 
 	function socketCenterRadius() {
 		return scaledRadius(selectionHandles ? selectionHandleCenterRadius : snapRadius / 2);
+	}
+
+	function previewTipSymbolId(reverse, atSource) {
+		if (reverse) {
+			return atSource ? targetTipSymbolShapeId : sourceTipSymbolShapeId;
+		}
+
+		return atSource ? sourceTipSymbolShapeId : targetTipSymbolShapeId;
 	}
 </script>
 
@@ -422,31 +442,57 @@
 				d="M{draftEdgeSourcePosition.value.x} {draftEdgeSourcePosition.value
 					.y} L {draftEdgeTargetPosition.value.x} {draftEdgeTargetPosition.value.y}"
 			/>
-			{#if symbols && targetTipSymbolShapeId}
-				{@const arrowPoint = edgeArrowPoint(
-					draftEdgeSourcePosition.value,
-					draftEdgeTargetPosition.value,
-					reversePreview
-				)}
-				<g
-					class="edge-arrow-symbol"
-					pointer-events="none"
-					transform="rotate({edgeArrowAngle(
+			{@const previewSourceTipSymbolId = previewTipSymbolId(reversePreview, true)}
+			{@const previewTargetTipSymbolId = previewTipSymbolId(reversePreview, false)}
+			{#if symbols && (previewSourceTipSymbolId || previewTargetTipSymbolId)}
+				{#if previewSourceTipSymbolId}
+					{@const sourceArrowPoint = edgeArrowPoint(
 						draftEdgeSourcePosition.value,
 						draftEdgeTargetPosition.value,
-						reversePreview
-					)} {arrowPoint.x} {arrowPoint.y})"
-				>
-					<Symbol
-						{symbols}
-						symbolId={targetTipSymbolShapeId}
-						box={edgeArrowBox(
+						true
+					)}
+					<g
+						class="edge-arrow-symbol"
+						pointer-events="none"
+						transform="rotate({edgeArrowAngle(
 							draftEdgeSourcePosition.value,
 							draftEdgeTargetPosition.value,
-							reversePreview
-						)}
-					/>
-				</g>
+							true
+						)} {sourceArrowPoint.x} {sourceArrowPoint.y})"
+					>
+						<Symbol
+							{symbols}
+							symbolId={previewSourceTipSymbolId}
+							box={edgeArrowBox(draftEdgeSourcePosition.value, draftEdgeTargetPosition.value, true)}
+						/>
+					</g>
+				{/if}
+				{#if previewTargetTipSymbolId}
+					{@const targetArrowPoint = edgeArrowPoint(
+						draftEdgeSourcePosition.value,
+						draftEdgeTargetPosition.value,
+						false
+					)}
+					<g
+						class="edge-arrow-symbol"
+						pointer-events="none"
+						transform="rotate({edgeArrowAngle(
+							draftEdgeSourcePosition.value,
+							draftEdgeTargetPosition.value,
+							false
+						)} {targetArrowPoint.x} {targetArrowPoint.y})"
+					>
+						<Symbol
+							{symbols}
+							symbolId={previewTargetTipSymbolId}
+							box={edgeArrowBox(
+								draftEdgeSourcePosition.value,
+								draftEdgeTargetPosition.value,
+								false
+							)}
+						/>
+					</g>
+				{/if}
 			{:else}
 				<path
 					class={{ 'edge-arrow': true, valid: validConnection.value }}

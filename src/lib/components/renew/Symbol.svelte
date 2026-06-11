@@ -4,15 +4,18 @@
 
 	let error = $state(false);
 
-	function hasFaStartDecoration(decoration) {
-		return decoration === 'start' || decoration === 'start_end';
+	function hasInwardNorthWestArrow(shapeName) {
+		return (
+			shapeName === 'ellipse-arrow-inward-north-west' ||
+			shapeName === 'ellipse-double-in-arrow-inward-north-west'
+		);
 	}
 
-	function hasFaEndDecoration(decoration) {
-		return decoration === 'end' || decoration === 'start_end';
+	function hasInnerEllipse(shapeName) {
+		return shapeName === 'ellipse-double-in-arrow-inward-north-west';
 	}
 
-	function faStartDecoration(box) {
+	function inwardNorthWestArrow(box) {
 		const tip = {
 			x: box.x + box.width * 0.1464466,
 			y: box.y + box.height * 0.1464466
@@ -49,6 +52,45 @@
 			rx={(shapeAttributes?.rx ?? 0) / 2}
 			ry={(shapeAttributes?.ry ?? 0) / 2}
 		/>
+	{:else if symbol?.name === 'ellipse-arrow-inward-north-west' || symbol?.name === 'ellipse-double-in-arrow-inward-north-west'}
+		<ellipse
+			cx={box.x + box.width / 2}
+			cy={box.y + box.height / 2}
+			rx={box.width / 2}
+			ry={box.height / 2}
+			fill="inherit"
+			stroke="inherit"
+		/>
+		{#if hasInnerEllipse(symbol?.name)}
+			<ellipse
+				cx={box.x + box.width / 2}
+				cy={box.y + box.height / 2}
+				rx={Math.max(box.width / 2 - 3, 0)}
+				ry={Math.max(box.height / 2 - 3, 0)}
+				fill="none"
+				stroke="inherit"
+				stroke-width="1"
+			/>
+		{/if}
+		{#if hasInwardNorthWestArrow(symbol?.name)}
+			{@const startDecoration = inwardNorthWestArrow(box)}
+			<polyline
+				points={startDecoration.line}
+				fill="none"
+				stroke="inherit"
+				stroke-width="1"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
+			<polyline
+				points={startDecoration.head}
+				fill="none"
+				stroke="inherit"
+				stroke-width="1"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+			/>
+		{/if}
 	{:else if symbol}
 		{#each symbol.paths as path, i (i)}
 			<path
@@ -86,36 +128,6 @@
 		{/if}
 	{:else}
 		<rect x={box.x} y={box.y} width={box.width} height={box.height}></rect>
-	{/if}
-	{#if hasFaEndDecoration(shapeAttributes?.fa_decoration)}
-		<ellipse
-			cx={box.x + box.width / 2}
-			cy={box.y + box.height / 2}
-			rx={Math.max(box.width / 2 - 3, 0)}
-			ry={Math.max(box.height / 2 - 3, 0)}
-			fill="none"
-			stroke="inherit"
-			stroke-width="1"
-		/>
-	{/if}
-	{#if hasFaStartDecoration(shapeAttributes?.fa_decoration)}
-		{@const startDecoration = faStartDecoration(box)}
-		<polyline
-			points={startDecoration.line}
-			fill="none"
-			stroke="inherit"
-			stroke-width="1"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		/>
-		<polyline
-			points={startDecoration.head}
-			fill="none"
-			stroke="inherit"
-			stroke-width="1"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-		/>
 	{/if}
 {/await}
 

@@ -64,7 +64,6 @@
 	import { describeError } from '$lib/errors';
 
 	const { data } = $props();
-	const defaultEdgeTargetTipSymbolShapeId = '84DC6617-D555-4BAB-BA33-04A5FA442F00';
 
 	export const forceHex = L.reread((v) => {
 		if (v === 'transparent') {
@@ -973,13 +972,17 @@
 	}
 
 	function isLayerInMovingSet(layerId, layersInOrderValue) {
-		const moving = new Set(groupDrag.value?.previewLayerIds ?? groupDrag.value?.layerIds ?? []);
+		return isLayerInMovingSetFor(layerId, layersInOrderValue, groupDrag.value);
+	}
+
+	function isLayerInMovingSetFor(layerId, layersInOrderValue, dragState) {
+		const moving = new Set(dragState?.previewLayerIds ?? dragState?.layerIds ?? []);
 		if (!moving.size) {
 			return false;
 		}
 
 		const layerInfo = layersInOrderValue.find((layer) => layer.id === layerId);
-		return moving.has(layerId) || layerInfo?.parents.some((parent) => moving.has(parent));
+		return moving.has(layerId) || layerInfo?.parents?.some((parent) => moving.has(parent));
 	}
 
 	function samePosition(a, b) {
@@ -1109,6 +1112,29 @@
 
 		const delta = groupDragDelta.value;
 		return delta.x || delta.y ? `translate(${delta.x} ${delta.y})` : undefined;
+	}
+
+	function layerMoveDelta(
+		layerId,
+		layersInOrderValue,
+		dragState = groupDrag.value,
+		delta = groupDragDelta.value
+	) {
+		if (!isLayerInMovingSetFor(layerId, layersInOrderValue, dragState)) {
+			return { x: 0, y: 0 };
+		}
+
+		return delta ?? { x: 0, y: 0 };
+	}
+
+	function movedSocketBox(box, layerId, layersInOrderValue, dragState, delta) {
+		const moveDelta = layerMoveDelta(layerId, layersInOrderValue, dragState, delta);
+
+		return {
+			...box,
+			x: box.x + moveDelta.x,
+			y: box.y + moveDelta.y
+		};
 	}
 
 	function expandedMoveLayerIds(layerIds, layersInOrderValue, docValue) {
@@ -1516,6 +1542,14 @@
 		};
 	}
 
+	function syntaxEdgeTipSymbolShapeId(syntax, attr) {
+		return (
+			Object.values(syntax?.autoEdgeNode ?? {})
+				.map((entry) => entry?.edge?.[attr])
+				.find(Boolean) ?? null
+		);
+	}
+
 	function layerBox(layerInfo, layer, textBoundsValue) {
 		if (layerInfo?.has_children) {
 			return layerInfo.deep_bounding;
@@ -1732,48 +1766,15 @@
 		return item?.data?.content?.semantic_tag ?? item?.name;
 	}
 
-	const EDGE_CREATE_TOOL_ENTRY = Object.freeze({ kind: 'edge-tool', name: 'Edge' });
-	const PRIMITIVE_GROUP_ORDER = ['Nodes', 'Text', 'FA'];
-	const PRIMITIVE_ITEM_ORDER = {
-		Nodes: ['Transition', 'Place'],
-		Text: ['Free Text', 'Inscription'],
-		FA: ['State']
-	};
-
-	function orderedIndex(order, value) {
-		const index = order.indexOf(value);
-		return index === -1 ? order.length : index;
-	}
-
-	function orderedPrimitiveItems(group) {
-		const itemOrder = PRIMITIVE_ITEM_ORDER[group?.name] ?? [];
-
-		return [...(group?.items ?? [])].sort(
-			(a, b) =>
-				orderedIndex(itemOrder, a.name) - orderedIndex(itemOrder, b.name) ||
-				a.name.localeCompare(b.name)
-		);
-	}
-
 	function createToolGroups(groups) {
-		return [...(groups ?? [])]
-			.sort(
-				(a, b) =>
-					orderedIndex(PRIMITIVE_GROUP_ORDER, a.name) -
-						orderedIndex(PRIMITIVE_GROUP_ORDER, b.name) || a.name.localeCompare(b.name)
-			)
-			.map((group) => {
-				const entries = orderedPrimitiveItems(group);
-
-				return {
-					...group,
-					entries: group.name === 'Nodes' ? [...entries, EDGE_CREATE_TOOL_ENTRY] : entries
-				};
-			});
+		return [...(groups ?? [])].map((group) => ({
+			...group,
+			entries: group?.items ?? []
+		}));
 	}
 
 	function isEdgeCreateToolEntry(entry) {
-		return entry?.kind === EDGE_CREATE_TOOL_ENTRY.kind;
+		return entry?.kind === 'edge-tool';
 	}
 
 	function createToolEntryId(entry) {
@@ -1887,6 +1888,14 @@
 	}
 
 	function createdAutoEdgeTargetLayerId(layer, reverse = false) {
+		if (layer?.target_layer_id) {
+			return layer.target_layer_id;
+		}
+
+		if (layer?.layer?.id) {
+			return layer.layer.id;
+		}
+
 		const bond = reverse ? layer?.edge?.source_bond : layer?.edge?.target_bond;
 
 		return bond?.layer_id ?? layer?.id;
@@ -5679,13 +5688,21 @@
 												{#await currentSyntaxValue then syntax}
 													<Edger
 														symbols={data.symbols}
+														sourceTipSymbolShapeId={syntaxEdgeTipSymbolShapeId(
+															syntax,
+															'source_tip_symbol_shape_id'
+														)}
+														targetTipSymbolShapeId={syntaxEdgeTipSymbolShapeId(
+															syntax,
+															'target_tip_symbol_shape_id'
+														)}
 														sourceLayerIds={activeTool.value === 'select'
 															? selectedNodeLayerIds.value
 															: undefined}
 														selectionHandles={activeTool.value === 'select'}
 														sockets={viewCombined(
 															[
-																L.reread(({ inOrder, flatLayers }) =>
+																L.reread(({ inOrder, flatLayers, dragState, moveDelta }) =>
 																	inOrder
 																		.filter(R.complement(R.prop('hidden')))
 																		.flatMap(({ index, id, depth, hidden }) => {
@@ -5695,56 +5712,63 @@
 
 																			if (iid) {
 																				const socket_schema = s.get(iid);
-																				return socket_schema.sockets
+																				if (!socket_schema) {
+																					return [];
+																				}
+
+																				return (socket_schema.sockets ?? [])
 																					.map((sock) => {
 																						if (el.box) {
-																							const socketBox = {
-																								x: el.box.position_x,
-																								y: el.box.position_y,
-																								width: el.box.width,
-																								height: el.box.height,
-																								shape: el.box.shape,
-																								semantic_tag
-																							};
+																							const socketBox = movedSocketBox(
+																								{
+																									x: el.box.position_x,
+																									y: el.box.position_y,
+																									width: el.box.width,
+																									height: el.box.height,
+																									shape: el.box.shape,
+																									semantic_tag
+																								},
+																								id,
+																								inOrder,
+																								dragState,
+																								moveDelta
+																							);
 
 																							return {
 																								id: {
 																									socket: sock.id,
 																									layer: id,
-																									semantic_tag
+																									semantic_tag,
+																									stencil: socket_schema.stencil
 																								},
+																								socket_schema,
 																								x: buildCoord(socketBox, 'x', false, sock.x),
 																								y: buildCoord(socketBox, 'y', false, sock.y),
 																								box: socketBox
 																							};
 																						} else if (el.text?.hint) {
+																							const socketBox = movedSocketBox(
+																								{
+																									x: el.text.hint.x,
+																									y: el.text.hint.y,
+																									width: el.text.hint.width,
+																									height: el.text.hint.height
+																								},
+																								id,
+																								inOrder,
+																								dragState,
+																								moveDelta
+																							);
+
 																							return {
 																								id: {
 																									socket: sock.id,
-																									layer: id
+																									layer: id,
+																									stencil: socket_schema.stencil
 																								},
-																								x: buildCoord(
-																									{
-																										x: el.text.hint.x,
-																										y: el.text.hint.y,
-																										width: el.text.hint.width,
-																										height: el.text.hint.height
-																									},
-																									'x',
-																									false,
-																									sock.x
-																								),
-																								y: buildCoord(
-																									{
-																										x: el.text.hint.x,
-																										y: el.text.hint.y,
-																										width: el.text.hint.width,
-																										height: el.text.hint.height
-																									},
-																									'y',
-																									false,
-																									sock.y
-																								)
+																								socket_schema,
+																								x: buildCoord(socketBox, 'x', false, sock.x),
+																								y: buildCoord(socketBox, 'y', false, sock.y)
 																							};
 																						} else {
 																							return null;
@@ -5757,7 +5781,12 @@
 																		})
 																)
 															],
-															{ inOrder: layersInOrder, flatLayers: read(['layers', 'items'], doc) }
+															{
+																inOrder: layersInOrder,
+																flatLayers: read(['layers', 'items'], doc),
+																dragState: groupDrag,
+																moveDelta: groupDragDelta
+															}
 														)}
 														{frameBoxObject}
 														{frameBoxPath}
@@ -7743,7 +7772,7 @@
 						}}
 					>
 						<small>Create</small>
-						{#snippet edgeCreateToolButton()}
+						{#snippet edgeCreateToolButton(item)}
 							<div
 								class={{
 									'create-primitive-tool': true,
@@ -7755,7 +7784,7 @@
 								role="button"
 								tabindex="0"
 								aria-pressed={activeTool.value === 'edge'}
-								title="Edge"
+								title={item.name}
 								style="display: grid; justify-content: center; align-content: center;"
 								onclick={(evt) => {
 									evt.preventDefault();
@@ -7775,25 +7804,8 @@
 								}}
 							>
 								<svg viewBox="-4 -4 40 40" width="32" aria-hidden="true">
-									<path
-										d="M 5 25 L 26 4"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2.5"
-										stroke-linecap="butt"
-									/>
-									<g fill="currentColor" stroke="currentColor" transform="rotate(-45 26 4)">
-										<Symbol
-											symbols={data.symbols}
-											symbolId={defaultEdgeTargetTipSymbolShapeId}
-											box={{
-												x: 23.5,
-												y: 1.5,
-												width: 5,
-												height: 5
-											}}
-										/>
-									</g>
+									<title>{item.name}</title>
+									{@html item.icon}
 								</svg>
 							</div>
 						{/snippet}
@@ -7807,7 +7819,7 @@
 											? singleSelectedLayer.value.id
 											: undefined}
 										{#if isEdgeCreateToolEntry(item)}
-											{@render edgeCreateToolButton()}
+											{@render edgeCreateToolButton(item)}
 										{:else}
 											<div
 												class={{
