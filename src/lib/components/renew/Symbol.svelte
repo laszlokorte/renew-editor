@@ -4,6 +4,31 @@
 
 	let error = $state(false);
 
+	function shapeNameFromFaDecoration(decoration) {
+		switch (decoration) {
+			case 'start':
+				return 'ellipse-arrow-inward-north-west';
+			case 'end':
+				return 'ellipse-double-in';
+			case 'start_end':
+				return 'ellipse-double-in-arrow-inward-north-west';
+			default:
+				return null;
+		}
+	}
+
+	function effectiveShapeName(symbol, shapeAttributes) {
+		return symbol?.name ?? shapeNameFromFaDecoration(shapeAttributes?.fa_decoration);
+	}
+
+	function isFaStateShape(shapeName) {
+		return (
+			shapeName === 'ellipse-arrow-inward-north-west' ||
+			shapeName === 'ellipse-double-in' ||
+			shapeName === 'ellipse-double-in-arrow-inward-north-west'
+		);
+	}
+
 	function hasInwardNorthWestArrow(shapeName) {
 		return (
 			shapeName === 'ellipse-arrow-inward-north-west' ||
@@ -12,7 +37,9 @@
 	}
 
 	function hasInnerEllipse(shapeName) {
-		return shapeName === 'ellipse-double-in-arrow-inward-north-west';
+		return (
+			shapeName === 'ellipse-double-in' || shapeName === 'ellipse-double-in-arrow-inward-north-west'
+		);
 	}
 
 	function inwardNorthWestArrow(box) {
@@ -38,12 +65,13 @@
 	<rect x={box.x} y={box.y} width={box.width} height={box.height}></rect>
 {:then symbols}
 	{@const symbol = symbols.get(symbolId)}
-	{#if symbol?.name === 'pie'}
+	{@const shapeName = effectiveShapeName(symbol, shapeAttributes)}
+	{#if shapeName === 'pie'}
 		<path
 			d={buildPiePath(box, shapeAttributes?.start_angle, shapeAttributes?.end_angle)}
 			fill-rule="evenodd"
 		/>
-	{:else if symbol?.name === 'rect-round'}
+	{:else if shapeName === 'rect-round'}
 		<rect
 			x={box.x}
 			y={box.y}
@@ -52,7 +80,7 @@
 			rx={(shapeAttributes?.rx ?? 0) / 2}
 			ry={(shapeAttributes?.ry ?? 0) / 2}
 		/>
-	{:else if symbol?.name === 'ellipse-arrow-inward-north-west' || symbol?.name === 'ellipse-double-in-arrow-inward-north-west'}
+	{:else if isFaStateShape(shapeName)}
 		<ellipse
 			cx={box.x + box.width / 2}
 			cy={box.y + box.height / 2}
@@ -61,7 +89,7 @@
 			fill="inherit"
 			stroke="inherit"
 		/>
-		{#if hasInnerEllipse(symbol?.name)}
+		{#if hasInnerEllipse(shapeName)}
 			<ellipse
 				cx={box.x + box.width / 2}
 				cy={box.y + box.height / 2}
@@ -72,7 +100,7 @@
 				stroke-width="1"
 			/>
 		{/if}
-		{#if hasInwardNorthWestArrow(symbol?.name)}
+		{#if hasInwardNorthWestArrow(shapeName)}
 			{@const startDecoration = inwardNorthWestArrow(box)}
 			<polyline
 				points={startDecoration.line}

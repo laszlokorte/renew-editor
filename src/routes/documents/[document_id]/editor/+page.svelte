@@ -469,15 +469,33 @@
 	}
 
 	function syntaxEdgeSourceTags(syntax) {
-		return new Set([
-			...Object.keys(syntax?.edgeWhitelist ?? {}),
-			...Object.keys(syntax?.autoEdgeNode ?? {})
-		].filter(Boolean));
+		return new Set(
+			[
+				...Object.keys(syntax?.edgeWhitelist ?? {}),
+				...Object.keys(syntax?.autoEdgeNode ?? {})
+			].filter(Boolean)
+		);
 	}
 
-	function syntaxHasEdgeSourceTag(syntax, tag) {
-		const tags = syntaxEdgeSourceTags(syntax);
-		return tags.size === 0 || tags.has(tag);
+	function syntaxEdgeKnownTags(syntax) {
+		const tags = new Set(syntaxEdgeSourceTags(syntax));
+
+		for (const targets of Object.values(syntax?.edgeWhitelist ?? {})) {
+			for (const tag of targets ?? []) {
+				if (tag) {
+					tags.add(tag);
+				}
+			}
+		}
+
+		for (const target of Object.values(syntax?.autoEdgeNode ?? {})) {
+			const tag = target?.target?.semantic_tag;
+			if (tag) {
+				tags.add(tag);
+			}
+		}
+
+		return tags;
 	}
 
 	function isSyntaxEdgeSourceLayer(layer, syntax) {
@@ -485,8 +503,14 @@
 			return false;
 		}
 
-		const tags = syntaxEdgeSourceTags(syntax);
-		return tags.size === 0 ? isNodeLayer(layer) : tags.has(layer.semantic_tag);
+		const knownTags = syntaxEdgeKnownTags(syntax);
+		const sourceTags = syntaxEdgeSourceTags(syntax);
+
+		if (knownTags.size === 0) {
+			return isNodeLayer(layer);
+		}
+
+		return !knownTags.has(layer.semantic_tag) || sourceTags.has(layer.semantic_tag);
 	}
 
 	function syntaxEdgeSourceLayerIds(docValue, layerIds, syntax) {
@@ -499,12 +523,30 @@
 			return false;
 		}
 
-		if (!syntaxHasEdgeSourceTag(syntax, source.semantic_tag)) {
-			return false;
+		const knownTags = syntaxEdgeKnownTags(syntax);
+		if (knownTags.size === 0) {
+			return true;
+		}
+
+		const sourceKnown = knownTags.has(source.semantic_tag);
+		const targetKnown = knownTags.has(target.semantic_tag);
+		if (!sourceKnown || !targetKnown) {
+			return true;
 		}
 
 		const allowedTargets = syntax?.edgeWhitelist?.[source.semantic_tag];
-		return !allowedTargets || allowedTargets.indexOf(target.semantic_tag) > -1;
+		return (allowedTargets ?? []).indexOf(target.semantic_tag) > -1;
+	}
+
+	function syntaxAutoEdgeNodeForSource(syntax, source) {
+		const autoNodeType = syntax?.autoEdgeNode?.[source?.semantic_tag];
+		const sourceSocketId = autoNodeType?.edge?.source?.socket_id;
+
+		if (!autoNodeType || !sourceSocketId) {
+			return null;
+		}
+
+		return sourceSocketId === source?.socket ? autoNodeType : null;
 	}
 
 	function isArcLayer(layer) {
@@ -5836,7 +5878,8 @@
 															clientToCanvas={liveLenses.clientToCanvas}
 															{rotationTransform}
 															{cameraScale}
-															validEdge={(source, target) => syntaxAllowsEdge(syntax, source, target)}
+															validEdge={(source, target) =>
+																syntaxAllowsEdge(syntax, source, target)}
 															newEdge={(e, evt) => {
 																if (evt.shiftKey) {
 																	e = {
@@ -5863,7 +5906,7 @@
 																}
 															}}
 															newEdgeNode={(e, evt) => {
-																const autoNodeType = syntax.autoEdgeNode[e.source.semantic_tag];
+																const autoNodeType = syntaxAutoEdgeNodeForSource(syntax, e.source);
 
 																if (autoNodeType) {
 																	dispatch('create_layer', {

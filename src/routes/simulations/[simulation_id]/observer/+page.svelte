@@ -42,7 +42,9 @@
 	const liveErrors = atom([]);
 	const bindingSelection = atom(null);
 	const bindingDialogPosition = atom(null);
-	let netInstanceActions = null;
+	const selectedTransitionId = atom(null);
+	const breakpoints = atom([]);
+	const netInstanceActions = { value: null };
 
 	const cameraSettings = atom({
 		plane: {
@@ -104,8 +106,12 @@
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 
 	let cameraScroller = atom(undefined);
-	let lastBindingAutoRefreshSignature = null;
-	let bindingAutoRefreshQueued = false;
+	const bindingAutoRefresh = {
+		lastSignature: null,
+		queued: false
+	};
+	let breakpointRefreshSignature = null;
+	let breakpointRefreshQueued = false;
 
 	const logLens = (base) =>
 		L.lens(
@@ -205,14 +211,109 @@
 		return simulation?.running && netInstance?.label && isTransitionLayer(transitionLayer);
 	}
 
+	function transitionBreakpointIds(items = breakpoints.value) {
+		return new Set(items.map((breakpoint) => breakpoint?.transition_id).filter(Boolean));
+	}
+
+	function hasTransitionBreakpoint(layer) {
+		return transitionBreakpointIds().has(layer?.id);
+	}
+
+	function breakpointLabel(breakpoint) {
+		const transitionId = breakpoint?.transition_id ?? '';
+		return transitionId ? `firing starts (${transitionId.slice(0, 8)}...)` : 'firing starts';
+	}
+
+	function setBreakpointsFromResponse(response) {
+		if (Array.isArray(response?.breakpoints)) {
+			breakpoints.value = response.breakpoints;
+		}
+	}
+
+	async function refreshBreakpoints(dispatch) {
+		try {
+			const response = await dispatch('list_breakpoints', {});
+			setBreakpointsFromResponse(response);
+		} catch (error) {
+			appendLiveError(error);
+		}
+	}
+
+	async function setBreakpointAtSelection(dispatch) {
+		const transition_id = selectedTransitionId.value;
+
+		if (!transition_id) {
+			return;
+		}
+
+		try {
+			const response = await dispatch('set_transition_breakpoint', { transition_id });
+			setBreakpointsFromResponse(response);
+		} catch (error) {
+			appendLiveError(error);
+		}
+	}
+
+	async function clearBreakpointAtSelection(dispatch) {
+		const transition_id = selectedTransitionId.value;
+
+		if (!transition_id) {
+			return;
+		}
+
+		try {
+			const response = await dispatch('clear_transition_breakpoint', { transition_id });
+			setBreakpointsFromResponse(response);
+		} catch (error) {
+			appendLiveError(error);
+		}
+	}
+
+	async function clearAllBreakpoints(dispatch) {
+		try {
+			const response = await dispatch('clear_breakpoints', {});
+			setBreakpointsFromResponse(response);
+		} catch (error) {
+			appendLiveError(error);
+		}
+	}
+
+	function queueBreakpointRefresh(dispatch, simulation) {
+		const signature = `${simulation?.running}:${simulation?.timestep}:${simulation?.is_playing}`;
+
+		if (!simulation?.running) {
+			breakpoints.value = [];
+			breakpointRefreshSignature = signature;
+			return '';
+		}
+
+		if (signature === breakpointRefreshSignature || breakpointRefreshQueued) {
+			return '';
+		}
+
+		breakpointRefreshSignature = signature;
+		breakpointRefreshQueued = true;
+
+		queueMicrotask(() => {
+			breakpointRefreshQueued = false;
+			void refreshBreakpoints(dispatch);
+		});
+
+		return '';
+	}
+
+	function refreshBreakpointsFromMenu(dispatch, simulation) {
+		queueBreakpointRefresh(dispatch, simulation);
+	}
+
 	function rememberNetInstanceActions(netInstance, actions) {
 		if (
 			netInstance?.id &&
 			actions?.dispatch &&
-			(netInstanceActions?.id !== netInstance.id ||
-				netInstanceActions?.dispatch !== actions.dispatch)
+			(netInstanceActions.value?.id !== netInstance.id ||
+				netInstanceActions.value?.dispatch !== actions.dispatch)
 		) {
-			netInstanceActions = {
+			netInstanceActions.value = {
 				id: netInstance.id,
 				dispatch: actions.dispatch,
 				cast: actions.cast
@@ -223,7 +324,7 @@
 	}
 
 	function activeNetInstanceActions(netInstance) {
-		return netInstanceActions?.id === netInstance?.id ? netInstanceActions : null;
+		return netInstanceActions.value?.id === netInstance?.id ? netInstanceActions.value : null;
 	}
 
 	function netInstanceDispatch(fallbackDispatch, netInstance) {
@@ -292,7 +393,7 @@
 	function closeBindingSelection() {
 		bindingSelection.value = null;
 		bindingDialogPosition.value = null;
-		lastBindingAutoRefreshSignature = null;
+		bindingAutoRefresh.lastSignature = null;
 	}
 
 	function startBindingDialogDrag(evt) {
@@ -400,28 +501,28 @@
 		const signature = bindingAutoRefreshSignature(selection, simulation, netInstance);
 
 		if (!signature) {
-			lastBindingAutoRefreshSignature = null;
+			bindingAutoRefresh.lastSignature = null;
 			return '';
 		}
 
 		if (
 			selection.loading ||
 			selection.refreshing ||
-			signature === lastBindingAutoRefreshSignature
+			signature === bindingAutoRefresh.lastSignature
 		) {
 			return '';
 		}
 
-		lastBindingAutoRefreshSignature = signature;
+		bindingAutoRefresh.lastSignature = signature;
 
-		if (bindingAutoRefreshQueued) {
+		if (bindingAutoRefresh.queued) {
 			return '';
 		}
 
-		bindingAutoRefreshQueued = true;
+		bindingAutoRefresh.queued = true;
 
 		queueMicrotask(() => {
-			bindingAutoRefreshQueued = false;
+			bindingAutoRefresh.queued = false;
 			scheduleBindingSelectionRefresh(dispatch);
 		});
 
@@ -514,7 +615,7 @@
 		};
 
 		await updateBindingSelection(dispatch, bindingSelection.value);
-		lastBindingAutoRefreshSignature = bindingAutoRefreshSignature(
+		bindingAutoRefresh.lastSignature = bindingAutoRefreshSignature(
 			bindingSelection.value,
 			simulation,
 			netInstance
@@ -839,6 +940,61 @@
 										}}>Terminate</MenuBarButton
 									>
 								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li
+									class="menu-bar-menu-item submenu"
+									tabindex="-1"
+									onpointerenter={() => refreshBreakpointsFromMenu(dispatch, simulation.value)}
+									onfocusin={() => refreshBreakpointsFromMenu(dispatch, simulation.value)}
+								>
+									<button class="menu-bar-item-button submenu-button" type="button">
+										Breakpoints
+										<span class="submenu-arrow">›</span>
+									</button>
+									<ul class="menu-bar-menu">
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={!simulation.value.running || !selectedTransitionId.value}
+												onclick={(evt) => {
+													evt.preventDefault();
+													void setBreakpointAtSelection(dispatch);
+												}}>Set BP at selection</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={!simulation.value.running || !selectedTransitionId.value}
+												onclick={(evt) => {
+													evt.preventDefault();
+													void clearBreakpointAtSelection(dispatch);
+												}}>Clear BP at selection</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={!simulation.value.running || breakpoints.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													void clearAllBreakpoints(dispatch);
+												}}>Clear all BPs in current simulation</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+										{#each breakpoints.value as breakpoint (breakpoint.transition_id)}
+											<li class="menu-bar-menu-item">
+												<button class="menu-bar-item-button" type="button" disabled>
+													{breakpointLabel(breakpoint)}
+												</button>
+											</li>
+										{:else}
+											<li class="menu-bar-menu-item">
+												<button class="menu-bar-item-button" type="button" disabled
+													>No Breakpoints</button
+												>
+											</li>
+										{/each}
+									</ul>
+								</li>
 							</ul>
 						</li>
 					</ol>
@@ -1123,7 +1279,12 @@
 																	cursor="default"
 																	onclick={(evt) => {
 																		evt.preventDefault();
-																		update((x) => !x, expanded);
+																		if (isTransitionLayer(el.value)) {
+																			selectedTransitionId.value = el.value.id;
+																		} else {
+																			selectedTransitionId.value = null;
+																			update((x) => !x, expanded);
+																		}
 																	}}
 																	ondblclick={(evt) => {
 																		if (!isTransitionLayer(el.value)) {
@@ -1172,6 +1333,29 @@
 																			height: el.value?.box.height
 																		}}
 																	/>
+																	{#if selectedTransitionId.value === el.value.id}
+																		<rect
+																			x={el.value?.box.position_x - 4 * cameraScale.value}
+																			y={el.value?.box.position_y - 4 * cameraScale.value}
+																			width={el.value?.box.width + 8 * cameraScale.value}
+																			height={el.value?.box.height + 8 * cameraScale.value}
+																			fill="none"
+																			stroke="#6aa5ff"
+																			stroke-width={2 * cameraScale.value}
+																			pointer-events="none"
+																		/>
+																	{/if}
+																	{#if hasTransitionBreakpoint(el.value)}
+																		<circle
+																			cx={el.value?.box.position_x + el.value?.box.width}
+																			cy={el.value?.box.position_y}
+																			r={5 * cameraScale.value}
+																			fill="#d93b31"
+																			stroke="#fff"
+																			stroke-width={1.5 * cameraScale.value}
+																			pointer-events="none"
+																		/>
+																	{/if}
 																</g>
 															{/if}
 															{#if el.value?.text}
@@ -2103,6 +2287,27 @@
 		display: flex;
 		justify-items: stretch;
 		cursor: default;
+	}
+
+	.menu-bar-menu-item.submenu {
+		position: relative;
+	}
+
+	.menu-bar-menu-item.submenu > .menu-bar-menu {
+		left: 100%;
+		top: -0.5ex;
+	}
+
+	.menu-bar-menu-item.submenu:hover > .menu-bar-menu,
+	.menu-bar-menu-item.submenu:focus-within > .menu-bar-menu {
+		display: flex;
+	}
+
+	.submenu-button {
+		display: flex;
+		gap: 2em;
+		justify-content: space-between;
+		align-items: center;
 	}
 
 	.menu-bar-menu-ruler {
