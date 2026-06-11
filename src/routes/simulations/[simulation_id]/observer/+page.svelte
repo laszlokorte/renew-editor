@@ -43,8 +43,12 @@
 	const bindingSelection = atom(null);
 	const bindingDialogPosition = atom(null);
 	const selectedTransitionId = atom(null);
-	const breakpoints = atom([]);
 	const netInstanceActions = { value: null };
+	const breakPointEntriesResource = {
+		id: `${data.simulation.id}:breakpoints`,
+		topic: `live:simulation_breakpoints:${data.simulation.id}`,
+		content: { breakpoints: [] }
+	};
 
 	const cameraSettings = atom({
 		plane: {
@@ -110,8 +114,6 @@
 		lastSignature: null,
 		queued: false
 	};
-	let breakpointRefreshSignature = null;
-	let breakpointRefreshQueued = false;
 
 	const logLens = (base) =>
 		L.lens(
@@ -211,32 +213,21 @@
 		return simulation?.running && netInstance?.label && isTransitionLayer(transitionLayer);
 	}
 
-	function transitionBreakpointIds(items = breakpoints.value) {
+	function breakpointItems(breakpointEntries) {
+		return Array.isArray(breakpointEntries?.breakpoints) ? breakpointEntries.breakpoints : [];
+	}
+
+	function transitionBreakpointIds(items = []) {
 		return new Set(items.map((breakpoint) => breakpoint?.transition_id).filter(Boolean));
 	}
 
-	function hasTransitionBreakpoint(layer) {
-		return transitionBreakpointIds().has(layer?.id);
+	function hasTransitionBreakpoint(layer, items = []) {
+		return transitionBreakpointIds(items).has(layer?.id);
 	}
 
 	function breakpointLabel(breakpoint) {
 		const transitionId = breakpoint?.transition_id ?? '';
 		return transitionId ? `firing starts (${transitionId.slice(0, 8)}...)` : 'firing starts';
-	}
-
-	function setBreakpointsFromResponse(response) {
-		if (Array.isArray(response?.breakpoints)) {
-			breakpoints.value = response.breakpoints;
-		}
-	}
-
-	async function refreshBreakpoints(dispatch) {
-		try {
-			const response = await dispatch('list_breakpoints', {});
-			setBreakpointsFromResponse(response);
-		} catch (error) {
-			appendLiveError(error);
-		}
 	}
 
 	async function setBreakpointAtSelection(dispatch) {
@@ -247,8 +238,7 @@
 		}
 
 		try {
-			const response = await dispatch('set_transition_breakpoint', { transition_id });
-			setBreakpointsFromResponse(response);
+			await dispatch('set_transition_breakpoint', { transition_id });
 		} catch (error) {
 			appendLiveError(error);
 		}
@@ -262,8 +252,7 @@
 		}
 
 		try {
-			const response = await dispatch('clear_transition_breakpoint', { transition_id });
-			setBreakpointsFromResponse(response);
+			await dispatch('clear_transition_breakpoint', { transition_id });
 		} catch (error) {
 			appendLiveError(error);
 		}
@@ -271,39 +260,10 @@
 
 	async function clearAllBreakpoints(dispatch) {
 		try {
-			const response = await dispatch('clear_breakpoints', {});
-			setBreakpointsFromResponse(response);
+			await dispatch('clear_breakpoints', {});
 		} catch (error) {
 			appendLiveError(error);
 		}
-	}
-
-	function queueBreakpointRefresh(dispatch, simulation) {
-		const signature = `${simulation?.running}:${simulation?.timestep}:${simulation?.is_playing}`;
-
-		if (!simulation?.running) {
-			breakpoints.value = [];
-			breakpointRefreshSignature = signature;
-			return '';
-		}
-
-		if (signature === breakpointRefreshSignature || breakpointRefreshQueued) {
-			return '';
-		}
-
-		breakpointRefreshSignature = signature;
-		breakpointRefreshQueued = true;
-
-		queueMicrotask(() => {
-			breakpointRefreshQueued = false;
-			void refreshBreakpoints(dispatch);
-		});
-
-		return '';
-	}
-
-	function refreshBreakpointsFromMenu(dispatch, simulation) {
-		queueBreakpointRefresh(dispatch, simulation);
 	}
 
 	function rememberNetInstanceActions(netInstance, actions) {
@@ -695,8 +655,11 @@
 		connectionState={data.connectionState}
 	/>
 
-	<LiveResource socket={data.live_socket} resource={data.simulation} errors={liveErrors}>
-		{#snippet children(simulation, presence, { dispatch, cast })}
+	<LiveResource socket={data.live_socket} resource={breakPointEntriesResource} errors={liveErrors}>
+		{#snippet children(breakPointEntries)}
+			{@const activeBreakpoints = breakpointItems(breakPointEntries.value)}
+			<LiveResource socket={data.live_socket} resource={data.simulation} errors={liveErrors}>
+				{#snippet children(simulation, presence, { dispatch, cast })}
 			{@const nets = view(['shadow_net_system', 'content', 'nets'], simulation)}
 			{@const net_instances = view('net_instances', simulation)}
 			{@const current_instance = viewCombined(
@@ -941,12 +904,7 @@
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-								<li
-									class="menu-bar-menu-item submenu"
-									tabindex="-1"
-									onpointerenter={() => refreshBreakpointsFromMenu(dispatch, simulation.value)}
-									onfocusin={() => refreshBreakpointsFromMenu(dispatch, simulation.value)}
-								>
+								<li class="menu-bar-menu-item submenu" tabindex="-1">
 									<button class="menu-bar-item-button submenu-button" type="button">
 										Breakpoints
 										<span class="submenu-arrow">›</span>
@@ -972,7 +930,7 @@
 										</li>
 										<li class="menu-bar-menu-item">
 											<MenuBarButton
-												disabled={!simulation.value.running || breakpoints.value.length === 0}
+												disabled={!simulation.value.running || activeBreakpoints.length === 0}
 												onclick={(evt) => {
 													evt.preventDefault();
 													void clearAllBreakpoints(dispatch);
@@ -980,7 +938,7 @@
 											>
 										</li>
 										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										{#each breakpoints.value as breakpoint (breakpoint.transition_id)}
+										{#each activeBreakpoints as breakpoint (breakpoint.transition_id)}
 											<li class="menu-bar-menu-item">
 												<button class="menu-bar-item-button" type="button" disabled>
 													{breakpointLabel(breakpoint)}
@@ -1345,7 +1303,7 @@
 																			pointer-events="none"
 																		/>
 																	{/if}
-																	{#if hasTransitionBreakpoint(el.value)}
+																	{#if hasTransitionBreakpoint(el.value, activeBreakpoints)}
 																		<circle
 																			cx={el.value?.box.position_x + el.value?.box.width}
 																			cy={el.value?.box.position_y}
@@ -1869,6 +1827,8 @@
 					</div>
 				</div>
 			</div>
+				{/snippet}
+			</LiveResource>
 		{/snippet}
 	</LiveResource>
 </div>
