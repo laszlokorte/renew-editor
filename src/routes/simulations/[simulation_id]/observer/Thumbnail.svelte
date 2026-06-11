@@ -7,6 +7,13 @@
 
 	const textBounds = atom({});
 	const { document, symbols } = $props();
+
+	function symbolShapeAttributes(box) {
+		return {
+			...(box?.symbol_shape_attributes ?? {}),
+			...(box?.shape_attributes ?? {})
+		};
+	}
 </script>
 
 <svg
@@ -30,7 +37,7 @@
 					<Symbol
 						{symbols}
 						symbolId={layer.box.shape}
-						shapeAttributes={layer.box.shape_attributes}
+						shapeAttributes={symbolShapeAttributes(layer.box)}
 						background_url={layer.style?.background_url}
 						box={{
 							x: layer.box.position_x,

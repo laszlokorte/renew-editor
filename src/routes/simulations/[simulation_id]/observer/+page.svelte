@@ -177,6 +177,13 @@
 		liveErrors.value = [...liveErrors.value, error];
 	}
 
+	function symbolShapeAttributes(box) {
+		return {
+			...(box?.symbol_shape_attributes ?? {}),
+			...(box?.shape_attributes ?? {})
+		};
+	}
+
 	function isTransitionLayer(layer) {
 		return layer?.semantic_tag === 'de.renew.gui.TransitionFigure';
 	}
@@ -1156,7 +1163,7 @@
 																	<Symbol
 																		symbols={data.symbols}
 																		symbolId={el.value?.box.shape}
-																		shapeAttributes={el.value?.box.shape_attributes}
+																		shapeAttributes={symbolShapeAttributes(el.value?.box)}
 																		background_url={el.value?.style?.background_url}
 																		box={{
 																			x: el.value?.box.position_x,

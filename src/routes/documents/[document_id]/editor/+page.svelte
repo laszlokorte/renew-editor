@@ -1443,6 +1443,79 @@
 		);
 	}
 
+	function rectToBox(rect) {
+		if (
+			!rect ||
+			!Number.isFinite(rect.x) ||
+			!Number.isFinite(rect.y) ||
+			!Number.isFinite(rect.width) ||
+			!Number.isFinite(rect.height)
+		) {
+			return null;
+		}
+
+		return {
+			minX: rect.x,
+			minY: rect.y,
+			maxX: rect.x + rect.width,
+			maxY: rect.y + rect.height
+		};
+	}
+
+	function boxToRect(box) {
+		return {
+			x: box.minX,
+			y: box.minY,
+			width: box.maxX - box.minX,
+			height: box.maxY - box.minY
+		};
+	}
+
+	function unionBoxes(boxes) {
+		const finiteBoxes = boxes.filter(finiteBox);
+
+		if (!finiteBoxes.length) {
+			return {
+				minX: -100,
+				minY: -100,
+				maxX: 100,
+				maxY: 100
+			};
+		}
+
+		return {
+			minX: Math.min(...finiteBoxes.map((box) => box.minX)),
+			minY: Math.min(...finiteBoxes.map((box) => box.minY)),
+			maxX: Math.max(...finiteBoxes.map((box) => box.maxX)),
+			maxY: Math.max(...finiteBoxes.map((box) => box.maxY))
+		};
+	}
+
+	function documentDisplayBox(docValue, textBoundsValue) {
+		const boxes = [rectToBox(docValue?.viewbox)];
+
+		for (const layer of docValue?.layers?.items ?? []) {
+			if (!layer.text) {
+				continue;
+			}
+
+			const bounds = textBoundsValue?.[layer.id];
+			const box = rectToBox(bounds);
+			if (box) {
+				boxes.push(expandBox(box, 100));
+			}
+		}
+
+		return unionBoxes(boxes);
+	}
+
+	function symbolShapeAttributes(box) {
+		return {
+			...(box?.symbol_shape_attributes ?? {}),
+			...(box?.shape_attributes ?? {})
+		};
+	}
+
 	function layerBox(layerInfo, layer, textBoundsValue) {
 		if (layerInfo?.has_children) {
 			return layerInfo.deep_bounding;
@@ -2587,18 +2660,14 @@
 				use:deleteShortcutContextAction={{ cast, layersInOrder }}
 			></span>
 			{@const _layerMoveCommitSync = clearCommittedLayerMove(doc.value)}
-			{@const extension = view(
-				[
-					'viewbox',
-					L.pick({
-						minX: 'x',
-						minY: 'y',
-						maxX: L.reread(({ x, width }) => x + width),
-						maxY: L.reread(({ y, height }) => y + height)
-					})
-				],
-				doc
+			{@const documentDisplayBounds = read(
+				L.reread(({ documentValue, textBoundsValue }) =>
+					documentDisplayBox(documentValue, textBoundsValue)
+				),
+				combine({ documentValue: doc, textBoundsValue: textBounds })
 			)}
+			{@const extension = documentDisplayBounds}
+			{@const documentDisplayRect = read(L.reread(boxToRect), documentDisplayBounds)}
 			{@const selectedLayersType = read(
 				L.reread(({ d, sl }) => {
 					return d.layers.items
@@ -3616,7 +3685,7 @@
 											fill="#fff"
 											stroke="#eee"
 											stroke-width="5"
-											{...doc.value.viewbox}
+											{...documentDisplayRect.value}
 										/>
 										<!-- svelte-ignore a11y_no_static_element_interactions -->
 										<path
@@ -3747,7 +3816,7 @@
 																<Symbol
 																	symbols={data.symbols}
 																	symbolId={el.value?.box.shape}
-																	shapeAttributes={el.value?.box.shape_attributes}
+																	shapeAttributes={symbolShapeAttributes(el.value?.box)}
 																	background_url={el.value?.style?.background_url}
 																	box={{
 																		x: el.value?.box.position_x,
@@ -7273,10 +7342,10 @@
 						{cameraFocus}
 					>
 						<rect
-							x={doc.value.viewbox.x}
-							y={doc.value.viewbox.y}
-							width={doc.value.viewbox.width}
-							height={doc.value.viewbox.height}
+							x={documentDisplayRect.value.x}
+							y={documentDisplayRect.value.y}
+							width={documentDisplayRect.value.width}
+							height={documentDisplayRect.value.height}
 							fill="white"
 							opacity="0.8"
 						/>
@@ -7681,8 +7750,7 @@
 									'edge-create-tool': true,
 									'selectable-create': true,
 									'active-create-tool': activeTool.value === 'edge',
-									'persistent-create-tool':
-										activeTool.value === 'edge' && edgeToolPersistent
+									'persistent-create-tool': activeTool.value === 'edge' && edgeToolPersistent
 								}}
 								role="button"
 								tabindex="0"
