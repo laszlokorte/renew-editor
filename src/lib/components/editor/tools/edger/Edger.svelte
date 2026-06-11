@@ -107,6 +107,7 @@
 
 	let preventNextClick = $state(false);
 	let reversePreview = $state(false);
+	const defaultTipSize = 1;
 
 	function socketStencil(socket) {
 		return (
@@ -196,12 +197,13 @@
 
 	function edgeArrowBox(source, target, reverse = false) {
 		const point = edgeArrowPoint(source, target, reverse);
+		const size = defaultTipSize;
 
 		return {
-			x: point.x - 4,
-			y: point.y - 4,
-			width: 8,
-			height: 8
+			x: point.x - size,
+			y: point.y - size,
+			width: 2 * size,
+			height: 2 * size
 		};
 	}
 
@@ -227,8 +229,8 @@
 		}
 
 		const arrowAngle = 0.4;
-		const arrowOuterRadius = 8;
-		const arrowInnerRadius = 8;
+		const arrowOuterRadius = 2 * defaultTipSize;
+		const arrowInnerRadius = 2 * defaultTipSize;
 		const nx = dx / len;
 		const ny = dy / len;
 		const outerBack = Math.cos(arrowAngle) * arrowOuterRadius;
