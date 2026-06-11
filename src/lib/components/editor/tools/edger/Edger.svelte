@@ -12,7 +12,9 @@
 		cameraTow = atom(),
 		validEdge,
 		newEdge,
-		newEdgeNode
+		newEdgeNode,
+		sourceLayerIds = undefined,
+		selectionHandles = false
 	} = $props();
 
 	const snapRadius = 20;
@@ -90,10 +92,60 @@
 	}
 
 	let preventNextClick = $state(false);
+	let reversePreview = $state(false);
+
+	/**
+	 * @param {{ x: number, y: number } | undefined} source
+	 * @param {{ x: number, y: number } | undefined} target
+	 * @param {number | undefined} scale
+	 * @param {boolean} reverse
+	 * @returns {string}
+	 */
+	function edgeArrowHeadPath(source, target, scale, reverse = false) {
+		if (!source || !target) {
+			return '';
+		}
+
+		const from = reverse ? target : source;
+		const to = reverse ? source : target;
+		const dx = to.x - from.x;
+		const dy = to.y - from.y;
+		const len = Math.hypot(dx, dy);
+
+		if (!len) {
+			return '';
+		}
+
+		const unit = Math.min(1, scale ?? 1);
+		const arrowAngle = 0.4;
+		const arrowOuterRadius = 8 * unit;
+		const arrowInnerRadius = 8 * unit;
+		const nx = dx / len;
+		const ny = dy / len;
+		const outerBack = Math.cos(arrowAngle) * arrowOuterRadius;
+		const outerSide = Math.sin(arrowAngle) * arrowOuterRadius;
+		const innerBack = arrowInnerRadius;
+		const leftX = to.x - nx * outerBack + ny * outerSide;
+		const leftY = to.y - ny * outerBack - nx * outerSide;
+		const innerX = to.x - nx * innerBack;
+		const innerY = to.y - ny * innerBack;
+		const rightX = to.x - nx * outerBack - ny * outerSide;
+		const rightY = to.y - ny * outerBack + nx * outerSide;
+
+		return `M ${to.x} ${to.y} L ${leftX} ${leftY} L ${innerX} ${innerY} L ${rightX} ${rightY} Z`;
+	}
+
+	function socketVisible(socket) {
+		if (isActive.value || !sourceLayerIds) {
+			return true;
+		}
+
+		return sourceLayerIds.includes(socket?.id?.layer);
+	}
 </script>
 
 <g
-	class={{ 'edge-container': true, active: isActive.value }}
+	class={{ 'edge-container': true, active: isActive.value, 'selection-handles': selectionHandles }}
 	role="button"
 	tabindex="-1"
 	onclick={(evt) => {
@@ -125,6 +177,7 @@
 			return;
 		}
 		evt.preventDefault();
+		reversePreview = evt.shiftKey;
 		evt.currentTarget.focus({
 			preventScroll: true
 		});
@@ -143,6 +196,7 @@
 			return;
 		}
 
+		reversePreview = evt.shiftKey;
 		const worldPos = clientToCanvas(evt.clientX, evt.clientY);
 		draftTargetPosition.value = worldPos;
 		cameraTow.value = worldPos;
@@ -174,6 +228,7 @@
 		if (!isActive.value) {
 			return;
 		}
+		reversePreview = evt.shiftKey;
 		cameraTow.value = undefined;
 
 		if (validConnection.value && newEdge) {
@@ -223,7 +278,7 @@
 
 	<g transform={rotationTransform.value} pointer-events="none">
 		{#each sockets.value as v, i (i)}
-			{#if !draftSourceId.value || validEdge(draftSourceId.value, v.id)}
+			{#if socketVisible(v) && (!draftSourceId.value || validEdge(draftSourceId.value, v.id))}
 				<circle
 					data-idx={JSON.stringify(v.id)}
 					cx={v.x}
@@ -258,6 +313,16 @@
 				pointer-events="none"
 				d="M{draftSourcePosition.value.x} {draftSourcePosition.value
 					.y} L {draftTargetSnappedPosition.value.x} {draftTargetSnappedPosition.value.y}"
+			/>
+			<path
+				class={{ 'edge-arrow': true, valid: validConnection.value }}
+				pointer-events="none"
+				d={edgeArrowHeadPath(
+					draftSourcePosition.value,
+					draftTargetSnappedPosition.value,
+					(snapRadiusScaled.value ?? snapRadius) / snapRadius,
+					reversePreview
+				)}
 			/>
 		{/if}
 	</g>
@@ -313,18 +378,39 @@
 		stroke-width: 4;
 	}
 
+	.selection-handles .socket-center {
+		stroke: var(--selection-color, #7af);
+	}
+
+	.selection-handles .socket-center.active-source,
+	.selection-handles .socket-center.active-target {
+		fill: var(--selection-color, #7af);
+		stroke: white;
+	}
+
 	.edge {
 		vector-effect: non-scaling-stroke;
-		stroke-width: 3px;
+		stroke-width: 1px;
 		stroke: black;
-		stroke-linecap: round;
-		stroke-opacity: 0.5;
+		stroke-linecap: butt;
+		stroke-opacity: 1;
 		pointer-events: none;
 	}
 
 	.edge.valid {
-		stroke: #23875d;
-		stroke-width: 5px;
+		stroke: black;
+		stroke-width: 1px;
 		stroke-opacity: 1;
+	}
+
+	.edge-arrow {
+		fill: black;
+		fill-opacity: 1;
+		pointer-events: none;
+	}
+
+	.edge-arrow.valid {
+		fill: black;
+		fill-opacity: 1;
 	}
 </style>

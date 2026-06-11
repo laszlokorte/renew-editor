@@ -237,7 +237,6 @@
 			}
 		},
 		{ name: 'Pen', id: 'pen' },
-		{ name: 'Edge', id: 'edge' },
 		{ name: 'Polygon', id: 'polygon' },
 		{ name: 'Spacer', id: 'spacer' }
 
@@ -1658,6 +1657,54 @@
 		return item?.data?.content?.semantic_tag ?? item?.name;
 	}
 
+	const EDGE_CREATE_TOOL_ENTRY = Object.freeze({ kind: 'edge-tool', name: 'Edge' });
+	const PRIMITIVE_GROUP_ORDER = ['Nodes', 'Text', 'FA'];
+	const PRIMITIVE_ITEM_ORDER = {
+		Nodes: ['Transition', 'Place'],
+		Text: ['Free Text', 'Inscription'],
+		FA: ['State']
+	};
+
+	function orderedIndex(order, value) {
+		const index = order.indexOf(value);
+		return index === -1 ? order.length : index;
+	}
+
+	function orderedPrimitiveItems(group) {
+		const itemOrder = PRIMITIVE_ITEM_ORDER[group?.name] ?? [];
+
+		return [...(group?.items ?? [])].sort(
+			(a, b) =>
+				orderedIndex(itemOrder, a.name) - orderedIndex(itemOrder, b.name) ||
+				a.name.localeCompare(b.name)
+		);
+	}
+
+	function createToolGroups(groups) {
+		return [...(groups ?? [])]
+			.sort(
+				(a, b) =>
+					orderedIndex(PRIMITIVE_GROUP_ORDER, a.name) -
+						orderedIndex(PRIMITIVE_GROUP_ORDER, b.name) || a.name.localeCompare(b.name)
+			)
+			.map((group) => {
+				const entries = orderedPrimitiveItems(group);
+
+				return {
+					...group,
+					entries: group.name === 'Nodes' ? [...entries, EDGE_CREATE_TOOL_ENTRY] : entries
+				};
+			});
+	}
+
+	function isEdgeCreateToolEntry(entry) {
+		return entry?.kind === EDGE_CREATE_TOOL_ENTRY.kind;
+	}
+
+	function createToolEntryId(entry) {
+		return isEdgeCreateToolEntry(entry) ? 'edge' : primitiveToolId(entry);
+	}
+
 	function isSelectableCreatePrimitive(item) {
 		return item?.data?.mimeType === LAYER_PRIMITIVE_MIME_TYPE;
 	}
@@ -2588,6 +2635,13 @@
 			{@const singleSelectedIsBoxOrEdge = read(
 				L.reread((x) => x == 'box' || x == 'edge'),
 				singleSelectedLayerType
+			)}
+			{@const selectedNodeLayerIds = read(
+				L.reread(({ d, sl }) => {
+					const byId = layerMap(d);
+					return sl.filter((id) => isNodeLayer(byId.get(id)));
+				}),
+				combine({ d: doc, sl: selectedLayers })
 			)}
 
 			<Modal bind:visible={showRename.value} closeLabel="Cancel">
@@ -5536,10 +5590,14 @@
 												{/each}
 											</g>
 										{/if}
-										{#if activeTool.value == 'edge'}
+										{#if activeTool.value === 'edge' || (activeTool.value === 'select' && selectedNodeLayerIds.value.length > 0)}
 											{#await data.socket_schemas then s}
 												{#await currentSyntaxValue then syntax}
 													<Edger
+														sourceLayerIds={activeTool.value === 'select'
+															? selectedNodeLayerIds.value
+															: undefined}
+														selectionHandles={activeTool.value === 'select'}
 														sockets={viewCombined(
 															[
 																L.reread(({ inOrder, flatLayers }) =>
@@ -7598,102 +7656,145 @@
 						}}
 					>
 						<small>Create</small>
+						{#snippet edgeCreateToolButton()}
+							<div
+								class={{
+									'create-primitive-tool': true,
+									'edge-create-tool': true,
+									'selectable-create': true,
+									'active-create-tool': activeTool.value === 'edge'
+								}}
+								role="button"
+								tabindex="0"
+								aria-pressed={activeTool.value === 'edge'}
+								title="Edge"
+								style="display: grid; justify-content: center; align-content: center;"
+								onclick={(evt) => {
+									evt.preventDefault();
+									evt.stopPropagation();
+									selectEditorTool('edge', cast);
+								}}
+								onkeydown={(evt) => {
+									if (evt.key === 'Enter' || evt.key === ' ') {
+										evt.preventDefault();
+										selectEditorTool('edge', cast);
+									}
+								}}
+							>
+								<svg viewBox="-4 -4 40 40" width="32" aria-hidden="true">
+									<path
+										d="M 5 25 L 26 4"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2.5"
+										stroke-linecap="butt"
+									/>
+									<path d="M 26 4 L 22 15 L 15 8 Z" fill="currentColor" />
+								</svg>
+							</div>
+						{/snippet}
 						{#await data.primitives}
 							-
 						{:then groups}
-							{#each groups as g}
+							{#each createToolGroups(groups) as g}
 								<div style="border-top: 1px solid gray;  padding-top: 1ex">
-									{#each g.items as item}
+									{#each g.entries as item (createToolEntryId(item))}
 										{@const linkedCreateTargetId = singleSelectedIsBoxOrEdge.value
 											? singleSelectedLayer.value.id
 											: undefined}
-										<div
-											class={{
-												'create-primitive-tool': true,
-												'selectable-create': isSelectableCreatePrimitive(item),
-												'disabled-create-tool':
-													isSelectableCreatePrimitive(item) &&
-													!canActivateCreatePrimitive(item, linkedCreateTargetId),
-												'active-create-tool': isActiveCreatePrimitive(item),
-												'persistent-create-tool':
-													isActiveCreatePrimitive(item) && activeCreateTool.value?.persistent
-											}}
-											role="button"
-											tabindex={canActivateCreatePrimitive(item, linkedCreateTargetId) ? '0' : '-1'}
-											aria-disabled={!canActivateCreatePrimitive(item, linkedCreateTargetId)}
-											aria-pressed={isSelectableCreatePrimitive(item)
-												? isActiveCreatePrimitive(item)
-												: undefined}
-											style="display: grid; justify-content: center; align-content: center;"
-											draggable={isSelectableCreatePrimitive(item)}
-											style:touch-action="none"
-											onclick={(evt) => {
-												if (activateCreatePrimitive(item, false, linkedCreateTargetId, cast)) {
-													evt.preventDefault();
-													evt.stopPropagation();
-												}
-											}}
-											ondblclick={(evt) => {
-												if (activateCreatePrimitive(item, true, linkedCreateTargetId, cast)) {
-													evt.preventDefault();
-													evt.stopPropagation();
-												}
-											}}
-											onkeydown={(evt) => {
-												if (
-													canActivateCreatePrimitive(item, linkedCreateTargetId) &&
-													(evt.key === 'Enter' || evt.key === ' ')
-												) {
-													evt.preventDefault();
-													activateCreatePrimitive(item, false, linkedCreateTargetId, cast);
-												}
-											}}
-											ondragstart={(evt) => {
-												const d = {
-													...item.data,
-													content: {
-														...item.data.content,
-														hyperlink: item.data.content.hyperlink ? true : undefined
-													}
-												};
-
-												evt.stopPropagation();
-												evt.dataTransfer.effectAllowed = 'copy';
-												evt.currentTarget.setAttribute('aria-grabbed', 'true');
-												const positionInfo = evt.currentTarget.getBoundingClientRect();
-												evt.dataTransfer.setDragImage(
-													evt.currentTarget,
-													positionInfo.width * d.alignX,
-													positionInfo.height * d.alignY
-												);
-												const data = d.dynamicContent
-													? d.dynamicContent(properties.value)
-													: d.content;
-												evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
-
-												// Work-around for
-												// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-												evt.dataTransfer.setData(
-													'text/plain',
-													JSON.stringify({
-														mime: d.mimeType,
-														data: data
-													})
-												);
-											}}
-										>
-											<svg
+										{#if isEdgeCreateToolEntry(item)}
+											{@render edgeCreateToolButton()}
+										{:else}
+											<div
 												class={{
-													droppable: isSelectableCreatePrimitive(item)
+													'create-primitive-tool': true,
+													'selectable-create': isSelectableCreatePrimitive(item),
+													'disabled-create-tool':
+														isSelectableCreatePrimitive(item) &&
+														!canActivateCreatePrimitive(item, linkedCreateTargetId),
+													'active-create-tool': isActiveCreatePrimitive(item),
+													'persistent-create-tool':
+														isActiveCreatePrimitive(item) && activeCreateTool.value?.persistent
 												}}
-												style:opacity={isSelectableCreatePrimitive(item) ? 1 : 0.5}
-												viewBox="-4 -4 40 40"
-												width="32"
+												role="button"
+												tabindex={canActivateCreatePrimitive(item, linkedCreateTargetId)
+													? '0'
+													: '-1'}
+												aria-disabled={!canActivateCreatePrimitive(item, linkedCreateTargetId)}
+												aria-pressed={isSelectableCreatePrimitive(item)
+													? isActiveCreatePrimitive(item)
+													: undefined}
+												style="display: grid; justify-content: center; align-content: center;"
+												draggable={isSelectableCreatePrimitive(item)}
+												style:touch-action="none"
+												onclick={(evt) => {
+													if (activateCreatePrimitive(item, false, linkedCreateTargetId, cast)) {
+														evt.preventDefault();
+														evt.stopPropagation();
+													}
+												}}
+												ondblclick={(evt) => {
+													if (activateCreatePrimitive(item, true, linkedCreateTargetId, cast)) {
+														evt.preventDefault();
+														evt.stopPropagation();
+													}
+												}}
+												onkeydown={(evt) => {
+													if (
+														canActivateCreatePrimitive(item, linkedCreateTargetId) &&
+														(evt.key === 'Enter' || evt.key === ' ')
+													) {
+														evt.preventDefault();
+														activateCreatePrimitive(item, false, linkedCreateTargetId, cast);
+													}
+												}}
+												ondragstart={(evt) => {
+													const d = {
+														...item.data,
+														content: {
+															...item.data.content,
+															hyperlink: item.data.content.hyperlink ? true : undefined
+														}
+													};
+
+													evt.stopPropagation();
+													evt.dataTransfer.effectAllowed = 'copy';
+													evt.currentTarget.setAttribute('aria-grabbed', 'true');
+													const positionInfo = evt.currentTarget.getBoundingClientRect();
+													evt.dataTransfer.setDragImage(
+														evt.currentTarget,
+														positionInfo.width * d.alignX,
+														positionInfo.height * d.alignY
+													);
+													const data = d.dynamicContent
+														? d.dynamicContent(properties.value)
+														: d.content;
+													evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+
+													// Work-around for
+													// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+													evt.dataTransfer.setData(
+														'text/plain',
+														JSON.stringify({
+															mime: d.mimeType,
+															data: data
+														})
+													);
+												}}
 											>
-												<title>{item.name}</title>
-												{@html item.icon}
-											</svg>
-										</div>
+												<svg
+													class={{
+														droppable: isSelectableCreatePrimitive(item)
+													}}
+													style:opacity={isSelectableCreatePrimitive(item) ? 1 : 0.5}
+													viewBox="-4 -4 40 40"
+													width="32"
+												>
+													<title>{item.name}</title>
+													{@html item.icon}
+												</svg>
+											</div>
+										{/if}
 									{/each}
 								</div>
 							{/each}
