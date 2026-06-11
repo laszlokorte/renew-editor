@@ -64,6 +64,7 @@
 	import { describeError } from '$lib/errors';
 
 	const { data } = $props();
+	const defaultEdgeTargetTipSymbolShapeId = '84DC6617-D555-4BAB-BA33-04A5FA442F00';
 
 	export const forceHex = L.reread((v) => {
 		if (v === 'transparent') {
@@ -244,6 +245,7 @@
 		//{ name: 'Spline', id: 'spline' }
 	];
 	const activeTool = atom('select');
+	let edgeToolPersistent = $state(false);
 	const CREATE_TOOL_ID = 'create';
 	const LAYER_PRIMITIVE_MIME_TYPE = 'application/json+renewex-layer';
 	const BLUEPRINT_MIME_TYPE = 'application/json+renewex-blueprint';
@@ -1792,16 +1794,29 @@
 		}
 	}
 
-	function selectEditorTool(toolId, cast = undefined) {
+	function selectEditorTool(toolId, cast = undefined, persistent = false) {
 		clearSelectionForNonSelectTool(toolId, cast);
 		activeCreateTool.value = undefined;
 		primitiveCreation.value = undefined;
 		inlineTextEdit.value = undefined;
 		activeTool.value = toolId;
+		edgeToolPersistent = toolId === 'edge' && persistent;
 	}
 
 	function resetToSelectTool() {
 		selectEditorTool('select');
+	}
+
+	function resetTransientEdgeTool() {
+		if (activeTool.value === 'edge' && !edgeToolPersistent) {
+			resetToSelectTool();
+		}
+	}
+
+	function createdAutoEdgeTargetLayerId(layer, reverse = false) {
+		const bond = reverse ? layer?.edge?.source_bond : layer?.edge?.target_bond;
+
+		return bond?.layer_id ?? layer?.id;
 	}
 
 	function isPrimitiveCreationDrag(creation) {
@@ -2431,8 +2446,8 @@
 		primitiveCreation.value = undefined;
 	}
 
-	function resetPrimitiveToolFromCanvas(evt) {
-		if (!activeCreateTool.value) {
+	function resetToolFromCanvas(evt) {
+		if (!activeCreateTool.value && activeTool.value !== 'edge') {
 			return;
 		}
 
@@ -3656,7 +3671,7 @@
 												cancelPrimitiveCreation(evt);
 												cancelAreaSelection(evt);
 											}}
-											oncontextmenu={resetPrimitiveToolFromCanvas}
+											oncontextmenu={resetToolFromCanvas}
 										/>
 										{#if showGrid.value}
 											<Grid {rotationTransform} {frameBoxObject} {cameraScale} {gridDistance} />
@@ -4547,7 +4562,7 @@
 													)}
 												onpointercancel={cancelPrimitiveCreation}
 												onlostpointercapture={cancelPrimitiveCreation}
-												oncontextmenu={resetPrimitiveToolFromCanvas}
+												oncontextmenu={resetToolFromCanvas}
 												onclick={(evt) => {
 													evt.preventDefault();
 													evt.stopPropagation();
@@ -5594,6 +5609,7 @@
 											{#await data.socket_schemas then s}
 												{#await currentSyntaxValue then syntax}
 													<Edger
+														symbols={data.symbols}
 														sourceLayerIds={activeTool.value === 'select'
 															? selectedNodeLayerIds.value
 															: undefined}
@@ -5613,34 +5629,24 @@
 																				return socket_schema.sockets
 																					.map((sock) => {
 																						if (el.box) {
+																							const socketBox = {
+																								x: el.box.position_x,
+																								y: el.box.position_y,
+																								width: el.box.width,
+																								height: el.box.height,
+																								shape: el.box.shape,
+																								semantic_tag
+																							};
+
 																							return {
 																								id: {
 																									socket: sock.id,
 																									layer: id,
 																									semantic_tag
 																								},
-																								x: buildCoord(
-																									{
-																										x: el.box.position_x,
-																										y: el.box.position_y,
-																										width: el.box.width,
-																										height: el.box.height
-																									},
-																									'x',
-																									false,
-																									sock.x
-																								),
-																								y: buildCoord(
-																									{
-																										x: el.box.position_x,
-																										y: el.box.position_y,
-																										width: el.box.width,
-																										height: el.box.height
-																									},
-																									'y',
-																									false,
-																									sock.y
-																								)
+																								x: buildCoord(socketBox, 'x', false, sock.x),
+																								y: buildCoord(socketBox, 'y', false, sock.y),
+																								box: socketBox
 																							};
 																						} else if (el.text?.hint) {
 																							return {
@@ -5717,9 +5723,14 @@
 																		layer_id: e.source.layer
 																	},
 																	target: { socket_id: e.target.socket, layer_id: e.target.layer }
-																}).then((l) => {
-																	publishSelection(cast, [l.id]);
-																});
+																})
+																	.then(() => {
+																		publishSelection(cast, [e.target.layer]);
+																		resetTransientEdgeTool();
+																	})
+																	.catch((error) => {
+																		queueError(error, 'Edge could not be created');
+																	});
 															}
 														}}
 														newEdgeNode={(e, evt) => {
@@ -5748,9 +5759,16 @@
 																			autoNodeType.edge.source_tip_symbol_shape_id,
 																		semantic_tag: autoNodeType.edge.semantic_tag
 																	}
-																}).then((l) => {
-																	publishSelection(cast, [l.id]);
-																});
+																})
+																	.then((l) => {
+																		publishSelection(cast, [
+																			createdAutoEdgeTargetLayerId(l, evt.shiftKey)
+																		]);
+																		resetTransientEdgeTool();
+																	})
+																	.catch((error) => {
+																		queueError(error, 'Edge could not be created');
+																	});
 															}
 														}}
 													/>
@@ -7662,7 +7680,9 @@
 									'create-primitive-tool': true,
 									'edge-create-tool': true,
 									'selectable-create': true,
-									'active-create-tool': activeTool.value === 'edge'
+									'active-create-tool': activeTool.value === 'edge',
+									'persistent-create-tool':
+										activeTool.value === 'edge' && edgeToolPersistent
 								}}
 								role="button"
 								tabindex="0"
@@ -7672,12 +7692,17 @@
 								onclick={(evt) => {
 									evt.preventDefault();
 									evt.stopPropagation();
-									selectEditorTool('edge', cast);
+									selectEditorTool('edge', cast, false);
+								}}
+								ondblclick={(evt) => {
+									evt.preventDefault();
+									evt.stopPropagation();
+									selectEditorTool('edge', cast, true);
 								}}
 								onkeydown={(evt) => {
 									if (evt.key === 'Enter' || evt.key === ' ') {
 										evt.preventDefault();
-										selectEditorTool('edge', cast);
+										selectEditorTool('edge', cast, false);
 									}
 								}}
 							>
@@ -7689,7 +7714,18 @@
 										stroke-width="2.5"
 										stroke-linecap="butt"
 									/>
-									<path d="M 26 4 L 22 15 L 15 8 Z" fill="currentColor" />
+									<g fill="currentColor" stroke="currentColor" transform="rotate(-45 26 4)">
+										<Symbol
+											symbols={data.symbols}
+											symbolId={defaultEdgeTargetTipSymbolShapeId}
+											box={{
+												x: 23.5,
+												y: 1.5,
+												width: 5,
+												height: 5
+											}}
+										/>
+									</g>
 								</svg>
 							</div>
 						{/snippet}
