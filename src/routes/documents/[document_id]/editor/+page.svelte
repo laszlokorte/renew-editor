@@ -468,6 +468,45 @@
 		return isTransitionLayer(layer) || isPlaceLayer(layer);
 	}
 
+	function syntaxEdgeSourceTags(syntax) {
+		return new Set([
+			...Object.keys(syntax?.edgeWhitelist ?? {}),
+			...Object.keys(syntax?.autoEdgeNode ?? {})
+		].filter(Boolean));
+	}
+
+	function syntaxHasEdgeSourceTag(syntax, tag) {
+		const tags = syntaxEdgeSourceTags(syntax);
+		return tags.size === 0 || tags.has(tag);
+	}
+
+	function isSyntaxEdgeSourceLayer(layer, syntax) {
+		if (!layer?.semantic_tag) {
+			return false;
+		}
+
+		const tags = syntaxEdgeSourceTags(syntax);
+		return tags.size === 0 ? isNodeLayer(layer) : tags.has(layer.semantic_tag);
+	}
+
+	function syntaxEdgeSourceLayerIds(docValue, layerIds, syntax) {
+		const byId = layerMap(docValue);
+		return uniqueLayerIds(layerIds.filter((id) => isSyntaxEdgeSourceLayer(byId.get(id), syntax)));
+	}
+
+	function syntaxAllowsEdge(syntax, source, target) {
+		if (!source?.semantic_tag || !target?.semantic_tag) {
+			return false;
+		}
+
+		if (!syntaxHasEdgeSourceTag(syntax, source.semantic_tag)) {
+			return false;
+		}
+
+		const allowedTargets = syntax?.edgeWhitelist?.[source.semantic_tag];
+		return !allowedTargets || allowedTargets.indexOf(target.semantic_tag) > -1;
+	}
+
 	function isArcLayer(layer) {
 		const tag = layer?.semantic_tag ?? '';
 		return !!layer?.edge && tag.endsWith('ArcConnection');
@@ -2728,13 +2767,6 @@
 			{@const singleSelectedIsBoxOrEdge = read(
 				L.reread((x) => x == 'box' || x == 'edge'),
 				singleSelectedLayerType
-			)}
-			{@const selectedNodeLayerIds = read(
-				L.reread(({ d, sl }) => {
-					const byId = layerMap(d);
-					return sl.filter((id) => isNodeLayer(byId.get(id)));
-				}),
-				combine({ d: doc, sl: selectedLayers })
 			)}
 
 			<Modal bind:visible={showRename.value} closeLabel="Cancel">
@@ -5683,193 +5715,193 @@
 												{/each}
 											</g>
 										{/if}
-										{#if activeTool.value === 'edge' || (activeTool.value === 'select' && selectedNodeLayerIds.value.length > 0)}
+										{#if activeTool.value === 'edge' || activeTool.value === 'select'}
 											{#await data.socket_schemas then s}
 												{#await currentSyntaxValue then syntax}
-													<Edger
-														symbols={data.symbols}
-														sourceTipSymbolShapeId={syntaxEdgeTipSymbolShapeId(
-															syntax,
-															'source_tip_symbol_shape_id'
-														)}
-														targetTipSymbolShapeId={syntaxEdgeTipSymbolShapeId(
-															syntax,
-															'target_tip_symbol_shape_id'
-														)}
-														sourceLayerIds={activeTool.value === 'select'
-															? selectedNodeLayerIds.value
-															: undefined}
-														selectionHandles={activeTool.value === 'select'}
-														sockets={viewCombined(
-															[
-																L.reread(({ inOrder, flatLayers, dragState, moveDelta }) =>
-																	inOrder
-																		.filter(R.complement(R.prop('hidden')))
-																		.flatMap(({ index, id, depth, hidden }) => {
-																			const el = R.find((l) => l.id === id, flatLayers);
-																			const iid = el?.interface_id;
-																			const semantic_tag = el?.semantic_tag;
+													{@const selectedEdgeSourceLayerIds = read(
+														L.reread(({ d, sl }) => syntaxEdgeSourceLayerIds(d, sl, syntax)),
+														combine({ d: doc, sl: selectedLayers })
+													)}
+													{@const visibleEdgeSourceLayerIds = read(
+														L.reread(({ d, inOrder }) =>
+															syntaxEdgeSourceLayerIds(d, visibleLayerIds(inOrder), syntax)
+														),
+														combine({ d: doc, inOrder: layersInOrder })
+													)}
+													{#if activeTool.value === 'edge' || selectedEdgeSourceLayerIds.value.length > 0}
+														<Edger
+															symbols={data.symbols}
+															sourceTipSymbolShapeId={syntaxEdgeTipSymbolShapeId(
+																syntax,
+																'source_tip_symbol_shape_id'
+															)}
+															targetTipSymbolShapeId={syntaxEdgeTipSymbolShapeId(
+																syntax,
+																'target_tip_symbol_shape_id'
+															)}
+															sourceLayerIds={activeTool.value === 'select'
+																? selectedEdgeSourceLayerIds.value
+																: visibleEdgeSourceLayerIds.value}
+															selectionHandles={activeTool.value === 'select'}
+															sockets={viewCombined(
+																[
+																	L.reread(({ inOrder, flatLayers, dragState, moveDelta }) =>
+																		inOrder
+																			.filter(R.complement(R.prop('hidden')))
+																			.flatMap(({ index, id, depth, hidden }) => {
+																				const el = R.find((l) => l.id === id, flatLayers);
+																				const iid = el?.interface_id;
+																				const semantic_tag = el?.semantic_tag;
 
-																			if (iid) {
-																				const socket_schema = s.get(iid);
-																				if (!socket_schema) {
+																				if (iid) {
+																					const socket_schema = s.get(iid);
+																					if (!socket_schema) {
+																						return [];
+																					}
+
+																					return (socket_schema.sockets ?? [])
+																						.map((sock) => {
+																							if (el.box) {
+																								const socketBox = movedSocketBox(
+																									{
+																										x: el.box.position_x,
+																										y: el.box.position_y,
+																										width: el.box.width,
+																										height: el.box.height,
+																										shape: el.box.shape,
+																										semantic_tag
+																									},
+																									id,
+																									inOrder,
+																									dragState,
+																									moveDelta
+																								);
+
+																								return {
+																									id: {
+																										socket: sock.id,
+																										layer: id,
+																										semantic_tag,
+																										stencil: socket_schema.stencil
+																									},
+																									socket_schema,
+																									x: buildCoord(socketBox, 'x', false, sock.x),
+																									y: buildCoord(socketBox, 'y', false, sock.y),
+																									box: socketBox
+																								};
+																							} else if (el.text?.hint) {
+																								const socketBox = movedSocketBox(
+																									{
+																										x: el.text.hint.x,
+																										y: el.text.hint.y,
+																										width: el.text.hint.width,
+																										height: el.text.hint.height
+																									},
+																									id,
+																									inOrder,
+																									dragState,
+																									moveDelta
+																								);
+
+																								return {
+																									id: {
+																										socket: sock.id,
+																										layer: id,
+																										stencil: socket_schema.stencil
+																									},
+																									socket_schema,
+																									x: buildCoord(socketBox, 'x', false, sock.x),
+																									y: buildCoord(socketBox, 'y', false, sock.y)
+																								};
+																							} else {
+																								return null;
+																							}
+																						})
+																						.filter(R.identity);
+																				} else {
 																					return [];
 																				}
-
-																				return (socket_schema.sockets ?? [])
-																					.map((sock) => {
-																						if (el.box) {
-																							const socketBox = movedSocketBox(
-																								{
-																									x: el.box.position_x,
-																									y: el.box.position_y,
-																									width: el.box.width,
-																									height: el.box.height,
-																									shape: el.box.shape,
-																									semantic_tag
-																								},
-																								id,
-																								inOrder,
-																								dragState,
-																								moveDelta
-																							);
-
-																							return {
-																								id: {
-																									socket: sock.id,
-																									layer: id,
-																									semantic_tag,
-																									stencil: socket_schema.stencil
-																								},
-																								socket_schema,
-																								x: buildCoord(socketBox, 'x', false, sock.x),
-																								y: buildCoord(socketBox, 'y', false, sock.y),
-																								box: socketBox
-																							};
-																						} else if (el.text?.hint) {
-																							const socketBox = movedSocketBox(
-																								{
-																									x: el.text.hint.x,
-																									y: el.text.hint.y,
-																									width: el.text.hint.width,
-																									height: el.text.hint.height
-																								},
-																								id,
-																								inOrder,
-																								dragState,
-																								moveDelta
-																							);
-
-																							return {
-																								id: {
-																									socket: sock.id,
-																									layer: id,
-																									stencil: socket_schema.stencil
-																								},
-																								socket_schema,
-																								x: buildCoord(socketBox, 'x', false, sock.x),
-																								y: buildCoord(socketBox, 'y', false, sock.y)
-																							};
-																						} else {
-																							return null;
-																						}
-																					})
-																					.filter(R.identity);
-																			} else {
-																				return [];
-																			}
-																		})
-																)
-															],
-															{
-																inOrder: layersInOrder,
-																flatLayers: read(['layers', 'items'], doc),
-																dragState: groupDrag,
-																moveDelta: groupDragDelta
-															}
-														)}
-														{frameBoxObject}
-														{frameBoxPath}
-														clientToCanvas={liveLenses.clientToCanvas}
-														{rotationTransform}
-														{cameraScale}
-														validEdge={(source, target) => {
-															return (
-																!syntax.edgeWhitelist[source.semantic_tag] ||
-																syntax.edgeWhitelist[source.semantic_tag].indexOf(
-																	target.semantic_tag
-																) > -1
-															);
-														}}
-														newEdge={(e, evt) => {
-															if (evt.shiftKey) {
-																e = {
-																	source: e.target,
-																	target: e.source
-																};
-															}
-															const isValidEdge =
-																!syntax.edgeWhitelist[e.source.semantic_tag] ||
-																syntax.edgeWhitelist[e.source.semantic_tag].indexOf(
-																	e.target.semantic_tag
-																) > -1;
-															if (isValidEdge) {
-																dispatch('create_layer', {
-																	base_layer_id: L.get('id', singleSelectedLayer.value),
-																	source: {
-																		socket_id: e.source.socket,
-																		layer_id: e.source.layer
-																	},
-																	target: { socket_id: e.target.socket, layer_id: e.target.layer }
-																})
-																	.then(() => {
-																		publishSelection(cast, [e.target.layer]);
-																		resetTransientEdgeTool();
-																	})
-																	.catch((error) => {
-																		queueError(error, 'Edge could not be created');
-																	});
-															}
-														}}
-														newEdgeNode={(e, evt) => {
-															const autoNodeType = syntax.autoEdgeNode[e.source.semantic_tag];
-
-															if (autoNodeType) {
-																dispatch('create_layer', {
-																	base_layer_id: L.get(
-																		['id', L.valueOr(e.source.layer)],
-																		singleSelectedLayer.value
-																	),
-																	pos: e.newTarget,
-																	...autoNodeType.target,
-																	with_edge: {
+																			})
+																	)
+																],
+																{
+																	inOrder: layersInOrder,
+																	flatLayers: read(['layers', 'items'], doc),
+																	dragState: groupDrag,
+																	moveDelta: groupDragDelta
+																}
+															)}
+															{frameBoxObject}
+															{frameBoxPath}
+															clientToCanvas={liveLenses.clientToCanvas}
+															{rotationTransform}
+															{cameraScale}
+															validEdge={(source, target) => syntaxAllowsEdge(syntax, source, target)}
+															newEdge={(e, evt) => {
+																if (evt.shiftKey) {
+																	e = {
+																		source: e.target,
+																		target: e.source
+																	};
+																}
+																if (syntaxAllowsEdge(syntax, e.source, e.target)) {
+																	dispatch('create_layer', {
+																		base_layer_id: L.get('id', singleSelectedLayer.value),
 																		source: {
-																			...autoNodeType.edge.source,
+																			socket_id: e.source.socket,
 																			layer_id: e.source.layer
 																		},
-																		target: {
-																			...autoNodeType.edge.target
-																		},
-																		reverse: evt.shiftKey,
-																		target_tip_symbol_shape_id:
-																			autoNodeType.edge.target_tip_symbol_shape_id,
-																		source_tip_symbol_shape_id:
-																			autoNodeType.edge.source_tip_symbol_shape_id,
-																		semantic_tag: autoNodeType.edge.semantic_tag
-																	}
-																})
-																	.then((l) => {
-																		publishSelection(cast, [
-																			createdAutoEdgeTargetLayerId(l, evt.shiftKey)
-																		]);
-																		resetTransientEdgeTool();
+																		target: { socket_id: e.target.socket, layer_id: e.target.layer }
 																	})
-																	.catch((error) => {
-																		queueError(error, 'Edge could not be created');
-																	});
-															}
-														}}
-													/>
+																		.then(() => {
+																			publishSelection(cast, [e.target.layer]);
+																			resetTransientEdgeTool();
+																		})
+																		.catch((error) => {
+																			queueError(error, 'Edge could not be created');
+																		});
+																}
+															}}
+															newEdgeNode={(e, evt) => {
+																const autoNodeType = syntax.autoEdgeNode[e.source.semantic_tag];
+
+																if (autoNodeType) {
+																	dispatch('create_layer', {
+																		base_layer_id: L.get(
+																			['id', L.valueOr(e.source.layer)],
+																			singleSelectedLayer.value
+																		),
+																		pos: e.newTarget,
+																		...autoNodeType.target,
+																		with_edge: {
+																			source: {
+																				...autoNodeType.edge.source,
+																				layer_id: e.source.layer
+																			},
+																			target: {
+																				...autoNodeType.edge.target
+																			},
+																			reverse: evt.shiftKey,
+																			target_tip_symbol_shape_id:
+																				autoNodeType.edge.target_tip_symbol_shape_id,
+																			source_tip_symbol_shape_id:
+																				autoNodeType.edge.source_tip_symbol_shape_id,
+																			semantic_tag: autoNodeType.edge.semantic_tag
+																		}
+																	})
+																		.then((l) => {
+																			publishSelection(cast, [
+																				createdAutoEdgeTargetLayerId(l, evt.shiftKey)
+																			]);
+																			resetTransientEdgeTool();
+																		})
+																		.catch((error) => {
+																			queueError(error, 'Edge could not be created');
+																		});
+																}
+															}}
+														/>
+													{/if}
 												{/await}
 											{/await}
 										{/if}
@@ -7805,7 +7837,30 @@
 							>
 								<svg viewBox="-4 -4 40 40" width="32" aria-hidden="true">
 									<title>{item.name}</title>
-									{@html item.icon}
+									<path
+										d="M 5 27 L 27 5"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="butt"
+									/>
+									{#await currentSyntaxValue then syntax}
+										{@const targetTipSymbolId = syntaxEdgeTipSymbolShapeId(
+											syntax,
+											'target_tip_symbol_shape_id'
+										)}
+										{#if targetTipSymbolId}
+											<g transform="rotate(-45 27 5)">
+												<Symbol
+													symbols={data.symbols}
+													symbolId={targetTipSymbolId}
+													box={{ x: 24.25, y: 2.25, width: 5.5, height: 5.5 }}
+												/>
+											</g>
+										{:else}
+											{@html item.icon}
+										{/if}
+									{/await}
 								</svg>
 							</div>
 						{/snippet}
