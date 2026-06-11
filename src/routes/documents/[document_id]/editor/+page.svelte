@@ -87,6 +87,9 @@
 	const showMinimap = view(['minimap', L.valueOr(true)], viewOptions);
 	const gridView = view(['grid', L.valueOr({})], viewOptions);
 	const showGrid = view(['show', L.valueOr(false)], gridView);
+	const snapToGrid = view(['snap', L.valueOr(false)], gridView);
+	const penView = view(['pen', L.valueOr({})], viewOptions);
+	const penSmoothness = view(['smoothness', L.valueOr('linear')], penView);
 	const showHierarchy = view(['hierarchy', L.valueOr(true)], viewOptions);
 	const showCursors = view(['remoteCursors', L.valueOr(true)], viewOptions);
 	const showOtherSelections = view(['remoteSelections', L.valueOr(true)], viewOptions);
@@ -94,6 +97,11 @@
 	const gridDistance = view(['distance', L.valueOr(32)], gridView);
 
 	const showRename = atom(false);
+	const showSearch = atom(false);
+	const searchReplaceMode = atom(false);
+	const searchQuery = atom('');
+	const searchReplacement = atom('');
+	const searchCaseSensitive = atom(false);
 	const backoffValue = atom(undefined);
 	const pointerOffset = atom({ x: 0, y: 0 });
 	const gridDistanceExp = view(logLens(2), gridDistance);
@@ -684,6 +692,64 @@
 			cast,
 			visibleLayerIds(layersInOrderValue).filter((id) => !selected.has(id))
 		);
+	}
+
+	function searchableLayerText(layer) {
+		return [layer?.text?.body, layer?.semantic_tag, layer?.id]
+			.filter((value) => typeof value === 'string' && value.length > 0)
+			.join('\n');
+	}
+
+	function normalizeSearchText(value) {
+		const text = String(value ?? '');
+		return searchCaseSensitive.value ? text : text.toLocaleLowerCase();
+	}
+
+	function searchLayerIds(docValue, layersInOrderValue) {
+		const query = normalizeSearchText(searchQuery.value.trim());
+		if (!query) {
+			return [];
+		}
+
+		const byId = layerMap(docValue);
+		return visibleLayerIds(layersInOrderValue).filter((id) =>
+			normalizeSearchText(searchableLayerText(byId.get(id))).includes(query)
+		);
+	}
+
+	function runSearch(cast, docValue, layersInOrderValue) {
+		return publishSelection(cast, searchLayerIds(docValue, layersInOrderValue));
+	}
+
+	function escapeRegExp(value) {
+		return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	}
+
+	function replaceSearchMatches(cast, docValue, layersInOrderValue) {
+		const query = searchQuery.value;
+		if (!query) {
+			return;
+		}
+
+		const matchedIds = new Set(searchLayerIds(docValue, layersInOrderValue));
+		const replaceInIds = selectedLayers.value.length
+			? selectedLayers.value.filter((id) => matchedIds.has(id))
+			: [...matchedIds];
+		const byId = layerMap(docValue);
+		const pattern = new RegExp(escapeRegExp(query), searchCaseSensitive.value ? 'g' : 'gi');
+
+		for (const id of replaceInIds) {
+			const layer = byId.get(id);
+			if (!layer?.text?.body) {
+				continue;
+			}
+
+			const body = String(layer.text.body);
+			const nextBody = body.replace(pattern, searchReplacement.value);
+			if (nextBody !== body) {
+				cast('change_text_body', { layer_id: id, val: nextBody });
+			}
+		}
 	}
 
 	function mergeAreaSelection(cast, ids, add) {
@@ -1681,6 +1747,180 @@
 		};
 	}
 
+	function gridSize() {
+		const size = Number(gridDistance.value);
+		return Number.isFinite(size) && size > 0 ? size : 32;
+	}
+
+	function snapNumber(value) {
+		const size = gridSize();
+		return Math.round(value / size) * size;
+	}
+
+	function snapCanvasPoint(point) {
+		if (!snapToGrid.value || !point) {
+			return point;
+		}
+
+		return {
+			x: snapNumber(point.x),
+			y: snapNumber(point.y)
+		};
+	}
+
+	function selectedLayoutEntries(docValue, layersInOrderValue, textBoundsValue) {
+		const byId = layerMap(docValue);
+		return selectedTopLevelLayerIds(layersInOrderValue)
+			.map((id) => {
+				const info = layersInOrderValue.find((layerInfo) => layerInfo.id === id);
+				const box = layerBox(info, byId.get(id), textBoundsValue);
+				return finiteBox(box) ? { id, box } : null;
+			})
+			.filter(Boolean);
+	}
+
+	function moveLayoutEntry(dispatch, entry, dx, dy) {
+		if (!entry || (!dx && !dy)) {
+			return;
+		}
+
+		dispatch('move_layer_relative', {
+			layer_ids: [entry.id],
+			dx,
+			dy
+		}).catch(() => ({}));
+	}
+
+	function snapSelectedLayersToGrid(dispatch, docValue, layersInOrderValue, textBoundsValue) {
+		for (const entry of selectedLayoutEntries(docValue, layersInOrderValue, textBoundsValue)) {
+			moveLayoutEntry(
+				dispatch,
+				entry,
+				snapNumber(entry.box.minX) - entry.box.minX,
+				snapNumber(entry.box.minY) - entry.box.minY
+			);
+		}
+	}
+
+	function alignSelectedLayers(
+		dispatch,
+		docValue,
+		layersInOrderValue,
+		textBoundsValue,
+		axis,
+		mode
+	) {
+		const entries = selectedLayoutEntries(docValue, layersInOrderValue, textBoundsValue);
+		if (entries.length < 2) {
+			return;
+		}
+
+		const union = unionBoxes(entries.map(({ box }) => box));
+		const target =
+			axis === 'x'
+				? mode === 'min'
+					? union.minX
+					: mode === 'max'
+						? union.maxX
+						: (union.minX + union.maxX) / 2
+				: mode === 'min'
+					? union.minY
+					: mode === 'max'
+						? union.maxY
+						: (union.minY + union.maxY) / 2;
+
+		for (const entry of entries) {
+			const box = entry.box;
+			const current =
+				axis === 'x'
+					? mode === 'min'
+						? box.minX
+						: mode === 'max'
+							? box.maxX
+							: (box.minX + box.maxX) / 2
+					: mode === 'min'
+						? box.minY
+						: mode === 'max'
+							? box.maxY
+							: (box.minY + box.maxY) / 2;
+			moveLayoutEntry(
+				dispatch,
+				entry,
+				axis === 'x' ? target - current : 0,
+				axis === 'y' ? target - current : 0
+			);
+		}
+	}
+
+	function spreadSelectedLayers(dispatch, docValue, layersInOrderValue, textBoundsValue, axis) {
+		const entries = selectedLayoutEntries(docValue, layersInOrderValue, textBoundsValue).sort(
+			(a, b) =>
+				axis === 'x'
+					? (a.box.minX + a.box.maxX) / 2 - (b.box.minX + b.box.maxX) / 2
+					: (a.box.minY + a.box.maxY) / 2 - (b.box.minY + b.box.maxY) / 2
+		);
+
+		if (entries.length < 3) {
+			return;
+		}
+
+		const union = unionBoxes(entries.map(({ box }) => box));
+		const first = entries[0];
+		const start = axis === 'x' ? first.box.minX : first.box.minY;
+		const totalSize = entries.reduce(
+			(sum, entry) =>
+				sum + (axis === 'x' ? entry.box.maxX - entry.box.minX : entry.box.maxY - entry.box.minY),
+			0
+		);
+		const gap = Math.max(
+			0,
+			((axis === 'x' ? union.maxX - union.minX : union.maxY - union.minY) - totalSize) /
+				(entries.length - 1)
+		);
+		let cursor = start;
+
+		for (const entry of entries) {
+			const current = axis === 'x' ? entry.box.minX : entry.box.minY;
+			moveLayoutEntry(
+				dispatch,
+				entry,
+				axis === 'x' ? cursor - current : 0,
+				axis === 'y' ? cursor - current : 0
+			);
+			cursor +=
+				(axis === 'x' ? entry.box.maxX - entry.box.minX : entry.box.maxY - entry.box.minY) + gap;
+		}
+	}
+
+	function symbolIdByName(symbols, name) {
+		for (const [id, symbol] of symbols.entries()) {
+			if (symbol?.name === name) {
+				return id;
+			}
+		}
+
+		return '';
+	}
+
+	function changeSelectedBoxRoundCorners(cast, docValue, layersInOrderValue, symbols, radius) {
+		const byId = layerMap(docValue);
+		const shapeName = radius > 0 ? 'rect-round' : 'rect';
+		const shapeId = symbolIdByName(symbols, shapeName);
+		const attributes = radius > 0 ? { rx: radius, ry: radius } : {};
+
+		for (const id of selectedTopLevelLayerIds(layersInOrderValue)) {
+			if (!byId.get(id)?.box) {
+				continue;
+			}
+
+			cast('change_layer_shape', {
+				layer_id: id,
+				shape_id: shapeId,
+				attributes
+			});
+		}
+	}
+
 	function edgePoints(edge) {
 		const waypoints = L.get(localProp('waypoints'), edge) ?? edge.waypoints ?? [];
 		return [
@@ -1776,7 +2016,7 @@
 			return;
 		}
 
-		const start = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		const start = snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY));
 		rememberPasteLocation(start);
 		areaSelection.value = {
 			pointerId: evt.pointerId,
@@ -2024,7 +2264,7 @@
 
 		primitiveCreation.value = {
 			...primitiveCreation.value,
-			current: liveLenses.clientToCanvas(evt.clientX, evt.clientY),
+			current: snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY)),
 			screenCurrent: { x: evt.clientX, y: evt.clientY }
 		};
 		evt.preventDefault();
@@ -2173,7 +2413,7 @@
 			return false;
 		}
 
-		const position = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		const position = snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY));
 		rememberPasteLocation(position);
 		createPrimitiveLayer(tool, position, undefined, dispatch, baseLayerId);
 		backoffValue.value = true;
@@ -2189,7 +2429,7 @@
 			return false;
 		}
 
-		const position = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		const position = snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY));
 		rememberPasteLocation(position);
 		createPrimitiveLayer(
 			{ ...tool, linkedTargetId: layer.id },
@@ -2901,6 +3141,64 @@
 				</form>
 			</Modal>
 
+			<Modal bind:visible={showSearch.value} closeLabel="Close">
+				{@const foundLayerIds = searchLayerIds(doc.value, layersInOrder.value)}
+				<form
+					onsubmit={(evt) => {
+						evt.preventDefault();
+						runSearch(cast, doc.value, layersInOrder.value);
+					}}
+				>
+					<h2>{searchReplaceMode.value ? 'Search & Replace' : 'Search'}</h2>
+					<dl
+						style="display: grid; grid-template-columns: auto minmax(18em, 1fr); align-items: center; gap: 1ex; max-width: 54vw"
+					>
+						<dt>Search</dt>
+						<dd>
+							<input
+								class="form-field"
+								style="width: 100%; box-sizing: border-box;"
+								type="text"
+								bind:value={searchQuery.value}
+								autofocus
+							/>
+						</dd>
+						{#if searchReplaceMode.value}
+							<dt>Replace</dt>
+							<dd>
+								<input
+									class="form-field"
+									style="width: 100%; box-sizing: border-box;"
+									type="text"
+									bind:value={searchReplacement.value}
+								/>
+							</dd>
+						{/if}
+						<dt></dt>
+						<dd>
+							<label>
+								<input type="checkbox" bind:checked={searchCaseSensitive.value} />
+								Case sensitive</label
+							>
+						</dd>
+						<dt>Matches</dt>
+						<dd>{foundLayerIds.length}</dd>
+						<dt></dt>
+						<dd style="display: flex; gap: 1ex; justify-content: flex-end;">
+							<button type="submit" class="form-button">Select Matches</button>
+							{#if searchReplaceMode.value}
+								<button
+									type="button"
+									class="form-button"
+									onclick={() => replaceSearchMatches(cast, doc.value, layersInOrder.value)}
+									disabled={!foundLayerIds.length}>Replace</button
+								>
+							{/if}
+						</dd>
+					</dl>
+				</form>
+			</Modal>
+
 			<header class="header">
 				<div class="header-titel">
 					<a
@@ -3080,6 +3378,27 @@
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: 'f' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											searchReplaceMode.value = false;
+											showSearch.value = true;
+										}}>Search...</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: 'g' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											searchReplaceMode.value = true;
+											showSearch.value = true;
+										}}>Search & Replace...</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
 										disabled={selectedLayers.value.length === 0}
 										onclick={(evt) => {
 											evt.preventDefault();
@@ -3176,6 +3495,79 @@
 						<li class="menu-bar-item" tabindex="-1">
 							Layout
 							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<label class="menu-bar-item-button">
+										<input type="checkbox" bind:checked={snapToGrid.value} />
+										Toggle Snap to Grid</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length === 0}
+										onclick={(evt) => {
+											evt.preventDefault();
+											snapSelectedLayersToGrid(
+												dispatch,
+												doc.value,
+												layersInOrder.value,
+												textBounds.value
+											);
+										}}>Snap to Grid now</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Align</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'Left', axis: 'x', mode: 'min' }, { label: 'Horizontal Center', axis: 'x', mode: 'center' }, { label: 'Right', axis: 'x', mode: 'max' }, { label: 'Top', axis: 'y', mode: 'min' }, { label: 'Vertical Center', axis: 'y', mode: 'center' }, { label: 'Bottom', axis: 'y', mode: 'max' }] as { label, axis, mode }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length < 2}
+													onclick={(evt) => {
+														evt.preventDefault();
+														alignSelectedLayers(
+															dispatch,
+															doc.value,
+															layersInOrder.value,
+															textBounds.value,
+															axis,
+															mode
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Spread</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'Horizontal', axis: 'x' }, { label: 'Vertical', axis: 'y' }] as { label, axis }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length < 3}
+													onclick={(evt) => {
+														evt.preventDefault();
+														spreadSelectedLayers(
+															dispatch,
+															doc.value,
+															layersInOrder.value,
+															textBounds.value,
+															axis
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item"><div style="padding: 1ex">Reorder:</div></li>
 								{#each [{ target_rel: 'before_parent', label: 'Below Parent' }, { target_rel: 'after_parent', label: 'Above Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
 									<li class="menu-bar-menu-item">
@@ -3188,6 +3580,42 @@
 										>
 									</li>
 								{/each}
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							Attributes
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Round corners</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#await data.symbols then symbols}
+											{#each [{ label: 'None', radius: 0 }, { label: 'Small', radius: 6 }, { label: 'Medium', radius: 12 }, { label: 'Large', radius: 24 }] as { label, radius }}
+												<li class="menu-bar-menu-item">
+													<MenuBarButton
+														disabled={selectedLayers.value.length === 0}
+														onclick={(evt) => {
+															evt.preventDefault();
+															changeSelectedBoxRoundCorners(
+																cast,
+																doc.value,
+																layersInOrder.value,
+																symbols,
+																radius
+															);
+														}}>{label}</MenuBarButton
+													>
+												</li>
+											{/each}
+										{:catch}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton disabled>Symbols unavailable</MenuBarButton>
+											</li>
+										{/await}
+									</ul>
+								</li>
 							</ul>
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
@@ -5497,6 +5925,30 @@
 																]
 															})
 														},
+														topCenter: {
+															dx: 0,
+															dy: -1,
+															lens: L.pick({
+																x: L.lens(
+																	(o) => o && o.position_x + o.width / 2,
+																	(_n, o) => o
+																),
+																y: [
+																	L.lens(
+																		(o) => o && o.position_y,
+																		(n, o) => {
+																			const d = Math.min(n - o.position_y, o.height);
+
+																			return {
+																				...o,
+																				position_y: o.position_y + d,
+																				height: o.height - d
+																			};
+																		}
+																	)
+																]
+															})
+														},
 														topRight: {
 															dx: 1,
 															dy: -1,
@@ -5520,6 +5972,45 @@
 																	L.normalize(R.max(0)),
 																	L.add(b ? b.position_y : 0)
 																])
+															})
+														},
+														middleLeft: {
+															dx: -1,
+															dy: 0,
+															lens: L.pick({
+																x: [
+																	L.lens(
+																		(o) => o && o.position_x,
+																		(n, o) => {
+																			const d = Math.min(n - o.position_x, o.width);
+
+																			return {
+																				...o,
+																				position_x: o.position_x + d,
+																				width: o.width - d
+																			};
+																		}
+																	)
+																],
+																y: L.lens(
+																	(o) => o && o.position_y + o.height / 2,
+																	(_n, o) => o
+																)
+															})
+														},
+														middleRight: {
+															dx: 1,
+															dy: 0,
+															lens: L.pick({
+																x: L.choose((b) => [
+																	'width',
+																	L.normalize(R.max(0)),
+																	L.add(b ? b.position_x : 0)
+																]),
+																y: L.lens(
+																	(o) => o && o.position_y + o.height / 2,
+																	(_n, o) => o
+																)
 															})
 														},
 														bottomLeft: {
@@ -5556,6 +6047,21 @@
 																	L.normalize(R.max(0)),
 																	L.add(b ? b.position_x : 0)
 																]),
+																y: L.choose((b) => [
+																	'height',
+																	L.normalize(R.max(0)),
+																	L.add(b ? b.position_y : 0)
+																])
+															})
+														},
+														bottomCenter: {
+															dx: 0,
+															dy: 1,
+															lens: L.pick({
+																x: L.lens(
+																	(o) => o && o.position_x + o.width / 2,
+																	(_n, o) => o
+																),
 																y: L.choose((b) => [
 																	'height',
 																	L.normalize(R.max(0)),
@@ -5726,7 +6232,7 @@
 																role="button"
 																tabindex="-1"
 																transform="{layerMoveTransform(id, layersInOrder.value) ??
-																	''} translate({dy * cameraScale.value * 6},{dx *
+																	''} translate({dx * cameraScale.value * 6},{dy *
 																	cameraScale.value *
 																	6})"
 															>
@@ -5958,7 +6464,10 @@
 												onDraw={(points) => {
 													dispatch('create_layer', {
 														base_layer_id: L.get('id', singleSelectedLayer.value),
-														points
+														points,
+														style: {
+															smoothness: penSmoothness.value
+														}
 													}).then((l) => {
 														publishSelection(cast, [l.id]);
 													});
@@ -6089,6 +6598,46 @@
 									/></label
 								>
 							{/each}
+							{#if activeTool.value === 'pen'}
+								<hr class="tool-spacer" />
+								<div class="pretty-checkbox-group">
+									<span class="pretty-checkbox-group-head">Pen</span>
+									<div class="pretty-checkbox-group-body">
+										<label class="pretty-checkbox"
+											><input
+												class="pretty-checkbox-control"
+												type="radio"
+												value="linear"
+												bind:group={penSmoothness.value}
+											/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+												><title>Raw line</title>
+												<path
+													stroke="currentColor"
+													stroke-width="5"
+													d="M-12,-12L5,-4L-5,4L12,12"
+													fill="none"
+												/>
+											</svg></label
+										>
+										<label class="pretty-checkbox"
+											><input
+												class="pretty-checkbox-control"
+												type="radio"
+												value="autobezier"
+												bind:group={penSmoothness.value}
+											/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+												><title>Smooth line</title>
+												<path
+													stroke="currentColor"
+													stroke-width="5"
+													d="M-12,-12  C 32,-7  -32,7  12,12"
+													fill="none"
+												/>
+											</svg></label
+										>
+									</div>
+								</div>
+							{/if}
 							<hr class="tool-spacer" />
 						</div>
 

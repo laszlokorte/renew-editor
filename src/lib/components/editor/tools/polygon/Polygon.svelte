@@ -102,6 +102,18 @@
 				: '0,0 0,0',
 		combine({ p: pathHead, d: draftPos })
 	);
+	const previewPolygonPath = read(
+		({ p, d }) => {
+			const points = d ? [...p, d] : p;
+			return points.length > 2
+				? R.join(
+						' ',
+						points.map((point) => R.join(',', R.props(['x', 'y'], point)))
+					)
+				: '';
+		},
+		combine({ p: path, d: draftPos })
+	);
 
 	export function cancel() {
 		isActive.value = false;
@@ -138,7 +150,7 @@
 		if (dragging.value) {
 			dragging.value = false;
 		} else if (pathCanFinish.value) {
-			onDraw(path.value, false);
+			onDraw(path.value, true);
 			path.value = [];
 		}
 	}}
@@ -255,7 +267,7 @@
 
 		if (draftSnappedFinish.value) {
 			finishDraft.value = pathHead.value;
-			onDraw(path.value, false);
+			onDraw(path.value, true);
 			path.value = [];
 		} else if (draftSnappedClose.value) {
 			if (pathCanClose.value) {
@@ -303,6 +315,9 @@
 />
 
 <g transform={rotationTransform.value} pointer-events="none">
+	{#if previewPolygonPath.value}
+		<polygon points={previewPolygonPath.value} class="draft-fill" />
+	{/if}
 	<polyline points={pathPath.value} fill="none" class="draft-line" />
 
 	{#if dragging.value}
@@ -361,6 +376,12 @@
 		stroke-opacity: 0.8;
 		vector-effect: non-scaling-stroke;
 		outline: none;
+	}
+
+	.draft-fill {
+		fill: #70db93;
+		fill-opacity: 0.25;
+		stroke: none;
 	}
 
 	.draft-line-head {

@@ -56,6 +56,16 @@
 	);
 
 	let preventNextClick = $state(false);
+
+	function drawablePath() {
+		if (path.value.length !== 1) {
+			return path.value;
+		}
+
+		const point = path.value[0];
+		const offset = Math.max(cameraScale.value, 0.1);
+		return [point, { x: point.x + offset, y: point.y }];
+	}
 </script>
 
 <path
@@ -116,14 +126,15 @@
 		if (!evt.isPrimary) {
 			return;
 		}
+		const points = drawablePath();
 		if (draftDrawing) {
-			if (path.value.length > 1) {
-				draftDrawing.value = path.value;
+			if (points.length > 1) {
+				draftDrawing.value = points;
 				preventNextClick = true;
 			}
 		} else if (onDraw) {
-			if (path.value.length > 1) {
-				onDraw(path.value);
+			if (points.length > 1) {
+				onDraw(points);
 				preventNextClick = true;
 			}
 		}

@@ -44,11 +44,7 @@
 	const bindingDialogPosition = atom(null);
 	const selectedTransitionId = atom(null);
 	const netInstanceActions = { value: null };
-	const breakPointEntriesResource = {
-		id: `${data.simulation.id}:breakpoints`,
-		topic: `live:simulation_breakpoints:${data.simulation.id}`,
-		content: { breakpoints: [] }
-	};
+	const breakPointEntriesResource = data.simulation.breakpoints;
 
 	const cameraSettings = atom({
 		plane: {
