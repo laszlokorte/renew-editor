@@ -148,6 +148,7 @@ export class LiveState {
 				.join()
 				.receive('ok', ({ connection_id }) => {
 					this.connection_id = connection_id;
+					this.eventTarget.dispatchEvent(new CustomEvent('livestate-connect'));
 				})
 				.receive('error', (e) => {
 					this.emitError('channel join error', e);

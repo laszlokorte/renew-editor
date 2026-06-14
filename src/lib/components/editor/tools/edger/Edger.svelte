@@ -19,12 +19,13 @@
 		newEdge,
 		newEdgeNode,
 		sourceLayerIds = undefined,
-		selectionHandles = false
+		selectionHandles = false,
+		onCancelToSelect = undefined
 	} = $props();
 
 	const snapRadius = 20;
-	const selectionHandleHitRadius = 5;
-	const selectionHandleCenterRadius = 4;
+	const selectionHandleHitRadius = 4;
+	const selectionHandleCenterRadius = 3;
 	const snapRadiusScaled = view(R.compose(R.multiply(snapRadius), R.min(1)), cameraScale);
 	const draft = atom({});
 
@@ -254,6 +255,74 @@
 		return sourceLayerIds.includes(socket?.id?.layer);
 	}
 
+	function socketIsSelectionHandle(socket) {
+		if (!selectionHandles) {
+			return true;
+		}
+
+		const box = socket?.box;
+		if (!box) {
+			return true;
+		}
+
+		return isCenterSocket(socket, box.x + box.width / 2, box.y + box.height / 2);
+	}
+
+	function socketBoxContainsPoint(socket, point) {
+		const box = socket?.box;
+
+		if (!box || !point) {
+			return false;
+		}
+
+		return (
+			point.x >= box.x &&
+			point.x <= box.x + box.width &&
+			point.y >= box.y &&
+			point.y <= box.y + box.height
+		);
+	}
+
+	function socketHandleContainsPoint(socket, point) {
+		if (!socket || !point) {
+			return false;
+		}
+
+		return Math.hypot(socket.x - point.x, socket.y - point.y) <= socketHitRadius();
+	}
+
+	function socketContainsPoint(socket, point) {
+		return selectionHandles
+			? socketHandleContainsPoint(socket, point)
+			: socketBoxContainsPoint(socket, point);
+	}
+
+	function socketAtPosition(position) {
+		for (const socket of [...(sockets.value ?? [])].reverse()) {
+			if (
+				!socketVisible(socket) ||
+				!socketIsSelectionHandle(socket) ||
+				!socketContainsPoint(socket, position)
+			) {
+				continue;
+			}
+
+			return socket.id;
+		}
+
+		return null;
+	}
+
+	function sourceIdFromEvent(evt) {
+		const encodedId = evt.target.getAttribute('data-idx');
+
+		if (encodedId) {
+			return JSON.parse(encodedId);
+		}
+
+		return socketAtPosition(clientToCanvas(evt.clientX, evt.clientY));
+	}
+
 	function scaledRadius(radius) {
 		return radius * Math.min(1, cameraScale.value ?? 1);
 	}
@@ -287,7 +356,9 @@
 	}}
 	oncontextmenu={(evt) => {
 		evt.preventDefault();
+		evt.stopPropagation();
 		isActive.value = false;
+		onCancelToSelect?.();
 	}}
 	onkeydown={(evt) => {
 		if (!isActive.value) {
@@ -296,6 +367,7 @@
 		evt.preventDefault();
 		if (evt.key === 'Escape' || evt.key === 'Esc') {
 			isActive.value = false;
+			onCancelToSelect?.();
 		}
 		if (evt.key === 'Tab') {
 			draftTargetSnapCycle.value += 1;
@@ -304,6 +376,7 @@
 	onpointerdown={(evt) => {
 		if (!evt.isPrimary || !E.isLeftButton(evt)) {
 			isActive.value = false;
+			onCancelToSelect?.();
 
 			return;
 		}
@@ -312,7 +385,7 @@
 		evt.currentTarget.focus({
 			preventScroll: true
 		});
-		const nodeId = JSON.parse(evt.target.getAttribute('data-idx'));
+		const nodeId = sourceIdFromEvent(evt);
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		if (nodeId !== null) {
 			draftSourceId.value = nodeId;
@@ -384,12 +457,14 @@
 		preventNextClick = true;
 
 		isActive.value = false;
+		onCancelToSelect?.();
 	}}
 	onpointercancel={(evt) => {
 		if (!evt.isPrimary) {
 			return;
 		}
 		isActive.value = false;
+		onCancelToSelect?.();
 		cameraTow.value = undefined;
 	}}
 	onlostpointercapture={(evt) => {
@@ -397,6 +472,7 @@
 			return;
 		}
 		isActive.value = false;
+		onCancelToSelect?.();
 		cameraTow.value = undefined;
 	}}
 >
@@ -404,12 +480,15 @@
 		d={frameBoxPath.value}
 		pointer-events="all"
 		fill="none"
-		class={{ 'edge-surface': true, active: isActive.value || preventNextClick }}
+		class={{
+			'edge-surface': true,
+			active: isActive.value || preventNextClick || !selectionHandles
+		}}
 	/>
 
 	<g transform={rotationTransform.value} pointer-events="none">
 		{#each sockets.value as v, i (i)}
-			{#if socketVisible(v) && (!draftSourceId.value || validEdge(draftSourceId.value, v.id))}
+			{#if socketVisible(v) && socketIsSelectionHandle(v) && (!draftSourceId.value || validEdge(draftSourceId.value, v.id))}
 				<circle
 					data-idx={JSON.stringify(v.id)}
 					cx={v.x}

@@ -5,8 +5,15 @@
 	import * as C from '$lib/combinators';
 	import { atom, view, read } from '$lib/reactivity/atom.svelte.js';
 
-	const { frameBoxPath, clientToCanvas, cameraScale, rotationTransform, draftDrawing, onDraw } =
-		$props();
+	const {
+		frameBoxPath,
+		clientToCanvas,
+		cameraScale,
+		rotationTransform,
+		draftDrawing,
+		smoothnessAmount = 50,
+		onDraw
+	} = $props();
 
 	const pen = atom({});
 	const path = view(['path', L.define([])], pen);
@@ -15,13 +22,19 @@
 	export function cancel() {
 		isActive.value = false;
 	}
+
+	function sampleDistance() {
+		const amount = Math.max(0, Math.min(100, Number(smoothnessAmount) || 0));
+		return cameraScale.value * (2 + amount / 10);
+	}
+
 	const currentPath = view(
 		[
 			L.setter(
 				// discard very close samples
 				R.dropRepeatsWith(
 					R.compose(
-						(x) => x < cameraScale.value * 10,
+						(x) => x < sampleDistance(),
 						Math.sqrt,
 						R.uncurryN(
 							2,
@@ -56,6 +69,9 @@
 	);
 
 	let preventNextClick = $state(false);
+	let pointerStart = $state(null);
+	let didDrag = $state(false);
+	let ignoreNextLostPointerCapture = $state(false);
 
 	function drawablePath() {
 		if (path.value.length !== 1) {
@@ -65,6 +81,24 @@
 		const point = path.value[0];
 		const offset = Math.max(cameraScale.value, 0.1);
 		return [point, { x: point.x + offset, y: point.y }];
+	}
+
+	function emitPath(points) {
+		if (draftDrawing) {
+			draftDrawing.value = points;
+		} else if (onDraw) {
+			onDraw(points);
+		}
+		preventNextClick = true;
+	}
+
+	function finishPath() {
+		if (path.value.length > 0) {
+			emitPath(drawablePath());
+		}
+		path.value = [];
+		pointerStart = null;
+		didDrag = false;
 	}
 </script>
 
@@ -82,6 +116,11 @@
 			evt.stopPropagation();
 		}
 	}}
+	ondblclick={(evt) => {
+		evt.preventDefault();
+		evt.stopPropagation();
+		finishPath();
+	}}
 	onkeydown={(evt) => {
 		if (evt.key === 'Escape' || evt.key === 'Esc') {
 			if (isActive.value) {
@@ -89,10 +128,15 @@
 				isActive.value = false;
 			}
 		}
+		if (evt.key === 'Enter') {
+			evt.preventDefault();
+			evt.stopPropagation();
+			finishPath();
+		}
 	}}
 	oncontextmenu={(evt) => {
 		evt.preventDefault();
-		isActive.value = false;
+		finishPath();
 	}}
 	onpointerdown={(evt) => {
 		if (!evt.isPrimary && isActive.value) {
@@ -110,7 +154,10 @@
 
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 
-		currentPath.value = clientToCanvas(evt.clientX, evt.clientY);
+		const point = clientToCanvas(evt.clientX, evt.clientY);
+		pointerStart = point;
+		didDrag = false;
+		currentPath.value = point;
 	}}
 	onpointermove={(evt) => {
 		if (!evt.isPrimary) {
@@ -120,25 +167,30 @@
 			return;
 		}
 
-		currentPath.value = clientToCanvas(evt.clientX, evt.clientY);
+		const point = clientToCanvas(evt.clientX, evt.clientY);
+		if (pointerStart && Math.hypot(point.x - pointerStart.x, point.y - pointerStart.y) > 2) {
+			didDrag = true;
+		}
+		currentPath.value = point;
 	}}
 	onpointerup={(evt) => {
 		if (!evt.isPrimary) {
 			return;
 		}
-		const points = drawablePath();
-		if (draftDrawing) {
-			if (points.length > 1) {
-				draftDrawing.value = points;
-				preventNextClick = true;
-			}
-		} else if (onDraw) {
-			if (points.length > 1) {
-				onDraw(points);
-				preventNextClick = true;
-			}
+		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+			ignoreNextLostPointerCapture = true;
+			evt.currentTarget.releasePointerCapture(evt.pointerId);
 		}
-		isActive.value = false;
+
+		if (didDrag) {
+			const points = drawablePath();
+			if (points.length > 1) {
+				emitPath(points);
+			}
+			path.value = [];
+		}
+		pointerStart = null;
+		didDrag = false;
 	}}
 	onpointercancel={(evt) => {
 		if (!evt.isPrimary) {
@@ -148,6 +200,10 @@
 	}}
 	onlostpointercapture={(evt) => {
 		if (!evt.isPrimary) {
+			return;
+		}
+		if (ignoreNextLostPointerCapture) {
+			ignoreNextLostPointerCapture = false;
 			return;
 		}
 		isActive.value = false;

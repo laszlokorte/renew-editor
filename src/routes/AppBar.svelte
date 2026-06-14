@@ -1,4 +1,5 @@
 <script>
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import * as env from '../envvars';
 	import CurrentAuthState from './auth/CurrentAuthState.svelte';
@@ -18,9 +19,38 @@
 		active = null
 	} = $props();
 
-	function discardError() {
-		update((e) => e.slice(1), errors);
+	function discardError(index) {
+		update((items) => items.filter((_, itemIndex) => itemIndex !== index), errors);
 	}
+
+	function discardAllErrors() {
+		errors.value = [];
+	}
+
+	function formatCopyText(error) {
+		const description = describeError(error);
+		const title = description.status
+			? `${description.title} ${description.status}`
+			: description.title;
+
+		return [title, description.message, description.detail].filter(Boolean).join('\n\n');
+	}
+
+	function copyError(error) {
+		navigator.clipboard?.writeText(formatCopyText(error));
+	}
+
+	onMount(() => {
+		function handleAppError(evt) {
+			errors.value = [...errors.value, evt.detail ?? evt];
+		}
+
+		window.addEventListener('petristation:error', handleAppError);
+
+		return () => {
+			window.removeEventListener('petristation:error', handleAppError);
+		};
+	});
 </script>
 
 <svelte:head>
@@ -109,20 +139,30 @@
 
 	<div>
 		{#if errors.value.length}
-			{@const currentError = describeError(errors.value[0])}
-			<div class="error">
-				<strong>{currentError.title}{currentError.status ? ` ${currentError.status}` : ''}:</strong>
-				<span>{currentError.message}</span>
-				{#if currentError.detail}
-					<small>{currentError.detail}</small>
-				{/if}
-				<button class="error-discard" onclick={discardError}
-					>Discard
-					{#if errors.value.length > 1}
-						({errors.value.length - 1} more)
-					{/if}
-				</button>
-			</div>
+			<section class="error-stack" aria-label="Messages" aria-live="polite">
+				<div class="error-stack-header">
+					<strong>Messages</strong>
+					<button class="error-button" type="button" onclick={discardAllErrors}>Dismiss all</button>
+				</div>
+				<ol class="error-list">
+					{#each errors.value as rawError, index}
+						{@const currentError = describeError(rawError)}
+						<li class="error" role="alert">
+							<div class="error-body">
+								<strong>{currentError.title}{currentError.status ? ` ${currentError.status}` : ''}:</strong>
+								<span>{currentError.message}</span>
+								{#if currentError.detail}
+									<small>{currentError.detail}</small>
+								{/if}
+							</div>
+							<div class="error-actions">
+								<button class="error-button" type="button" onclick={() => copyError(rawError)}>Copy</button>
+								<button class="error-button" type="button" onclick={() => discardError(index)}>Dismiss</button>
+							</div>
+						</li>
+					{/each}
+				</ol>
+			</section>
 		{/if}
 	</div>
 
@@ -210,18 +250,52 @@
 		text-decoration: none;
 	}
 
-	.error {
-		background: #660000;
-		color: #fff;
-		align-self: stretch;
-		padding: 0.5ex 1em;
-		border: 1px solid #aa0000;
-		border-radius: 0.5ex;
+	.error-stack {
+		position: fixed;
+		top: 3.8rem;
+		left: 50%;
+		z-index: 20000;
+		display: grid;
+		width: min(54rem, calc(100vw - 2rem));
+		max-height: min(40vh, 24rem);
+		transform: translateX(-50%);
+		background: #fff8f5;
+		border: 1px solid #d3482f;
+		border-left: 0.4rem solid #d3482f;
+		box-shadow: 0 8px 24px #0003;
+		color: #2e1009;
+		user-select: text;
+	}
+
+	.error-stack-header {
 		display: flex;
-		gap: 1em;
-		align-items: baseline;
-		max-width: 52vw;
-		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.65rem 0.75rem 0;
+	}
+
+	.error-list {
+		display: grid;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 0 0.75rem 0.75rem;
+		overflow: auto;
+		list-style: none;
+	}
+
+	.error {
+		display: grid;
+		gap: 0.5rem;
+		padding: 0.65rem 0.75rem;
+		background: #ffe7df;
+		border: 1px solid #efad9d;
+		color: #2e1009;
+	}
+
+	.error-body {
+		display: grid;
+		gap: 0.25rem;
+		min-width: 0;
 	}
 
 	.error span {
@@ -229,19 +303,25 @@
 	}
 
 	.error small {
-		color: #f4cccc;
+		color: #5c2318;
 		overflow-wrap: anywhere;
+		white-space: pre-wrap;
 	}
 
-	.error-discard {
+	.error-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
+	}
+
+	.error-button {
 		border: none;
-		background: none;
-		color: inherit;
+		background: #222;
+		color: #fff;
 		font: inherit;
 		cursor: pointer;
-		padding: 0;
+		padding: 0.45rem 0.7rem;
 		margin: 0;
-		font-size: smaller;
 	}
 
 	.offline {

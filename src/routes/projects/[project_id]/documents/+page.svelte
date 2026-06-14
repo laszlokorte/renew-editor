@@ -11,7 +11,7 @@
 	const { createDocument, importDocuments, downloadFile } = $derived(data.commands);
 
 	let uploadFormVisible = $state(false);
-	let online = $state(true);
+	const online = $derived(!data.offline && data.connectionState.value !== false);
 	let renamingId = $state(null);
 	let renamingNewName = $state();
 	let renamingOrigName = $state();

@@ -29,5 +29,10 @@
 </script>
 
 {#key resource.id}
-	{@render children(liveState.content, liveState.presence, { dispatch, cast, errors: liveState.errors })}
+	{@render children(liveState.content, liveState.presence, {
+		dispatch,
+		cast,
+		errors: liveState.errors,
+		queuedActions: liveState.queuedActions
+	})}
 {/key}

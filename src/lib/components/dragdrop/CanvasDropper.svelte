@@ -38,6 +38,14 @@
 		dragging.value--;
 	};
 
+	const parseTransferJson = (text) => {
+		try {
+			return JSON.parse(text);
+		} catch {
+			return undefined;
+		}
+	};
+
 	const onDragDrop = (evt) => {
 		evt.preventDefault();
 		const position = lenses.clientToCanvas(evt.clientX, evt.clientY);
@@ -50,17 +58,27 @@
 		let useWorkaround = true;
 
 		for (let item of evt.dataTransfer.items) {
-			if (useWorkaround !== true && item.type && item.type !== 'text/plain') {
+			if (item.kind === 'string' && item.type && item.type !== 'text/plain') {
 				useWorkaround = false;
 				item.getAsString((s) => {
-					onDrop(item.type, JSON.parse(s), position);
+					const data = parseTransferJson(s);
+					if (data !== undefined) {
+						onDrop(item.type, data, position);
+					}
 				});
 			} else if (item.type === 'text/plain') {
 				if (useWorkaround !== false) {
 					useWorkaround = true;
 
 					item.getAsString((s) => {
-						const n = JSON.parse(s);
+						const n = parseTransferJson(s);
+						if (
+							!n ||
+							typeof n.mime !== 'string' ||
+							!Object.prototype.hasOwnProperty.call(n, 'data')
+						) {
+							return;
+						}
 
 						const mime = n.mime;
 						const data = n.data;
@@ -69,10 +87,9 @@
 					});
 				}
 			} else if (useWorkaround !== true && item.kind === 'string') {
-				alert(item.type);
-				item.getAsString((s) => {
-					alert('dropped: ' + s);
-				});
+				// Ignore unknown string payloads. Browsers often include helper formats
+				// that are not meaningful for the editor.
+				item.getAsString(() => {});
 			} else if (item.kind === 'file') {
 				if (onDropFile) {
 					onDropFile(item.getAsFile(), position);

@@ -6,7 +6,7 @@ import simulationApi from '$lib/api/simulations.js';
 import documentApi from '$lib/api/documents.js';
 import { cachedResource } from '$lib/api/resource_cache.js';
 import { downloadFile } from '$lib/io/download';
-import { describeError, errorPageBody, formatErrorMessage } from '$lib/errors';
+import { describeError, errorPageBody, publishError } from '$lib/errors';
 
 export const ssr = false;
 
@@ -27,7 +27,7 @@ function createCommands(project, api, fetchFn) {
 					});
 				})
 				.catch((e) => {
-					alert(formatErrorMessage(e, 'Simulation export failed'));
+					publishError(e, 'Simulation export failed');
 				});
 		},
 

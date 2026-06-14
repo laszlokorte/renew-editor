@@ -42,6 +42,10 @@
 		);
 	}
 
+	function hasInnerRect(shapeName) {
+		return shapeName === 'rect-double-in';
+	}
+
 	function inwardNorthWestArrow(box) {
 		const tip = {
 			x: box.x + box.width * 0.1464466,
@@ -79,6 +83,24 @@
 			height={box.height}
 			rx={(shapeAttributes?.rx ?? 0) / 2}
 			ry={(shapeAttributes?.ry ?? 0) / 2}
+		/>
+	{:else if hasInnerRect(shapeName)}
+		<rect
+			x={box.x}
+			y={box.y}
+			width={box.width}
+			height={box.height}
+			fill="inherit"
+			stroke="inherit"
+		/>
+		<rect
+			x={box.x + 2}
+			y={box.y + 2}
+			width={Math.max(box.width - 4, 0)}
+			height={Math.max(box.height - 4, 0)}
+			fill="none"
+			stroke="inherit"
+			stroke-width="1"
 		/>
 	{:else if isFaStateShape(shapeName)}
 		<ellipse

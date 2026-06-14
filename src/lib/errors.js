@@ -316,6 +316,16 @@ export function describeError(error, fallbackMessage = DEFAULT_FALLBACK_MESSAGE)
 	return withOperationContext(describeErrorWithoutContext(error, fallbackMessage), fallbackMessage);
 }
 
+export function publishError(error, fallbackMessage = DEFAULT_FALLBACK_MESSAGE) {
+	const description = describeError(error, fallbackMessage);
+
+	if (typeof window !== 'undefined') {
+		window.dispatchEvent(new CustomEvent('petristation:error', { detail: description }));
+	}
+
+	return description;
+}
+
 export function formatErrorMessage(error, fallbackMessage) {
 	const description = describeError(error, fallbackMessage);
 	const prefix = description.status ? `${description.title} (${description.status})` : description.title;

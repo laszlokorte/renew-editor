@@ -62,8 +62,21 @@
 	import Navigator from '$lib/components/camera/Navigator.svelte';
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
 	import { describeError } from '$lib/errors';
+	import { downloadFile } from '$lib/io/download';
+	import { LOOK_AND_FEEL_OPTIONS, loadLookAndFeel, setLookAndFeel } from '$lib/api/look_and_feel.js';
 
 	const { data } = $props();
+	const lookAndFeel = atom(loadLookAndFeel());
+
+	function backendUrl(path) {
+		const base = data.authState?.value?.url ?? window.location.origin;
+
+		try {
+			return new URL(path, base).href;
+		} catch (_) {
+			return path;
+		}
+	}
 
 	export const forceHex = L.reread((v) => {
 		if (v === 'transparent') {
@@ -90,20 +103,53 @@
 	const snapToGrid = view(['snap', L.valueOr(false)], gridView);
 	const penView = view(['pen', L.valueOr({})], viewOptions);
 	const penSmoothness = view(['smoothness', L.valueOr('linear')], penView);
+	const penSmoothnessAmount = view(['smoothnessAmount', L.valueOr(50)], penView);
+	const polygonView = view(['polygon', L.valueOr({})], viewOptions);
+	const polygonSmoothness = view(['smoothness', L.valueOr('linear')], polygonView);
+	const polygonSmoothnessAmount = view(['smoothnessAmount', L.valueOr(50)], polygonView);
+	const splineView = view(['spline', L.valueOr({})], viewOptions);
+	const splineSampleCount = view(['sampleCount', L.valueOr(12)], splineView);
 	const showHierarchy = view(['hierarchy', L.valueOr(true)], viewOptions);
 	const showCursors = view(['remoteCursors', L.valueOr(true)], viewOptions);
 	const showOtherSelections = view(['remoteSelections', L.valueOr(true)], viewOptions);
+	const showSequentialOnlyArcs = view(['sequentialOnlyArcs', L.valueOr(false)], viewOptions);
+	const toolbarView = view(['toolbars', L.valueOr({})], viewOptions);
+	const showHorizontalToolbar = view(['horizontal', L.valueOr(true)], toolbarView);
+	const showCreateToolbar = view(['create', L.valueOr(true)], toolbarView);
 	const lockRotation = view(['rotationLock', L.valueOr(false)], viewOptions);
 	const gridDistance = view(['distance', L.valueOr(32)], gridView);
+	const TOOLBAR_LAYOUT_STORAGE_KEY = 'petristation-toolbar-layout';
+	const TOOLBAR_LAYOUTS_STORAGE_KEY = 'petristation-toolbar-layouts';
+	const CREATE_TOOLBAR_ORDER_STORAGE_KEY = 'petristation-create-toolbar-order';
+	const CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY = 'petristation-create-toolbar-layout-version';
+	const CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY =
+		'petristation-create-toolbar-collapsed-groups';
+	const CREATE_TOOLBAR_LAYOUT_VERSION = 'renew-toolset-2026-06-12-f181-v5';
 
 	const showRename = atom(false);
+	const showNewDrawing = atom(false);
 	const showSearch = atom(false);
+	const showInspect = atom(false);
+	const showAbout = atom(false);
+	const showCommandConsole = atom(false);
+	const showToolOptions = atom(false);
+	const toolOptions = atom(null);
+	const recentDocuments = atom([]);
+	const toolbarLayouts = atom(loadToolbarLayouts());
+	const createToolbarOrder = atom(loadCreateToolbarOrder());
+	const collapsedCreateToolGroups = atom(loadCollapsedCreateToolGroups());
+	const inspectedLayer = atom(null);
 	const searchReplaceMode = atom(false);
 	const searchQuery = atom('');
 	const searchReplacement = atom('');
 	const searchCaseSensitive = atom(false);
+	const commandConsoleText = atom('');
+	const commandConsoleOutput = atom('');
+	const statusMessage = atom('');
 	const backoffValue = atom(undefined);
 	const pointerOffset = atom({ x: 0, y: 0 });
+	const resizeHandleDrag = atom(undefined);
+	const attributeHandleDrag = atom(undefined);
 	const gridDistanceExp = view(logLens(2), gridDistance);
 
 	const dropperDomElement = atom(undefined);
@@ -114,6 +160,59 @@
 		return [...trans.types].includes(type);
 	}
 
+	function safeJsonParse(text) {
+		try {
+			return JSON.parse(text);
+		} catch {
+			return null;
+		}
+	}
+
+	function cubicBezierPoint(p0, p1, p2, p3, t) {
+		const inv = 1 - t;
+		const inv2 = inv * inv;
+		const t2 = t * t;
+
+		return {
+			x: inv2 * inv * p0.x + 3 * inv2 * t * p1.x + 3 * inv * t2 * p2.x + t2 * t * p3.x,
+			y: inv2 * inv * p0.y + 3 * inv2 * t * p1.y + 3 * inv * t2 * p2.y + t2 * t * p3.y
+		};
+	}
+
+	function splinePathToPolylinePoints(path, sampleCount = 12) {
+		const segments = (Array.isArray(path) ? path : []).filter((entry) => entry?.point);
+		if (segments.length < 2) {
+			return [];
+		}
+
+		const samples = Math.max(2, Math.min(48, Number(sampleCount) || 12));
+		const points = [{ ...segments[0].point }];
+
+		for (let i = 1; i < segments.length; i += 1) {
+			const from = segments[i - 1];
+			const to = segments[i];
+			const p0 = from.point;
+			const p1 = from.front ?? from.point;
+			const p2 = to.back ?? to.point;
+			const p3 = to.point;
+
+			if (!from.front && !to.back) {
+				points.push({ ...p3 });
+				continue;
+			}
+
+			for (let step = 1; step <= samples; step += 1) {
+				points.push(cubicBezierPoint(p0, p1, p2, p3, step / samples));
+			}
+		}
+
+		return points.filter(
+			(point, index, all) =>
+				index === 0 ||
+				Math.hypot(point.x - all[index - 1].x, point.y - all[index - 1].y) > 0.01
+		);
+	}
+
 	function getTransferContent(trans, type) {
 		if ([...trans.types].includes(type)) {
 			const orig = trans.getData(type);
@@ -122,7 +221,11 @@
 			} else {
 				const plain = trans.getData('text/plain');
 				if (plain) {
-					return JSON.parse(plain)[type];
+					const parsed = safeJsonParse(plain);
+					if (parsed?.mime === type) {
+						return JSON.stringify(parsed.data);
+					}
+					return parsed?.[type];
 				}
 			}
 		}
@@ -166,24 +269,42 @@
 
 	let lastTargetLocationOpen = 0;
 
+	function layerTargetUrl(layer) {
+		const location = layer?.style?.target_location;
+		if (!location) {
+			return null;
+		}
+
+		try {
+			const target = new URL(location, window.location.href);
+			return target.protocol === 'http:' || target.protocol === 'https:' ? target.href : null;
+		} catch {
+			return null;
+		}
+	}
+
+	function openLayerTargetLocation(layer) {
+		const href = layerTargetUrl(layer);
+		if (!href) {
+			return false;
+		}
+
+		window.open(href, '_blank', 'noopener,noreferrer');
+		lastTargetLocationOpen = performance.now();
+		return true;
+	}
+
 	function openTargetLocation(evt, layer) {
 		if (activeTool.value !== 'select') {
 			return false;
 		}
 
-		const location = layer?.style?.target_location;
-		if (!evt.ctrlKey || !location) {
+		if (!evt.ctrlKey) {
 			return false;
 		}
 
-		let target;
-		try {
-			target = new URL(location, window.location.href);
-		} catch {
-			return false;
-		}
-
-		if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+		const href = layerTargetUrl(layer);
+		if (!href) {
 			return false;
 		}
 
@@ -194,11 +315,112 @@
 		// when the same user gesture also produces a click event.
 		const now = performance.now();
 		if (now - lastTargetLocationOpen > 250) {
-			window.open(target.href, '_blank', 'noopener,noreferrer');
+			window.open(href, '_blank', 'noopener,noreferrer');
 			lastTargetLocationOpen = now;
 		}
 
 		return true;
+	}
+
+	function openTargetLocationOrDirectModification(evt, layer, cast) {
+		if (openTargetLocation(evt, layer)) {
+			return true;
+		}
+
+		if (activeTool.value !== 'select' || !layer?.id) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		publishSelection(cast, [layer.id]);
+		return true;
+	}
+
+	function documentExportFileName(documentValue, extension) {
+		const name = documentValue?.name?.trim() || 'Untitled';
+		return `${name.replace(/[\\/:*?"<>|]+/g, '_')}.${extension}`;
+	}
+
+	function serializedDocumentSvg(documentValue) {
+		const source = document.getElementById(`full-document-${data.document.id}`);
+
+		if (!source) {
+			throw new Error('Rendered drawing could not be found');
+		}
+
+		const bounds = expandBox(documentDisplayBox(documentValue, textBounds.value), 20);
+		const rect = boxToRect(bounds);
+		const xmlns = 'http://www.w3.org/2000/svg';
+		const svg = document.createElementNS(xmlns, 'svg');
+		svg.setAttribute('xmlns', xmlns);
+		svg.setAttribute('viewBox', `${rect.x} ${rect.y} ${rect.width} ${rect.height}`);
+		svg.setAttribute('width', String(Math.ceil(rect.width)));
+		svg.setAttribute('height', String(Math.ceil(rect.height)));
+
+		const background = document.createElementNS(xmlns, 'rect');
+		background.setAttribute('x', String(rect.x));
+		background.setAttribute('y', String(rect.y));
+		background.setAttribute('width', String(rect.width));
+		background.setAttribute('height', String(rect.height));
+		background.setAttribute('fill', '#ffffff');
+		svg.appendChild(background);
+		svg.appendChild(source.cloneNode(true));
+
+		return new XMLSerializer().serializeToString(svg);
+	}
+
+	function downloadSvgDrawing(documentValue) {
+		try {
+			const svg = serializedDocumentSvg(documentValue);
+			downloadFile(
+				new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
+				documentExportFileName(documentValue, 'svg')
+			);
+		} catch (e) {
+			queueError(e, 'SVG export failed');
+		}
+	}
+
+	async function downloadPngDrawing(documentValue) {
+		let url;
+
+		try {
+			const svg = serializedDocumentSvg(documentValue);
+			const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+			url = URL.createObjectURL(blob);
+
+			const img = new Image();
+			img.decoding = 'async';
+			img.src = url;
+			await img.decode();
+
+			const scale = Math.max(1, Math.ceil(window.devicePixelRatio || 1));
+			const canvas = document.createElement('canvas');
+			canvas.width = Math.max(1, Math.ceil(img.width * scale));
+			canvas.height = Math.max(1, Math.ceil(img.height * scale));
+			const ctx = canvas.getContext('2d');
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+			ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+			const png = await new Promise((resolve, reject) => {
+				canvas.toBlob((result) => {
+					if (result) {
+						resolve(result);
+					} else {
+						reject(new Error('PNG export failed'));
+					}
+				}, 'image/png');
+			});
+			downloadFile(png, documentExportFileName(documentValue, 'png'));
+		} catch (e) {
+			queueError(e, 'PNG export failed');
+		} finally {
+			if (url) {
+				URL.revokeObjectURL(url);
+			}
+		}
 	}
 
 	const tools = [
@@ -246,10 +468,8 @@
 		},
 		{ name: 'Pen', id: 'pen' },
 		{ name: 'Polygon', id: 'polygon' },
+		{ name: 'Spline', id: 'spline' },
 		{ name: 'Spacer', id: 'spacer' }
-
-		// Splines are not supported by the editor server yet
-		//{ name: 'Spline', id: 'spline' }
 	];
 	const activeTool = atom('select');
 	let edgeToolPersistent = $state(false);
@@ -257,10 +477,31 @@
 	const LAYER_PRIMITIVE_MIME_TYPE = 'application/json+renewex-layer';
 	const BLUEPRINT_MIME_TYPE = 'application/json+renewex-blueprint';
 	const CIRCLE_SHAPE_ID = '3B66E69A-057A-40B9-A1A0-9DB44EF5CE42';
+	const drawingKinds = [
+		'CH.ifa.draw.standard.StandardDrawing',
+		'de.renew.hierarchicalworkflownets.gui.HNViewDrawing',
+		'de.renew.gui.CPNDrawing',
+		'de.renew.sdnet.gui.SDNDrawing',
+		'de.renew.diagram.drawing.DiagramDrawing'
+	];
 	const PRIMITIVE_CREATION_DRAG_THRESHOLD = 4;
 	const activeCreateTool = atom(undefined);
+	const activeEdgeTool = atom(undefined);
 	let primitiveCreation = atom(undefined);
+	let linkedPrimitiveCreation = atom(undefined);
 	let inlineTextEdit = atom(undefined);
+	let suppressNextLinkedPrimitiveClick = $state(false);
+	const selectionHandleDescriptors = [
+		{ type: 'topLeft', dx: -1, dy: -1 },
+		{ type: 'topCenter', dx: 0, dy: -1 },
+		{ type: 'topRight', dx: 1, dy: -1 },
+		{ type: 'middleLeft', dx: -1, dy: 0 },
+		{ type: 'middleRight', dx: 1, dy: 0 },
+		{ type: 'bottomLeft', dx: -1, dy: 1 },
+		{ type: 'bottomCenter', dx: 0, dy: 1 },
+		{ type: 'bottomRight', dx: 1, dy: 1 }
+	];
+	const textSelectionHandleTypes = new Set(['topLeft', 'topRight', 'bottomRight']);
 
 	const cameraSettings = atom({
 		plane: {
@@ -335,9 +576,13 @@
 		[L.reread(({ bx, by, cx, cy }) => ({ x: cx - bx, y: cy - by })), L.valueOr({ x: 0, y: 0 })],
 		groupDrag
 	);
+	let connectedEdgePreviewOverrides = atom(new Map());
+	let edgeWaypointDrag = atom(undefined);
+	const EDGE_WAYPOINT_DRAG_THRESHOLD = 3;
 	const PETRISTATION_CLIPBOARD_FORMAT = 'petristation/layer-clipboard';
 	const PETRISTATION_CLIPBOARD_STORAGE_KEY = 'petristation:layer-clipboard';
 	const PETRISTATION_CLIPBOARD_RNW_STORAGE_KEY = 'petristation:layer-clipboard-rnw';
+	const RECENT_DOCUMENTS_STORAGE_KEY = 'petristation:recent-documents';
 	const RENEW_RNW_CLIPBOARD_FORMAT = 'renew/rnw';
 	const CLIPBOARD_RNW_TEXT = globalThis.Symbol('clipboardRnwText');
 	const SYSTEM_CLIPBOARD_WITHOUT_LAYERS = {};
@@ -388,6 +633,93 @@
 		}
 
 		return evt?.shiftKey ? toggleLayerSelection(cast, id) : publishSelection(cast, [id]);
+	}
+
+	function inspectLayer(evt, layer) {
+		if (activeTool.value !== 'select' || !layer?.id) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		inspectedLayer.value = JSON.parse(JSON.stringify(layer));
+		showInspect.value = true;
+		return true;
+	}
+
+	function inspectedLayerJson() {
+		return JSON.stringify(inspectedLayer.value ?? {}, null, 2);
+	}
+
+	function loadRecentDocuments() {
+		try {
+			const parsed = JSON.parse(localStorage.getItem(RECENT_DOCUMENTS_STORAGE_KEY) ?? '[]');
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
+	}
+
+	function rememberCurrentDocument() {
+		const documentId = data.document.id;
+		const entry = {
+			id: documentId,
+			name: data.document.content?.name ?? 'Untitled',
+			href: resolve(`/documents/${documentId}/editor`),
+			savedAt: Date.now()
+		};
+		const next = [entry, ...loadRecentDocuments().filter((recent) => recent?.id !== documentId)]
+			.filter((recent) => recent?.id && recent?.href)
+			.slice(0, 12);
+		localStorage.setItem(RECENT_DOCUMENTS_STORAGE_KEY, JSON.stringify(next));
+		recentDocuments.value = next;
+	}
+
+	function clearRecentDocuments() {
+		localStorage.removeItem(RECENT_DOCUMENTS_STORAGE_KEY);
+		recentDocuments.value = [];
+	}
+
+	function removeRecentDocument(documentId) {
+		const next = loadRecentDocuments().filter((recent) => recent?.id !== documentId);
+		localStorage.setItem(RECENT_DOCUMENTS_STORAGE_KEY, JSON.stringify(next));
+		recentDocuments.value = next;
+	}
+
+	function documentTabs(documentValue = data.document.content) {
+		const currentId = data.document.id;
+		const current = {
+			id: currentId,
+			name: documentValue?.name ?? data.document.content?.name ?? 'Untitled',
+			href: resolve(`/documents/${currentId}/editor`)
+		};
+		return [
+			current,
+			...recentDocuments.value.filter((recent) => recent?.id && recent.id !== currentId)
+		].slice(0, 8);
+	}
+
+	function closeDocumentWindow(tab) {
+		const tabs = documentTabs();
+		if (!tab?.id) {
+			return;
+		}
+
+		if (tab.id !== data.document.id) {
+			removeRecentDocument(tab.id);
+			return;
+		}
+
+		const next = tabs.find((candidate) => candidate.id !== tab.id);
+		removeRecentDocument(tab.id);
+		location.href = next?.href ?? resolve(`/projects/${data.document.links.project.id}/documents`);
+	}
+
+	function closeOtherDrawings() {
+		const currentId = data.document.id;
+		const next = loadRecentDocuments().filter((recent) => recent?.id === currentId);
+		localStorage.setItem(RECENT_DOCUMENTS_STORAGE_KEY, JSON.stringify(next));
+		recentDocuments.value = next;
 	}
 
 	const RENEW_TEXT_TYPE = {
@@ -459,7 +791,19 @@
 
 	function isTransitionLayer(layer) {
 		const tag = layer?.semantic_tag ?? '';
-		return tag === 'de.renew.gui.TransitionFigure' || tag.endsWith('.TransitionFigure');
+		return (
+			tag === 'de.renew.gui.TransitionFigure' ||
+			tag === 'de.renew.gui.VirtualTransitionFigure' ||
+			tag.endsWith('.TransitionFigure') ||
+			tag.endsWith('.VirtualTransitionFigure')
+		);
+	}
+
+	function isVirtualTransitionLayer(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return (
+			tag === 'de.renew.gui.VirtualTransitionFigure' || tag.endsWith('.VirtualTransitionFigure')
+		);
 	}
 
 	function isPlaceLayer(layer) {
@@ -472,8 +816,29 @@
 		);
 	}
 
+	function isVirtualPlaceLayer(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return tag === 'de.renew.gui.VirtualPlaceFigure' || tag.endsWith('.VirtualPlaceFigure');
+	}
+
 	function isNodeLayer(layer) {
 		return isTransitionLayer(layer) || isPlaceLayer(layer);
+	}
+
+	function isSequentialOnlyArcLayer(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return (
+			tag === 'de.renew.gui.InhibitorConnection' ||
+			tag === 'de.renew.gui.ClearConnection' ||
+			tag === 'de.renew.gui.HollowDoubleArcConnection' ||
+			tag.endsWith('.InhibitorConnection') ||
+			tag.endsWith('.ClearConnection') ||
+			tag.endsWith('.HollowDoubleArcConnection')
+		);
+	}
+
+	function layerVisibleInDrawing(layer, hidden = false) {
+		return !hidden && (showSequentialOnlyArcs.value || !isSequentialOnlyArcLayer(layer));
 	}
 
 	function syntaxEdgeSourceTags(syntax) {
@@ -506,6 +871,46 @@
 		return tags;
 	}
 
+	function syntaxEdgeRules(syntax, sourceSemanticTag) {
+		const typedRules = syntax?.edgeRules?.[sourceSemanticTag];
+		if (Array.isArray(typedRules)) {
+			return typedRules;
+		}
+
+		return (syntax?.edgeWhitelist?.[sourceSemanticTag] ?? []).map((targetSemanticTag) => ({
+			target_semantic_tag: targetSemanticTag
+		}));
+	}
+
+	function syntaxEdgeSemanticTags(syntax) {
+		const tags = new Set();
+
+		for (const rules of Object.values(syntax?.edgeRules ?? {})) {
+			for (const rule of rules ?? []) {
+				if (rule?.edge_semantic_tag) {
+					tags.add(rule.edge_semantic_tag);
+				}
+			}
+		}
+
+		for (const target of Object.values(syntax?.autoEdgeNode ?? {})) {
+			const tag = target?.edge?.semantic_tag;
+			if (tag) {
+				tags.add(tag);
+			}
+		}
+
+		return tags;
+	}
+
+	function edgeToolIgnoresNetSyntax(edgeSemanticTag) {
+		return (
+			edgeSemanticTag === 'CH.ifa.draw.figures.LineConnection' ||
+			edgeSemanticTag === 'CH.ifa.draw.figures.ElbowConnection'
+		);
+	}
+
+
 	function isSyntaxEdgeSourceLayer(layer, syntax) {
 		if (!layer?.semantic_tag) {
 			return false;
@@ -526,7 +931,7 @@
 		return uniqueLayerIds(layerIds.filter((id) => isSyntaxEdgeSourceLayer(byId.get(id), syntax)));
 	}
 
-	function syntaxAllowsEdge(syntax, source, target) {
+	function syntaxAllowsEdge(syntax, source, target, edgeSemanticTag = undefined) {
 		if (!source?.semantic_tag || !target?.semantic_tag) {
 			return false;
 		}
@@ -542,11 +947,23 @@
 			return true;
 		}
 
-		const allowedTargets = syntax?.edgeWhitelist?.[source.semantic_tag];
-		return (allowedTargets ?? []).indexOf(target.semantic_tag) > -1;
+		const rules = syntaxEdgeRules(syntax, source.semantic_tag);
+		const edgeTags = syntaxEdgeSemanticTags(syntax);
+
+		if (edgeSemanticTag && !edgeTags.has(edgeSemanticTag)) {
+			return edgeToolIgnoresNetSyntax(edgeSemanticTag);
+		}
+
+		return rules.some((rule) => {
+			if (rule?.target_semantic_tag !== target.semantic_tag) {
+				return false;
+			}
+
+			return !edgeSemanticTag || !rule?.edge_semantic_tag || rule.edge_semantic_tag === edgeSemanticTag;
+		});
 	}
 
-	function syntaxAutoEdgeNodeForSource(syntax, source) {
+	function syntaxAutoEdgeNodeForSource(syntax, source, edgeSemanticTag = undefined) {
 		const autoNodeType = syntax?.autoEdgeNode?.[source?.semantic_tag];
 		const sourceSocketId = autoNodeType?.edge?.source?.socket_id;
 
@@ -554,12 +971,38 @@
 			return null;
 		}
 
-		return sourceSocketId === source?.socket ? autoNodeType : null;
+		if (sourceSocketId !== source?.socket) {
+			return null;
+		}
+
+		if (!syntaxEdgeSemanticTags(syntax).has(edgeSemanticTag ?? 'de.renew.gui.ArcConnection')) {
+			return null;
+		}
+
+		return syntaxAllowsEdge(
+			syntax,
+			source,
+			{ semantic_tag: autoNodeType.target.semantic_tag },
+			edgeSemanticTag
+		)
+			? autoNodeType
+			: null;
+	}
+
+	function isNetArcSemanticTag(tag) {
+		return (
+			tag === 'de.renew.gui.ArcConnection' ||
+			tag === 'de.renew.gui.InhibitorConnection' ||
+			tag === 'de.renew.gui.HollowDoubleArcConnection' ||
+			tag.endsWith('.ArcConnection') ||
+			tag.endsWith('.InhibitorConnection') ||
+			tag.endsWith('.HollowDoubleArcConnection')
+		);
 	}
 
 	function isArcLayer(layer) {
 		const tag = layer?.semantic_tag ?? '';
-		return !!layer?.edge && tag.endsWith('ArcConnection');
+		return !!layer?.edge && isNetArcSemanticTag(tag);
 	}
 
 	function matchesNodeType(layer, nodeType = 'all') {
@@ -603,6 +1046,29 @@
 
 	function isCpnTextLayer(layer) {
 		return layer?.semantic_tag === 'de.renew.gui.CPNTextFigure';
+	}
+
+	function validateEditedInscription(layer, docValue) {
+		if (!isInscriptionLayer(layer)) {
+			return;
+		}
+
+		const target = textTargetLayer(layer, layerMap(docValue));
+		if (!target) {
+			queueError({
+				title: 'Syntax Error',
+				message: 'Inscription is not connected to a net element.',
+				detail:
+					'Renew accepts inscriptions on places and arcs. Connect the inscription to a supported net element before simulating or exporting the drawing.'
+			});
+		} else if (!isQualifiedInscriptionTarget(target)) {
+			queueError({
+				title: 'Syntax Error',
+				message: 'The connected figure cannot carry inscriptions.',
+				detail:
+					'Renew accepts inscriptions on places and arcs. Remove the inscription from this figure, or attach it to a supported net element.'
+			});
+		}
 	}
 
 	function matchesTextType(layer, textType = 'any') {
@@ -1036,10 +1502,10 @@
 		});
 	}
 
-	let deleteShortcutContext = { cast: null, layersInOrder: null };
+	let deleteShortcutContext = { cast: null, doc: null, layersInOrder: null };
 
 	function setDeleteShortcutContext(context) {
-		deleteShortcutContext = context ?? { cast: null, layersInOrder: null };
+		deleteShortcutContext = context ?? { cast: null, doc: null, layersInOrder: null };
 	}
 
 	function deleteShortcutContextAction(_node, context) {
@@ -1050,6 +1516,7 @@
 			destroy() {
 				if (
 					deleteShortcutContext.cast === context?.cast &&
+					deleteShortcutContext.doc === context?.doc &&
 					deleteShortcutContext.layersInOrder === context?.layersInOrder
 				) {
 					setDeleteShortcutContext(null);
@@ -1078,6 +1545,7 @@
 			isEditableTarget(evt.target) ||
 			selectedLayers.value.length === 0 ||
 			!deleteShortcutContext.cast ||
+			!deleteShortcutContext.doc ||
 			!deleteShortcutContext.layersInOrder
 		) {
 			return;
@@ -1085,6 +1553,49 @@
 
 		evt.preventDefault();
 		deleteSelectedLayers(deleteShortcutContext.cast, deleteShortcutContext.layersInOrder.value);
+	}
+
+	function handleDocumentMovementKeydown(evt) {
+		if (
+			evt.defaultPrevented ||
+			evt.ctrlKey ||
+			evt.metaKey ||
+			evt.altKey ||
+			isEditableTarget(evt.target) ||
+			selectedLayers.value.length === 0 ||
+			!deleteShortcutContext.cast ||
+			!deleteShortcutContext.layersInOrder
+		) {
+			return false;
+		}
+
+		const deltas = {
+			ArrowLeft: { x: -1, y: 0 },
+			ArrowRight: { x: 1, y: 0 },
+			ArrowUp: { x: 0, y: -1 },
+			ArrowDown: { x: 0, y: 1 }
+		};
+		const delta = deltas[evt.key];
+		if (!delta) {
+			return false;
+		}
+
+		const step = evt.shiftKey ? 10 : 1;
+		const moveDelta = { x: delta.x * step, y: delta.y * step };
+		const layerIds = selectedTopLevelLayerIds(deleteShortcutContext.layersInOrder.value);
+		if (!layerIds.length) {
+			return false;
+		}
+
+		evt.preventDefault();
+		moveLayersLocally(
+			deleteShortcutContext.doc,
+			layerIds,
+			moveDelta,
+			deleteShortcutContext.layersInOrder.value
+		);
+		commitLayerMove(layerIds, moveDelta, deleteShortcutContext.cast).catch(() => {});
+		return true;
 	}
 
 	function selectedTopLevelLayerIds(layersInOrderValue, ids = selectedLayers.value) {
@@ -1284,6 +1795,622 @@
 		};
 	}
 
+	function documentSocketEntries(docValue, layersInOrderValue, socketSchemas, dragState, delta) {
+		const byId = layerMap(docValue);
+
+		return (layersInOrderValue ?? [])
+			.filter(({ hidden }) => !hidden)
+			.flatMap(({ id }) => {
+				const layer = byId.get(id);
+				const socketSchema = socketSchemas?.get?.(layer?.interface_id);
+
+				if (!socketSchema) {
+					return [];
+				}
+
+				return (socketSchema.sockets ?? [])
+					.map((socket) => {
+						if (!layer?.box) {
+							return null;
+						}
+
+						const socketBox = movedSocketBox(
+							{
+								x: layer.box.position_x,
+								y: layer.box.position_y,
+								width: layer.box.width,
+								height: layer.box.height,
+								shape: layer.box.shape,
+								semantic_tag: layer.semantic_tag
+							},
+							id,
+							layersInOrderValue,
+							dragState,
+							delta
+						);
+
+						return {
+							id: {
+								socket: socket.id,
+								layer: id,
+								semantic_tag: layer.semantic_tag,
+								stencil: socketSchema.stencil
+							},
+							socket_schema: socketSchema,
+							x: buildCoord(socketBox, 'x', false, socket.x),
+							y: buildCoord(socketBox, 'y', false, socket.y),
+							box: socketBox
+						};
+					})
+					.filter(Boolean);
+			});
+	}
+
+	function nearestSocketAt(
+		point,
+		docValue,
+		layersInOrderValue,
+		socketSchemas,
+		{ excludeLayerId = undefined, tolerance = 14 * cameraScale.value } = {}
+	) {
+		let nearest = undefined;
+
+		for (const socket of documentSocketEntries(
+			docValue,
+			layersInOrderValue,
+			socketSchemas,
+			groupDrag.value,
+			groupDragDelta.value
+		)) {
+			if (socket?.id?.layer === excludeLayerId) {
+				continue;
+			}
+
+			const distance = Math.hypot(socket.x - point.x, socket.y - point.y);
+			if (distance <= tolerance && (!nearest || distance < nearest.distance)) {
+				nearest = { socket, distance };
+			}
+		}
+
+		return nearest?.socket;
+	}
+
+	function endpointBond(edge, endpoint) {
+		return endpoint === 'source' ? edge?.source_bond : edge?.target_bond;
+	}
+
+	function oppositeEndpointBond(edge, endpoint) {
+		return endpoint === 'source' ? edge?.target_bond : edge?.source_bond;
+	}
+
+	function isFreePointEdge(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return (
+			layer?.edge &&
+			(tag.includes('PolyLineFigure') ||
+				tag.includes('PolygonFigure') ||
+				layer.edge.cyclic === true ||
+				(!layer.edge.source_bond && !layer.edge.target_bond && tag.includes('LineFigure')))
+		);
+	}
+
+	function edgeEndpointCanReconnect(edgeLayer, endpoint, socket, docValue, syntax) {
+		if (!edgeLayer?.edge || !socket?.id?.layer || !socket?.id?.socket) {
+			return false;
+		}
+
+		const byId = layerMap(docValue);
+		const candidateLayer = byId.get(socket.id.layer);
+		const oppositeLayer = byId.get(oppositeEndpointBond(edgeLayer.edge, endpoint)?.layer_id);
+
+		if (!candidateLayer) {
+			return false;
+		}
+
+		if (!oppositeLayer) {
+			return true;
+		}
+
+		const sourceLayer = endpoint === 'source' ? candidateLayer : oppositeLayer;
+		const targetLayer = endpoint === 'source' ? oppositeLayer : candidateLayer;
+
+		return syntaxAllowsEdge(syntax, sourceLayer, targetLayer, edgeLayer?.semantic_tag);
+	}
+
+	function reconnectOrMoveEdgeEndpoint({
+		layer,
+		endpoint,
+		position,
+		socketSchemas,
+		syntax,
+		dispatch,
+		cast,
+		docValue,
+		layersInOrderValue
+	}) {
+		const edge = layer?.edge;
+		const edgeId = edge?.id;
+		const oldBond = endpointBond(edge, endpoint);
+		const socket = nearestSocketAt(position, docValue, layersInOrderValue, socketSchemas, {
+			excludeLayerId: layer?.id
+		});
+		const positionValue =
+			endpoint === 'source'
+				? { source_x: position.x, source_y: position.y }
+				: { target_x: position.x, target_y: position.y };
+
+		if (isFreePointEdge(layer)) {
+			return dispatch('update_edge_position', {
+				layer_id: layer.id,
+				value: positionValue
+			});
+		}
+
+		if (socket && edgeEndpointCanReconnect(layer, endpoint, socket, docValue, syntax) && edgeId) {
+			const sameBond = oldBond?.layer_id === socket.id.layer && oldBond?.socket_id === socket.id.socket;
+
+			return Promise.resolve()
+				.then(() => (!sameBond && oldBond?.id ? cast('delete_bond', { bond_id: oldBond.id }) : undefined))
+				.then(() =>
+					sameBond
+						? undefined
+						: cast('create_bond', {
+								edge_id: edgeId,
+								kind: endpoint,
+								layer_id: socket.id.layer,
+								socket_id: socket.id.socket
+							})
+				);
+		}
+
+		return Promise.resolve()
+			.then(() => (oldBond?.id ? cast('delete_bond', { bond_id: oldBond.id }) : undefined))
+			.then(() =>
+				dispatch('update_edge_position', {
+					layer_id: layer.id,
+					value: positionValue
+				})
+			);
+	}
+
+	function hasMoveDelta(delta) {
+		return !!delta && (!!delta.x || !!delta.y);
+	}
+
+	function subtractDelta(delta, base) {
+		return {
+			x: (delta?.x ?? 0) - (base?.x ?? 0),
+			y: (delta?.y ?? 0) - (base?.y ?? 0)
+		};
+	}
+
+	function sameDelta(a, b) {
+		return (a?.x ?? 0) === (b?.x ?? 0) && (a?.y ?? 0) === (b?.y ?? 0);
+	}
+
+	function edgeBondLayerId(bond) {
+		return (
+			bond?.layer_id ??
+			bond?.layerId ??
+			bond?.layer?.id ??
+			bond?.source_layer_id ??
+			bond?.target_layer_id ??
+			undefined
+		);
+	}
+
+	function edgeEndpointPoint(edge, endpoint) {
+		return endpoint === 'source'
+			? { x: edge?.source_x, y: edge?.source_y }
+			: { x: edge?.target_x, y: edge?.target_y };
+	}
+
+	function pointInsideBox(point, box, tolerance = 0) {
+		return (
+			point &&
+			box &&
+			Number.isFinite(point.x) &&
+			Number.isFinite(point.y) &&
+			point.x >= box.x - tolerance &&
+			point.x <= box.x + box.width + tolerance &&
+			point.y >= box.y - tolerance &&
+			point.y <= box.y + box.height + tolerance
+		);
+	}
+
+	function layerEndpointBox(layer) {
+		return layer?.box
+			? {
+					x: layer.box.position_x,
+					y: layer.box.position_y,
+					width: layer.box.width,
+					height: layer.box.height,
+					shape: layer.box.shape,
+					semantic_tag: layer.semantic_tag
+				}
+			: undefined;
+	}
+
+	function pointNearLayerBoundary(point, layer, tolerance = 4) {
+		const box = layerEndpointBox(layer);
+		if (!box) {
+			return false;
+		}
+
+		if (!pointInsideBox(point, box, tolerance)) {
+			return false;
+		}
+
+		if (edgeBoxStencil(box) === 'ellipse') {
+			const center = edgeBoxCenter(box);
+			const radiusX = box.width / 2;
+			const radiusY = box.height / 2;
+
+			if (!radiusX || !radiusY) {
+				return false;
+			}
+
+			const normalized = Math.sqrt(
+				((point.x - center.x) * (point.x - center.x)) / (radiusX * radiusX) +
+					((point.y - center.y) * (point.y - center.y)) / (radiusY * radiusY)
+			);
+			const normalizedTolerance = tolerance / Math.max(1, Math.min(radiusX, radiusY));
+			return Math.abs(normalized - 1) <= normalizedTolerance;
+		}
+
+		return (
+			Math.abs(point.x - box.x) <= tolerance ||
+			Math.abs(point.x - (box.x + box.width)) <= tolerance ||
+			Math.abs(point.y - box.y) <= tolerance ||
+			Math.abs(point.y - (box.y + box.height)) <= tolerance
+		);
+	}
+
+	function pointMatchesLayerEndpoint(point, layer, tolerance = 4) {
+		const box = layerEndpointBox(layer);
+		if (!box) {
+			return false;
+		}
+
+		if (pointNearLayerBoundary(point, layer, tolerance)) {
+			return true;
+		}
+
+		return pointInsideBox(point, box, tolerance);
+	}
+
+	function distanceToRectBox(point, box) {
+		if (!point || !box) {
+			return Infinity;
+		}
+
+		const dx = Math.max(box.x - point.x, 0, point.x - (box.x + box.width));
+		const dy = Math.max(box.y - point.y, 0, point.y - (box.y + box.height));
+		return Math.hypot(dx, dy);
+	}
+
+	function distanceToEllipseBox(point, box) {
+		if (!point || !box) {
+			return Infinity;
+		}
+
+		const center = edgeBoxCenter(box);
+		const radiusX = box.width / 2;
+		const radiusY = box.height / 2;
+
+		if (!radiusX || !radiusY) {
+			return distanceToRectBox(point, box);
+		}
+
+		const normalized = Math.sqrt(
+			((point.x - center.x) * (point.x - center.x)) / (radiusX * radiusX) +
+				((point.y - center.y) * (point.y - center.y)) / (radiusY * radiusY)
+		);
+
+		if (normalized <= 1) {
+			return 0;
+		}
+
+		return (normalized - 1) * Math.min(radiusX, radiusY);
+	}
+
+	function distanceToLayerEndpoint(point, layer) {
+		const box = layerEndpointBox(layer);
+		if (!box) {
+			return Infinity;
+		}
+
+		return edgeBoxStencil(box) === 'ellipse'
+			? distanceToEllipseBox(point, box)
+			: distanceToRectBox(point, box);
+	}
+
+	function nearestEndpointLayer(point, layers, maxDistance) {
+		let nearest = undefined;
+
+		for (const layer of layers) {
+			const distance = distanceToLayerEndpoint(point, layer);
+			if (distance <= maxDistance && (!nearest || distance < nearest.distance)) {
+				nearest = { layer, distance };
+			}
+		}
+
+		return nearest?.layer;
+	}
+
+	function edgeEndpointLayerId(edge, endpoint, docValue, layersInOrderValue, dragState) {
+		const explicitLayerId = edgeBondLayerId(
+			endpoint === 'source' ? edge?.source_bond : edge?.target_bond
+		);
+
+		if (explicitLayerId) {
+			return explicitLayerId;
+		}
+
+		const point = edgeEndpointPoint(edge, endpoint);
+		const moving = new Set(dragState?.previewLayerIds ?? dragState?.layerIds ?? []);
+		const movingTolerance = Math.max(24, 16 * cameraScale.value);
+		const nearbyTolerance = Math.max(32, 24 * cameraScale.value);
+		const byId = layerMap(docValue);
+		const candidateLayers = layersInOrderValue
+			.map(({ id }) => byId.get(id))
+			.filter((layer) => layer?.box && layer.id !== edge?.layer_id && layer.id !== edge?.id);
+		const movingLayers = candidateLayers.filter((layer) => moving.has(layer.id));
+		const movingLayer = candidateLayers.find(
+			(layer) => moving.has(layer.id) && pointMatchesLayerEndpoint(point, layer, movingTolerance)
+		);
+		const nearbyMovingLayer = nearestEndpointLayer(point, movingLayers, nearbyTolerance);
+		const exactLayer = candidateLayers.find((layer) => pointMatchesLayerEndpoint(point, layer));
+		const nearbyLayer = nearestEndpointLayer(point, candidateLayers, nearbyTolerance);
+
+		return movingLayer?.id ?? nearbyMovingLayer?.id ?? exactLayer?.id ?? nearbyLayer?.id;
+	}
+
+	function edgeEndpointMoveDelta(edge, endpoint, docValue, layersInOrderValue, dragState, delta) {
+		const layerId = edgeEndpointLayerId(edge, endpoint, docValue, layersInOrderValue, dragState);
+
+		return layerId ? layerMoveDelta(layerId, layersInOrderValue, dragState, delta) : { x: 0, y: 0 };
+	}
+
+	function edgeBondLayerBox(edge, endpoint, docValue, layersInOrderValue, dragState, delta) {
+		const layerId = edgeEndpointLayerId(edge, endpoint, docValue, layersInOrderValue, dragState);
+		const layer = layerId ? layerMap(docValue).get(layerId) : undefined;
+
+		if (!layer?.box) {
+			return undefined;
+		}
+
+		return movedSocketBox(
+			{
+				x: layer.box.position_x,
+				y: layer.box.position_y,
+				width: layer.box.width,
+				height: layer.box.height,
+				shape: layer.box.shape,
+				semantic_tag: layer.semantic_tag
+			},
+			layerId,
+			layersInOrderValue,
+			dragState,
+			delta
+		);
+	}
+
+	function edgeBoxStencil(box) {
+		const shape = `${box?.shape ?? ''}`.toLowerCase();
+		const semanticTag = `${box?.semantic_tag ?? ''}`;
+
+		if (
+			shape.includes('ellipse') ||
+			shape.includes('circle') ||
+			semanticTag.endsWith('.PlaceFigure') ||
+			semanticTag.endsWith('.VirtualPlaceFigure') ||
+			semanticTag.endsWith('.EllipseFigure') ||
+			semanticTag.endsWith('.FAStateFigure')
+		) {
+			return 'ellipse';
+		}
+
+		return 'rect';
+	}
+
+	function edgeBoxCenter(box) {
+		return {
+			x: box.x + box.width / 2,
+			y: box.y + box.height / 2
+		};
+	}
+
+	function edgeBoxBoundaryPoint(box, toward) {
+		if (!box || !toward) {
+			return undefined;
+		}
+
+		const center = edgeBoxCenter(box);
+		const dx = toward.x - center.x;
+		const dy = toward.y - center.y;
+
+		if (dx === 0 && dy === 0) {
+			return center;
+		}
+
+		if (edgeBoxStencil(box) === 'ellipse') {
+			const radiusX = box.width / 2;
+			const radiusY = box.height / 2;
+
+			if (!radiusX || !radiusY) {
+				return center;
+			}
+
+			const scale =
+				1 / Math.sqrt((dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY));
+
+			return {
+				x: center.x + dx * scale,
+				y: center.y + dy * scale
+			};
+		}
+
+		let scale = Infinity;
+
+		if (dx !== 0) {
+			const sideX = dx > 0 ? box.x + box.width : box.x;
+			scale = Math.min(scale, (sideX - center.x) / dx);
+		}
+
+		if (dy !== 0) {
+			const sideY = dy > 0 ? box.y + box.height : box.y;
+			scale = Math.min(scale, (sideY - center.y) / dy);
+		}
+
+		return Number.isFinite(scale)
+			? {
+					x: center.x + dx * scale,
+					y: center.y + dy * scale
+				}
+			: center;
+	}
+
+	function edgePointToLayerCoordinates(point, ownDelta) {
+		return {
+			x: point.x - ownDelta.x,
+			y: point.y - ownDelta.y
+		};
+	}
+
+	function edgePreviewWaypointPoint(waypoint, waypointDelta, ownDelta) {
+		return waypoint
+			? {
+					x: waypoint.x + waypointDelta.x + ownDelta.x,
+					y: waypoint.y + waypointDelta.y + ownDelta.y
+				}
+			: undefined;
+	}
+
+	function previewMovedEdge(
+		layer,
+		docValue,
+		layersInOrderValue,
+		dragState = groupDrag.value,
+		delta = groupDragDelta.value
+	) {
+		const edge = layer?.edge;
+
+		if (!edge) {
+			return edge;
+		}
+
+		const ownDelta = layerMoveDelta(layer?.id, layersInOrderValue, dragState, delta);
+		const sourceDelta = edgeEndpointMoveDelta(edge, 'source', docValue, layersInOrderValue, dragState, delta);
+		const targetDelta = edgeEndpointMoveDelta(edge, 'target', docValue, layersInOrderValue, dragState, delta);
+
+		if (!hasMoveDelta(sourceDelta) && !hasMoveDelta(targetDelta)) {
+			return edge;
+		}
+
+		const sourceBox = edgeBondLayerBox(edge, 'source', docValue, layersInOrderValue, dragState, delta);
+		const targetBox = edgeBondLayerBox(edge, 'target', docValue, layersInOrderValue, dragState, delta);
+		const sourceRelativeDelta = hasMoveDelta(sourceDelta)
+			? subtractDelta(sourceDelta, ownDelta)
+			: { x: 0, y: 0 };
+		const targetRelativeDelta = hasMoveDelta(targetDelta)
+			? subtractDelta(targetDelta, ownDelta)
+			: { x: 0, y: 0 };
+		const waypointRelativeDelta =
+			hasMoveDelta(sourceDelta) && hasMoveDelta(targetDelta) && sameDelta(sourceDelta, targetDelta)
+				? subtractDelta(sourceDelta, ownDelta)
+				: { x: 0, y: 0 };
+
+		if (
+			!hasMoveDelta(sourceRelativeDelta) &&
+			!hasMoveDelta(targetRelativeDelta) &&
+			!hasMoveDelta(waypointRelativeDelta)
+		) {
+			return edge;
+		}
+
+		const movedWaypoints = hasMoveDelta(waypointRelativeDelta)
+			? moveWaypointList(edge.waypoints, waypointRelativeDelta)
+			: edge.waypoints;
+		const firstWaypoint = edgePreviewWaypointPoint(
+			edge.waypoints?.[0],
+			waypointRelativeDelta,
+			ownDelta
+		);
+		const lastWaypoint = edgePreviewWaypointPoint(
+			edge.waypoints?.[edge.waypoints?.length - 1],
+			waypointRelativeDelta,
+			ownDelta
+		);
+		const sourceFallback = {
+			x: edge.source_x + sourceRelativeDelta.x + ownDelta.x,
+			y: edge.source_y + sourceRelativeDelta.y + ownDelta.y
+		};
+		const targetFallback = {
+			x: edge.target_x + targetRelativeDelta.x + ownDelta.x,
+			y: edge.target_y + targetRelativeDelta.y + ownDelta.y
+		};
+		const sourcePoint = sourceBox
+			? edgePointToLayerCoordinates(
+					edgeBoxBoundaryPoint(
+						sourceBox,
+						firstWaypoint ?? (targetBox ? edgeBoxCenter(targetBox) : targetFallback)
+					),
+					ownDelta
+				)
+			: {
+					x: edge.source_x + sourceRelativeDelta.x,
+					y: edge.source_y + sourceRelativeDelta.y
+				};
+		const targetPoint = targetBox
+			? edgePointToLayerCoordinates(
+					edgeBoxBoundaryPoint(
+						targetBox,
+						lastWaypoint ?? (sourceBox ? edgeBoxCenter(sourceBox) : sourceFallback)
+					),
+					ownDelta
+				)
+			: {
+					x: edge.target_x + targetRelativeDelta.x,
+					y: edge.target_y + targetRelativeDelta.y
+				};
+
+		return {
+			...edge,
+			source_x: sourcePoint.x,
+			source_y: sourcePoint.y,
+			target_x: targetPoint.x,
+			target_y: targetPoint.y,
+			waypoints: movedWaypoints
+		};
+	}
+
+	function renderedEdgePreview(
+		layer,
+		docValue,
+		layersInOrderValue,
+		dragState = groupDrag.value,
+		delta = groupDragDelta.value
+	) {
+		return (
+			connectedEdgePreviewOverrides.value.get(layer?.id) ??
+			previewMovedEdge(layer, docValue, layersInOrderValue, dragState, delta)
+		);
+	}
+
+	function edgePreviewTransform(layerId, layersInOrderValue, edge, previewEdge) {
+		return edgePositionChanged(edge, previewEdge)
+			? undefined
+			: layerMoveTransform(layerId, layersInOrderValue);
+	}
+
+	function previewWaypointPosition(previewWaypoints, waypoint) {
+		return (
+			previewWaypoints?.find?.((previewWaypoint) => previewWaypoint?.id === waypoint?.id) ??
+			waypoint
+		);
+	}
+
 	function expandedMoveLayerIds(layerIds, layersInOrderValue, docValue) {
 		const moving = new Set(layerIds);
 		for (const layerInfo of layersInOrderValue) {
@@ -1315,6 +2442,36 @@
 					y: waypoint.y + delta.y
 				}))
 			: waypoints;
+	}
+
+	function removeEdgeEndpoint(layer, endpoint, currentWaypoints, dispatch, cast) {
+		const waypoints = (currentWaypoints ?? layer?.edge?.waypoints ?? []).filter(
+			(waypoint) => waypoint?.id
+		);
+		const replacement = endpoint === 'source' ? waypoints[0] : waypoints[waypoints.length - 1];
+
+		if (!layer?.id || !replacement) {
+			return false;
+		}
+
+		const value =
+			endpoint === 'source'
+				? { source_x: replacement.x, source_y: replacement.y }
+				: { target_x: replacement.x, target_y: replacement.y };
+
+		dispatch('update_edge_position', {
+			layer_id: layer.id,
+			value
+		})
+			.then(() =>
+				cast('delete_waypoint', {
+					layer_id: layer.id,
+					waypoint_id: replacement.id
+				})
+			)
+			.catch((error) => queueError(error, 'Edge point could not be removed'));
+
+		return true;
 	}
 
 	function moveLayerValue(layer, delta) {
@@ -1357,8 +2514,80 @@
 		return layer;
 	}
 
+	function edgePositionChanged(edge, previewEdge) {
+		if (!edge || !previewEdge) {
+			return false;
+		}
+
+		if (
+			!samePosition(edge.source_x, previewEdge.source_x) ||
+			!samePosition(edge.source_y, previewEdge.source_y) ||
+			!samePosition(edge.target_x, previewEdge.target_x) ||
+			!samePosition(edge.target_y, previewEdge.target_y)
+		) {
+			return true;
+		}
+
+		const edgeWaypoints = edge.waypoints ?? [];
+		const previewWaypoints = previewEdge.waypoints ?? [];
+
+		if (edgeWaypoints.length !== previewWaypoints.length) {
+			return true;
+		}
+
+		return edgeWaypoints.some((waypoint, index) => {
+			const previewWaypoint = previewWaypoints[index];
+			return (
+				waypoint?.id !== previewWaypoint?.id ||
+				!samePosition(waypoint?.x, previewWaypoint?.x) ||
+				!samePosition(waypoint?.y, previewWaypoint?.y)
+			);
+		});
+	}
+
+	function connectedEdgePreviews(docValue, layersInOrderValue, dragState, delta) {
+		const previews = new Map();
+
+		for (const layer of docValue?.layers?.items ?? []) {
+			if (!layer?.edge || isLayerInMovingSetFor(layer.id, layersInOrderValue, dragState)) {
+				continue;
+			}
+
+			const previewEdge = previewMovedEdge(layer, docValue, layersInOrderValue, dragState, delta);
+
+			if (edgePositionChanged(layer.edge, previewEdge)) {
+				previews.set(layer.id, previewEdge);
+			}
+		}
+
+		return previews;
+	}
+
+	function applyConnectedEdgePreviewsLocally(docAtom, edgePreviews) {
+		if (!edgePreviews.size) {
+			return;
+		}
+
+		docAtom.value = {
+			...docAtom.value,
+			layers: {
+				...docAtom.value.layers,
+				items: docAtom.value.layers.items.map((layer) => {
+					const previewEdge = edgePreviews.get(layer.id);
+					return previewEdge ? { ...layer, edge: previewEdge } : layer;
+				})
+			}
+		};
+	}
+
 	function moveLayersLocally(docAtom, layerIds, delta, layersInOrderValue) {
 		const moving = expandedMoveLayerIds(layerIds, layersInOrderValue, docAtom.value);
+		const dragState = {
+			layerIds: uniqueLayerIds(layerIds),
+			previewLayerIds: [...moving]
+		};
+		const edgePreviews = connectedEdgePreviews(docAtom.value, layersInOrderValue, dragState, delta);
+
 		docAtom.value = {
 			...docAtom.value,
 			layers: {
@@ -1368,9 +2597,17 @@
 				)
 			}
 		};
+		applyConnectedEdgePreviewsLocally(docAtom, edgePreviews);
 	}
 
-	function beginLayerMove(evt, liveLenses, layerId, layersInOrderValue, docValue) {
+	function beginLayerMove(
+		evt,
+		liveLenses,
+		layerId,
+		layersInOrderValue,
+		docValue,
+		clickSelectLayerId = undefined
+	) {
 		if (!evt.isPrimary || !E.isLeftButton(evt)) {
 			return false;
 		}
@@ -1392,6 +2629,7 @@
 		groupDrag.value = {
 			pointerId: evt.pointerId,
 			layerIds,
+			clickSelectLayerId,
 			previewLayerIds: [...expandedMoveLayerIds(layerIds, layersInOrderValue, docValue)],
 			bx: world.x,
 			by: world.y,
@@ -1410,7 +2648,21 @@
 		return beginLayerMove(evt, liveLenses, layerId, layersInOrderValue, docValue);
 	}
 
-	function updateLayerMove(evt, liveLenses) {
+	function refreshConnectedEdgePreviewOverrides(docAtom, layersInOrderValue) {
+		if (!docAtom || !layersInOrderValue || !groupDrag.value) {
+			connectedEdgePreviewOverrides.value = new Map();
+			return;
+		}
+
+		connectedEdgePreviewOverrides.value = connectedEdgePreviews(
+			docAtom.value,
+			layersInOrderValue,
+			groupDrag.value,
+			groupDragDelta.value
+		);
+	}
+
+	function updateLayerMove(evt, liveLenses, docAtom = undefined, layersInOrderValue = undefined) {
 		if (
 			evt.isPrimary &&
 			groupDrag.value?.pointerId === evt.pointerId &&
@@ -1420,15 +2672,16 @@
 			evt.preventDefault();
 			const world = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
 			update(L.set(L.props('cx', 'cy'), { cx: world.x, cy: world.y }), groupDrag);
+			refreshConnectedEdgePreviewOverrides(docAtom, layersInOrderValue);
 		}
 	}
 
-	function updateSelectionMoveFromHandle(evt, liveLenses) {
+	function updateSelectionMoveFromHandle(evt, liveLenses, docAtom = undefined, layersInOrderValue = undefined) {
 		if (groupDrag.value?.pointerId !== evt.pointerId) {
 			return false;
 		}
 
-		updateLayerMove(evt, liveLenses);
+		updateLayerMove(evt, liveLenses, docAtom, layersInOrderValue);
 		return true;
 	}
 
@@ -1440,7 +2693,13 @@
 		});
 	}
 
-	function finishLayerMove(evt, dispatch, docAtom, layersInOrderValue) {
+	function finishLayerMove(
+		evt,
+		dispatch,
+		docAtom,
+		layersInOrderValue,
+		cast = deleteShortcutContext.cast
+	) {
 		if (groupDrag.value?.pointerId !== evt.pointerId) {
 			return;
 		}
@@ -1450,16 +2709,23 @@
 
 		const delta = groupDragDelta.value;
 		const layerIds = uniqueLayerIds(groupDrag.value.layerIds);
+		const clickSelectLayerId = groupDrag.value.clickSelectLayerId;
 
 		if (!layerIds.length || (!delta.x && !delta.y)) {
 			if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
 				evt.currentTarget.releasePointerCapture(evt.pointerId);
 			}
+			connectedEdgePreviewOverrides.value = new Map();
 			groupDrag.value = undefined;
+			if (clickSelectLayerId && deleteShortcutContext.cast) {
+				publishSelection(deleteShortcutContext.cast, [clickSelectLayerId]);
+			}
 			return;
 		}
 
 		moveLayersLocally(docAtom, layerIds, delta, layersInOrderValue);
+		relinkMovedInscriptions(cast, docAtom.value, layersInOrderValue, layerIds);
+		connectedEdgePreviewOverrides.value = new Map();
 		groupDrag.value = undefined;
 
 		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
@@ -1495,6 +2761,7 @@
 			evt.currentTarget.releasePointerCapture(pointerId);
 		}
 
+		connectedEdgePreviewOverrides.value = new Map();
 		groupDrag.value = undefined;
 	}
 
@@ -1588,11 +2855,41 @@
 		});
 	}
 
-	function normalizedBox({ start, current }) {
-		const minX = Math.min(start.x, current.x);
-		const minY = Math.min(start.y, current.y);
-		const maxX = Math.max(start.x, current.x);
-		const maxY = Math.max(start.y, current.y);
+	function selectedGroupLayerIds(layersInOrderValue) {
+		const selected = new Set(selectedTopLevelLayerIds(layersInOrderValue));
+		return layersInOrderValue
+			.filter(({ id, has_children }) => selected.has(id) && has_children)
+			.map(({ id }) => id);
+	}
+
+	function ungroupSelectedLayers(cast, layersInOrderValue) {
+		const ids = uniqueLayerIds(selectedGroupLayerIds(layersInOrderValue));
+
+		if (!ids.length) {
+			return;
+		}
+
+		cast('delete_layer', { layer_ids: ids, delete_children: false });
+		clearSelection(cast);
+	}
+
+	function normalizedBox({ start, current, square = false }) {
+		let end = current;
+
+		if (square) {
+			const dx = current.x - start.x;
+			const dy = current.y - start.y;
+			const size = Math.max(Math.abs(dx), Math.abs(dy));
+			end = {
+				x: start.x + Math.sign(dx || 1) * size,
+				y: start.y + Math.sign(dy || 1) * size
+			};
+		}
+
+		const minX = Math.min(start.x, end.x);
+		const minY = Math.min(start.y, end.y);
+		const maxX = Math.max(start.x, end.x);
+		const maxY = Math.max(start.y, end.y);
 
 		return {
 			minX,
@@ -1642,6 +2939,492 @@
 			width: box.maxX - box.minX,
 			height: box.maxY - box.minY
 		};
+	}
+
+	function rectToSizeHint(rect) {
+		return {
+			position_x: rect.x,
+			position_y: rect.y,
+			width: rect.width,
+			height: rect.height
+		};
+	}
+
+	function selectionHandlePosition(rect, handle) {
+		return {
+			x: rect.x + ((handle.dx + 1) * rect.width) / 2,
+			y: rect.y + ((handle.dy + 1) * rect.height) / 2
+		};
+	}
+
+	function selectionHandlesForLayer(layer) {
+		if (layer?.text) {
+			return selectionHandleDescriptors.filter((handle) =>
+				textSelectionHandleTypes.has(handle.type)
+			);
+		}
+
+		return selectionHandleDescriptors;
+	}
+
+	function selectionHandleCanResize(layer) {
+		return !layer?.text;
+	}
+
+	function normalizeResizeRect(rect) {
+		const minWidth = 1;
+		const minHeight = 1;
+		return {
+			x: Number.isFinite(rect.x) ? rect.x : 0,
+			y: Number.isFinite(rect.y) ? rect.y : 0,
+			width: Math.max(minWidth, Number.isFinite(rect.width) ? rect.width : minWidth),
+			height: Math.max(minHeight, Number.isFinite(rect.height) ? rect.height : minHeight)
+		};
+	}
+
+	function resizeRectFromHandle(drag, pointer, evt) {
+		const start = normalizeResizeRect(drag.startRect);
+		let left = start.x;
+		let right = start.x + start.width;
+		let top = start.y;
+		let bottom = start.y + start.height;
+
+		if (drag.dx < 0) {
+			left = Math.min(pointer.x, right - 1);
+		} else if (drag.dx > 0) {
+			right = Math.max(pointer.x, left + 1);
+		}
+
+		if (drag.dy < 0) {
+			top = Math.min(pointer.y, bottom - 1);
+		} else if (drag.dy > 0) {
+			bottom = Math.max(pointer.y, top + 1);
+		}
+
+		if ((evt.ctrlKey || evt.metaKey) && drag.dx !== 0 && drag.dy !== 0) {
+			const size = Math.max(right - left, bottom - top, 1);
+			if (drag.dx < 0) {
+				left = right - size;
+			} else {
+				right = left + size;
+			}
+			if (drag.dy < 0) {
+				top = bottom - size;
+			} else {
+				bottom = top + size;
+			}
+		} else if (evt.shiftKey && drag.dx !== 0 && drag.dy !== 0 && start.height > 0) {
+			const ratio = start.width / start.height;
+			let width = Math.max(right - left, 1);
+			let height = Math.max(bottom - top, 1);
+
+			if (width / height > ratio) {
+				height = width / ratio;
+			} else {
+				width = height * ratio;
+			}
+
+			if (drag.dx < 0) {
+				left = right - width;
+			} else {
+				right = left + width;
+			}
+			if (drag.dy < 0) {
+				top = bottom - height;
+			} else {
+				bottom = top + height;
+			}
+		}
+
+		return normalizeResizeRect({
+			x: left,
+			y: top,
+			width: right - left,
+			height: bottom - top
+		});
+	}
+
+	function patchLayerLocally(docAtom, layerId, patcher) {
+		docAtom.value = {
+			...docAtom.value,
+			layers: {
+				...docAtom.value.layers,
+				items: docAtom.value.layers.items.map((layer) =>
+					layer.id === layerId ? patcher(layer) : layer
+				)
+			}
+		};
+	}
+
+	function previewLayerResize(docAtom, layer, rect) {
+		if (!layer?.id || !rect) {
+			return;
+		}
+
+		const normalized = normalizeResizeRect(rect);
+
+		if (layer.box) {
+			patchLayerLocally(docAtom, layer.id, (current) => ({
+				...current,
+				box: {
+					...current.box,
+					position_x: normalized.x,
+					position_y: normalized.y,
+					width: normalized.width,
+					height: normalized.height
+				}
+			}));
+			return;
+		}
+
+		if (layer.text) {
+			textBounds.value = {
+				...textBounds.value,
+				[layer.id]: normalized
+			};
+			patchLayerLocally(docAtom, layer.id, (current) => ({
+				...current,
+				text: {
+					...current.text,
+					hint: {
+						...current.text?.hint,
+						x: normalized.x,
+						y: normalized.y,
+						width: normalized.width,
+						height: normalized.height
+					}
+				}
+			}));
+		}
+	}
+
+	function commitLayerResize(cast, layer, rect) {
+		if (!layer?.id || !rect) {
+			return;
+		}
+
+		const normalized = normalizeResizeRect(rect);
+
+		if (layer.box) {
+			cast('update_box_size', {
+				layer_id: layer.id,
+				value: rectToSizeHint(normalized)
+			});
+		} else if (layer.text) {
+			cast('update_text_size_hint', {
+				layer_id: layer.id,
+				box: rectToSizeHint(normalized)
+			});
+		}
+	}
+
+	function patchTextFontSizeLocally(docAtom, layerId, fontSize) {
+		patchLayerLocally(docAtom, layerId, (current) => ({
+			...current,
+			text: {
+				...current.text,
+				style: {
+					...current.text?.style,
+					font_size: fontSize
+				}
+			}
+		}));
+	}
+
+	function textFontSizeFromDrag(drag, pointer) {
+		return Math.max(
+			1,
+			Math.round((drag.startFontSize + (pointer.y - drag.startPointer.y) / 2) * 10) / 10
+		);
+	}
+
+	function commitTextFontSize(cast, layer, fontSize) {
+		if (!layer?.id) {
+			return;
+		}
+
+		cast('change_style', {
+			layer_id: layer.id,
+			type: 'text',
+			attr: 'font_size',
+			val: fontSize
+		});
+	}
+
+	function boxRoundRadius(box) {
+		const attributes = symbolShapeAttributes(box);
+		const radius = Number(attributes.rx ?? attributes.ry ?? 0);
+		return Number.isFinite(radius) ? radius : 0;
+	}
+
+	function supportsRoundRadiusHandle(layer) {
+		return !!layer?.box && boxRoundRadius(layer.box) > 0;
+	}
+
+	function roundRadiusHandlePosition(box) {
+		const radius = boxRoundRadius(box);
+		return {
+			x: box.position_x + radius,
+			y: box.position_y + radius
+		};
+	}
+
+	function roundRadiusFromPointer(box, pointer) {
+		const maxRadius = Math.max(0, Math.min(box.width, box.height) / 2);
+		const dx = Math.max(0, pointer.x - box.position_x);
+		const dy = Math.max(0, pointer.y - box.position_y);
+		return Math.round(Math.min(maxRadius, dx, dy) * 10) / 10;
+	}
+
+	function patchBoxRoundRadiusLocally(docAtom, layerId, radius) {
+		patchLayerLocally(docAtom, layerId, (current) => ({
+			...current,
+			box: {
+				...current.box,
+				symbol_shape_attributes: {
+					...(current.box?.symbol_shape_attributes ?? {}),
+					rx: radius,
+					ry: radius
+				},
+				shape_attributes: {
+					...(current.box?.shape_attributes ?? {}),
+					rx: radius,
+					ry: radius
+				}
+			}
+		}));
+	}
+
+	function commitBoxRoundRadius(cast, layer, radius) {
+		if (!layer?.id || !layer?.box) {
+			return;
+		}
+
+		cast('change_layer_shape', {
+			layer_id: layer.id,
+			shape_id: layer.box.shape,
+			attributes: { rx: radius, ry: radius }
+		});
+	}
+
+	function supportsPieAngleHandles(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return !!layer?.box && tag.endsWith('.PieFigure');
+	}
+
+	function normalizePieAngle(angle) {
+		const value = Number(angle);
+		if (!Number.isFinite(value)) {
+			return 0;
+		}
+
+		return ((value % 360) + 360) % 360;
+	}
+
+	function pieAngleValue(box, angleKind) {
+		const fallback = angleKind === 'start_angle' ? 0 : 180;
+		return normalizePieAngle(symbolShapeAttributes(box)?.[angleKind] ?? fallback);
+	}
+
+	function pieAngleHandlePosition(box, angleKind) {
+		const angle = pieAngleValue(box, angleKind);
+		const radians = (Math.PI / 180) * angle;
+		const rx = box.width / 2;
+		const ry = box.height / 2;
+		const cx = box.position_x + rx;
+		const cy = box.position_y + ry;
+
+		return {
+			x: cx + Math.cos(radians) * rx,
+			y: cy - Math.sin(radians) * ry
+		};
+	}
+
+	function pieAngleFromPointer(box, pointer, snap) {
+		const cx = box.position_x + box.width / 2;
+		const cy = box.position_y + box.height / 2;
+		let angle = (Math.atan2(cy - pointer.y, pointer.x - cx) * 180) / Math.PI;
+		angle = normalizePieAngle(angle);
+
+		if (snap) {
+			angle = normalizePieAngle(Math.round(angle / 15) * 15);
+		}
+
+		return Math.round(angle * 10) / 10;
+	}
+
+	function patchPieAngleLocally(docAtom, layerId, angleKind, angle) {
+		patchLayerLocally(docAtom, layerId, (current) => ({
+			...current,
+			box: {
+				...current.box,
+				symbol_shape_attributes: {
+					...(current.box?.symbol_shape_attributes ?? {}),
+					[angleKind]: angle
+				},
+				shape_attributes: {
+					...(current.box?.shape_attributes ?? {}),
+					[angleKind]: angle
+				}
+			}
+		}));
+	}
+
+	function commitPieAngle(cast, layer, angleKind, angle) {
+		if (!layer?.id || !layer?.box) {
+			return;
+		}
+
+		cast('change_layer_shape', {
+			layer_id: layer.id,
+			shape_id: layer.box.shape,
+			attributes: {
+				...symbolShapeAttributes(layer.box),
+				[angleKind]: angle
+			}
+		});
+	}
+
+	const TRIANGLE_SHAPES = [
+		'triangle-up',
+		'triangle-ne',
+		'triangle-right',
+		'triangle-se',
+		'triangle-down',
+		'triangle-sw',
+		'triangle-left',
+		'triangle-nw'
+	];
+
+	const TRIANGLE_ROTATION_ANGLES = [
+		-Math.PI / 2,
+		-Math.PI / 4,
+		0,
+		Math.PI / 4,
+		Math.PI / 2,
+		(3 * Math.PI) / 4,
+		Math.PI,
+		(-3 * Math.PI) / 4
+	];
+
+	function triangleRotation(layer, symbols) {
+		const shapeName = symbols?.get(layer?.box?.shape)?.name;
+		const rotation = TRIANGLE_SHAPES.indexOf(shapeName);
+		return rotation >= 0 ? rotation : null;
+	}
+
+	function supportsTriangleRotationHandle(layer, symbols) {
+		const tag = layer?.semantic_tag ?? '';
+		return !!layer?.box && tag.endsWith('.TriangleFigure') && triangleRotation(layer, symbols) !== null;
+	}
+
+	function triangleApex(box, rotation) {
+		const x = box.position_x;
+		const y = box.position_y;
+		const w = box.width;
+		const h = box.height;
+
+		switch (rotation) {
+			case 1:
+				return { x: x + w, y };
+			case 2:
+				return { x: x + w, y: y + h / 2 };
+			case 3:
+				return { x: x + w, y: y + h };
+			case 4:
+				return { x: x + w / 2, y: y + h };
+			case 5:
+				return { x, y: y + h };
+			case 6:
+				return { x, y: y + h / 2 };
+			case 7:
+				return { x, y };
+			default:
+				return { x: x + w / 2, y };
+		}
+	}
+
+	function triangleRotationHandlePosition(box, rotation, handleSize) {
+		const apex = triangleApex(box, rotation);
+		const center = {
+			x: box.position_x + box.width / 2,
+			y: box.position_y + box.height / 2
+		};
+		const len = Math.hypot(apex.x - center.x, apex.y - center.y);
+
+		if (len <= 0) {
+			return { x: apex.x - handleSize / 2, y: apex.y + handleSize / 2 };
+		}
+
+		const u = Math.min(1, handleSize / len);
+		if (u >= 1) {
+			return {
+				x: (apex.x * 3 + center.x) / 4,
+				y: (apex.y * 3 + center.y) / 4
+			};
+		}
+
+		return {
+			x: apex.x * (1 - u) + center.x * u,
+			y: apex.y * (1 - u) + center.y * u
+		};
+	}
+
+	function angleDistance(a, b) {
+		return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+	}
+
+	function triangleRotationFromPointer(box, pointer) {
+		const center = {
+			x: box.position_x + box.width / 2,
+			y: box.position_y + box.height / 2
+		};
+		const angle = Math.atan2(pointer.y - center.y, pointer.x - center.x);
+		let best = 0;
+		let distance = Infinity;
+
+		for (let i = 0; i < TRIANGLE_ROTATION_ANGLES.length; i += 1) {
+			const d = angleDistance(angle, TRIANGLE_ROTATION_ANGLES[i]);
+			if (d < distance) {
+				best = i;
+				distance = d;
+			}
+		}
+
+		return best;
+	}
+
+	function patchTriangleShapeLocally(docAtom, layerId, shapeId) {
+		docAtom.value = update(['layers', 'items', L.find((layer) => layer.id === layerId)], docAtom, (current) => {
+			if (!current?.box) {
+				return current;
+			}
+
+			return {
+				...current,
+				box: {
+					...current.box,
+					shape: shapeId
+				}
+			};
+		});
+	}
+
+	function commitTriangleRotation(cast, layer, symbols, rotation) {
+		if (!layer?.id || !layer?.box) {
+			return;
+		}
+
+		const shapeId = symbolIdByName(symbols, TRIANGLE_SHAPES[rotation]);
+		if (!shapeId) {
+			return;
+		}
+
+		cast('change_layer_shape', {
+			layer_id: layer.id,
+			shape_id: shapeId,
+			attributes: symbolShapeAttributes(layer.box)
+		});
 	}
 
 	function unionBoxes(boxes) {
@@ -1921,6 +3704,793 @@
 		}
 	}
 
+	function layerRectForEntry(entry) {
+		return {
+			x: entry.box.minX,
+			y: entry.box.minY,
+			width: entry.box.maxX - entry.box.minX,
+			height: entry.box.maxY - entry.box.minY
+		};
+	}
+
+	function resizeLayoutEntry(dispatch, docValue, entry, rect) {
+		const layer = layerMap(docValue).get(entry.id);
+		if (!layer) {
+			return;
+		}
+
+		if (layer.box) {
+			dispatch('update_box_size', {
+				layer_id: entry.id,
+				value: rectToSizeHint(rect)
+			}).catch(() => ({}));
+		} else if (layer.text) {
+			dispatch('update_text_size_hint', {
+				layer_id: entry.id,
+				box: rectToSizeHint(rect)
+			}).catch(() => ({}));
+		}
+	}
+
+	function promptSelectedFigureSize(dispatch, docValue, layersInOrderValue, textBoundsValue) {
+		const entries = selectedLayoutEntries(docValue, layersInOrderValue, textBoundsValue);
+		if (!entries.length) {
+			return;
+		}
+
+		const first = layerRectForEntry(entries[0]);
+		const width = Number(prompt('Width', String(Math.round(first.width * 10) / 10)));
+		if (!Number.isFinite(width) || width < 0) {
+			return;
+		}
+
+		const height = Number(prompt('Height', String(Math.round(first.height * 10) / 10)));
+		if (!Number.isFinite(height) || height < 0) {
+			return;
+		}
+
+		for (const entry of entries) {
+			const rect = layerRectForEntry(entry);
+			resizeLayoutEntry(dispatch, docValue, entry, {
+				...rect,
+				width,
+				height
+			});
+		}
+	}
+
+	function promptSelectedLocation(dispatch, docValue, layersInOrderValue, textBoundsValue) {
+		const entries = selectedLayoutEntries(docValue, layersInOrderValue, textBoundsValue);
+		if (!entries.length) {
+			return;
+		}
+
+		const first = layerRectForEntry(entries[0]);
+		const x = Number(prompt('X', String(Math.round(first.x * 10) / 10)));
+		if (!Number.isFinite(x)) {
+			return;
+		}
+
+		const y = Number(prompt('Y', String(Math.round(first.y * 10) / 10)));
+		if (!Number.isFinite(y)) {
+			return;
+		}
+
+		for (const entry of entries) {
+			const rect = layerRectForEntry(entry);
+			moveLayoutEntry(dispatch, entry, x - rect.x, y - rect.y);
+		}
+	}
+
+	function automaticLayout(dispatch, docValue, layersInOrderValue, textBoundsValue) {
+		const entries = selectedLayoutEntries(docValue, layersInOrderValue, textBoundsValue);
+		const layoutEntries = entries.length
+			? entries
+			: layersInOrderValue
+					.map(({ id }) => {
+						const layer = layerMap(docValue).get(id);
+						const box = layerBox(
+							layersInOrderValue.find((layerInfo) => layerInfo.id === id),
+							layer,
+							textBoundsValue
+						);
+						return finiteBox(box) ? { id, box } : null;
+					})
+					.filter(Boolean);
+
+		if (!layoutEntries.length) {
+			return;
+		}
+
+		const columnCount = Math.max(1, Math.ceil(Math.sqrt(layoutEntries.length)));
+		const cellWidth =
+			Math.max(...layoutEntries.map(({ box }) => Math.max(40, box.maxX - box.minX))) + 40;
+		const cellHeight =
+			Math.max(...layoutEntries.map(({ box }) => Math.max(30, box.maxY - box.minY))) + 40;
+		const origin = unionBoxes(layoutEntries.map(({ box }) => box));
+
+		layoutEntries.forEach((entry, index) => {
+			const column = index % columnCount;
+			const row = Math.floor(index / columnCount);
+			const targetX = origin.minX + column * cellWidth;
+			const targetY = origin.minY + row * cellHeight;
+			moveLayoutEntry(dispatch, entry, targetX - entry.box.minX, targetY - entry.box.minY);
+		});
+	}
+
+	function equalizeSelectedFigureSize(
+		dispatch,
+		docValue,
+		layersInOrderValue,
+		textBoundsValue,
+		dimension
+	) {
+		const entries = selectedLayoutEntries(docValue, layersInOrderValue, textBoundsValue);
+		if (entries.length < 2) {
+			return;
+		}
+
+		const first = layerRectForEntry(entries[0]);
+		for (const entry of entries.slice(1)) {
+			const rect = layerRectForEntry(entry);
+			resizeLayoutEntry(dispatch, docValue, entry, {
+				...rect,
+				width: dimension === 'height' ? rect.width : first.width,
+				height: dimension === 'width' ? rect.height : first.height
+			});
+		}
+	}
+
+	function selectedLayersWithKind(docValue, layersInOrderValue, predicate) {
+		const byId = layerMap(docValue);
+		return selectedTopLevelLayerIds(layersInOrderValue).filter((id) => predicate(byId.get(id)));
+	}
+
+	function changeSelectedStyle(cast, docValue, layersInOrderValue, type, attr, val, predicate) {
+		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, predicate);
+		for (const layerId of layerIds) {
+			cast('change_style', { layer_id: layerId, type, attr, val });
+		}
+	}
+
+	function changeSelectedTextType(cast, docValue, layersInOrderValue, renewType) {
+		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, (layer) => !!layer?.text);
+		for (const layerId of layerIds) {
+			cast('change_text_type', { layer_id: layerId, renew_type: renewType });
+		}
+	}
+
+	function promptSelectedStyle(cast, docValue, layersInOrderValue, type, attr, label, predicate) {
+		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, predicate);
+		if (!layerIds.length) {
+			return;
+		}
+		const firstLayer = layerMap(docValue).get(layerIds[0]);
+		const current =
+			type === 'text'
+				? firstLayer?.text?.style?.[attr]
+				: type === 'edge'
+					? firstLayer?.edge?.style?.[attr]
+					: firstLayer?.style?.[attr];
+		const val = prompt(label, current ?? '');
+		if (val === null) {
+			return;
+		}
+		changeSelectedStyle(cast, docValue, layersInOrderValue, type, attr, val, predicate);
+	}
+
+	function promptSelectedOpacity(cast, docValue, layersInOrderValue, type, attr, label, predicate) {
+		const val = Number(prompt(label, '1'));
+		if (!Number.isFinite(val)) {
+			return;
+		}
+		changeSelectedStyle(
+			cast,
+			docValue,
+			layersInOrderValue,
+			type,
+			attr,
+			R.clamp(0, 1, val),
+			predicate
+		);
+	}
+
+	function createNewDrawing(evt) {
+		evt.preventDefault();
+		const formData = new FormData(evt.currentTarget);
+		const name = formData.get('name')?.toString().trim() || 'Untitled';
+		const selectedKind = formData.get('kind')?.toString().trim();
+		const customKind = formData.get('custom_kind')?.toString().trim();
+		const syntax_id = formData.get('syntax_id')?.toString().trim();
+		const kind = selectedKind || customKind || 'de.renew.gui.CPNDrawing';
+
+		data.commands
+			.createDocument({
+				name,
+				kind,
+				...(syntax_id && syntax_id !== 'none' ? { syntax_id } : {})
+			})
+			.then(() => {
+				showNewDrawing.value = false;
+			})
+			.catch((e) => {
+				queueError(e, 'Document could not be created');
+			});
+	}
+
+	function toolbarLayoutSnapshot() {
+		return {
+			showMinimap: showMinimap.value,
+			showHierarchy: showHierarchy.value,
+			showHorizontalToolbar: showHorizontalToolbar.value,
+			showCreateToolbar: showCreateToolbar.value,
+			showDebug: showDebug.value,
+			createToolbarOrder: createToolbarOrder.value,
+			collapsedCreateToolGroups: collapsedCreateToolGroups.value
+		};
+	}
+
+	function applyToolbarLayout(layout) {
+		if (!layout || typeof layout !== 'object') {
+			return false;
+		}
+		showMinimap.value = layout.showMinimap ?? showMinimap.value;
+		showHierarchy.value = layout.showHierarchy ?? showHierarchy.value;
+		showHorizontalToolbar.value = layout.showHorizontalToolbar ?? showHorizontalToolbar.value;
+		showCreateToolbar.value = layout.showCreateToolbar ?? showCreateToolbar.value;
+		showDebug.value = layout.showDebug ?? showDebug.value;
+		if (layout.createToolbarOrder) {
+			createToolbarOrder.value = normalizeCreateToolbarOrder(layout.createToolbarOrder);
+			persistCreateToolbarOrder();
+		}
+		collapsedCreateToolGroups.value = normalizeCollapsedCreateToolGroups(
+			layout.collapsedCreateToolGroups
+		);
+		persistCollapsedCreateToolGroups();
+		return true;
+	}
+
+	function normalizeToolbarLayouts(layouts) {
+		if (!layouts || typeof layouts !== 'object' || Array.isArray(layouts)) {
+			return {};
+		}
+
+		return Object.fromEntries(
+			Object.entries(layouts)
+				.filter(([name, layout]) => name && layout && typeof layout === 'object')
+				.map(([name, layout]) => [String(name), layout])
+		);
+	}
+
+	function loadToolbarLayouts() {
+		return normalizeToolbarLayouts(
+			safeJsonParse(localStorage.getItem(TOOLBAR_LAYOUTS_STORAGE_KEY))
+		);
+	}
+
+	function persistToolbarLayouts(layouts = toolbarLayouts.value) {
+		localStorage.setItem(TOOLBAR_LAYOUTS_STORAGE_KEY, JSON.stringify(normalizeToolbarLayouts(layouts)));
+		toolbarLayouts.value = normalizeToolbarLayouts(layouts);
+	}
+
+	function toolbarLayoutNames() {
+		return Object.keys(toolbarLayouts.value ?? {}).sort((a, b) => a.localeCompare(b));
+	}
+
+	function saveToolbarLayout(name = undefined) {
+		const layoutName =
+			name ??
+			window.prompt('Toolbar layout name', toolbarLayoutNames()[0] ?? 'Last Layout')?.trim();
+
+		if (!layoutName) {
+			return;
+		}
+
+		const snapshot = toolbarLayoutSnapshot();
+		localStorage.setItem(TOOLBAR_LAYOUT_STORAGE_KEY, JSON.stringify(snapshot));
+		persistToolbarLayouts({
+			...toolbarLayouts.value,
+			[layoutName]: snapshot
+		});
+	}
+
+	function loadToolbarLayout(name = undefined) {
+		const layouts = normalizeToolbarLayouts(toolbarLayouts.value);
+		const layout =
+			(name ? layouts[name] : undefined) ??
+			safeJsonParse(localStorage.getItem(TOOLBAR_LAYOUT_STORAGE_KEY));
+
+		applyToolbarLayout(layout);
+	}
+
+	function resetToolbarLayout() {
+		localStorage.removeItem(TOOLBAR_LAYOUT_STORAGE_KEY);
+		showMinimap.value = true;
+		showHierarchy.value = true;
+		showHorizontalToolbar.value = true;
+		showCreateToolbar.value = true;
+		showDebug.value = false;
+		createToolbarOrder.value = {};
+		localStorage.removeItem(CREATE_TOOLBAR_ORDER_STORAGE_KEY);
+		localStorage.setItem(CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY, CREATE_TOOLBAR_LAYOUT_VERSION);
+		collapsedCreateToolGroups.value = [];
+		localStorage.removeItem(CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY);
+	}
+
+	function normalizeCollapsedCreateToolGroups(groups) {
+		return uniqueLayerIds((Array.isArray(groups) ? groups : []).filter(Boolean).map(String));
+	}
+
+	function loadCollapsedCreateToolGroups() {
+		return normalizeCollapsedCreateToolGroups(
+			safeJsonParse(localStorage.getItem(CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY))
+		);
+	}
+
+	function persistCollapsedCreateToolGroups() {
+		localStorage.setItem(
+			CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY,
+			JSON.stringify(normalizeCollapsedCreateToolGroups(collapsedCreateToolGroups.value))
+		);
+	}
+
+	function createToolGroupCollapsed(groupName) {
+		return collapsedCreateToolGroups.value.includes(groupName);
+	}
+
+	function setCreateToolGroupCollapsed(groupName, collapsed) {
+		const groups = new Set(normalizeCollapsedCreateToolGroups(collapsedCreateToolGroups.value));
+		if (collapsed) {
+			groups.add(groupName);
+		} else {
+			groups.delete(groupName);
+		}
+		collapsedCreateToolGroups.value = [...groups];
+		persistCollapsedCreateToolGroups();
+	}
+
+	function toggleCreateToolGroupCollapsed(groupName) {
+		setCreateToolGroupCollapsed(groupName, !createToolGroupCollapsed(groupName));
+	}
+
+	function deleteToolbarLayout(name = undefined) {
+		if (!name) {
+			resetToolbarLayout();
+			return;
+		}
+
+		const { [name]: _removed, ...rest } = normalizeToolbarLayouts(toolbarLayouts.value);
+		persistToolbarLayouts(rest);
+	}
+
+	function normalizeCreateToolbarOrder(order) {
+		if (!order || typeof order !== 'object') {
+			return {};
+		}
+
+		const groups = Array.isArray(order.groups) ? order.groups.filter(Boolean).map(String) : [];
+		const hidden = Array.isArray(order.hidden) ? order.hidden.filter(Boolean).map(String) : [];
+		const entries =
+			order.entries && typeof order.entries === 'object' && !Array.isArray(order.entries)
+				? Object.fromEntries(
+						Object.entries(order.entries).map(([group, ids]) => [
+							group,
+							Array.isArray(ids) ? ids.filter(Boolean).map(String) : []
+						])
+					)
+				: {};
+
+		return { groups, entries, hidden: uniqueLayerIds(hidden) };
+	}
+
+	function loadCreateToolbarOrder() {
+		if (localStorage.getItem(CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY) !== CREATE_TOOLBAR_LAYOUT_VERSION) {
+			localStorage.removeItem(CREATE_TOOLBAR_ORDER_STORAGE_KEY);
+			localStorage.removeItem(CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY);
+			localStorage.setItem(CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY, CREATE_TOOLBAR_LAYOUT_VERSION);
+			return {};
+		}
+
+		return normalizeCreateToolbarOrder(
+			safeJsonParse(localStorage.getItem(CREATE_TOOLBAR_ORDER_STORAGE_KEY))
+		);
+	}
+
+	function persistCreateToolbarOrder() {
+		localStorage.setItem(CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY, CREATE_TOOLBAR_LAYOUT_VERSION);
+		localStorage.setItem(
+			CREATE_TOOLBAR_ORDER_STORAGE_KEY,
+			JSON.stringify(createToolbarOrder.value)
+		);
+	}
+
+	function orderedByPreference(items, preferredIds, idForItem) {
+		const preferred = new Map((preferredIds ?? []).map((id, index) => [id, index]));
+
+		return [...items].sort((a, b) => {
+			const aId = idForItem(a);
+			const bId = idForItem(b);
+			const aPreferred = preferred.has(aId);
+			const bPreferred = preferred.has(bId);
+
+			if (aPreferred && bPreferred) {
+				return preferred.get(aId) - preferred.get(bId);
+			}
+
+			if (aPreferred) {
+				return -1;
+			}
+
+			if (bPreferred) {
+				return 1;
+			}
+
+			return 0;
+		});
+	}
+
+	function moveIdInList(ids, id, direction) {
+		const index = ids.indexOf(id);
+		if (index === -1) {
+			return ids;
+		}
+
+		const targetIndex = R.clamp(0, ids.length - 1, index + direction);
+		if (targetIndex === index) {
+			return ids;
+		}
+
+		const next = [...ids];
+		const [entry] = next.splice(index, 1);
+		next.splice(targetIndex, 0, entry);
+		return next;
+	}
+
+	function moveCreateToolGroup(groupName, direction, groups) {
+		const ids = createToolGroups(groups).map((group) => group.name);
+		const nextIds = moveIdInList(ids, groupName, direction);
+
+		createToolbarOrder.value = {
+			...normalizeCreateToolbarOrder(createToolbarOrder.value),
+			groups: nextIds
+		};
+		persistCreateToolbarOrder();
+	}
+
+	function moveCreateToolEntry(groupName, item, direction, groups) {
+		const group = createToolGroups(groups).find((candidate) => candidate.name === groupName);
+		if (!group) {
+			return;
+		}
+
+		const itemId = createToolEntryId(item);
+		const ids = (group.entries ?? []).map(createToolEntryId);
+		const nextIds = moveIdInList(ids, itemId, direction);
+		const order = normalizeCreateToolbarOrder(createToolbarOrder.value);
+
+		createToolbarOrder.value = {
+			...order,
+			entries: {
+				...(order.entries ?? {}),
+				[groupName]: nextIds
+			}
+		};
+		persistCreateToolbarOrder();
+	}
+
+	function setCreateToolHidden(itemId, hidden) {
+		const order = normalizeCreateToolbarOrder(createToolbarOrder.value);
+		const hiddenIds = new Set(order.hidden ?? []);
+
+		if (hidden) {
+			hiddenIds.add(itemId);
+		} else {
+			hiddenIds.delete(itemId);
+		}
+
+		createToolbarOrder.value = {
+			...order,
+			hidden: [...hiddenIds]
+		};
+		persistCreateToolbarOrder();
+	}
+
+	function hideCreateToolEntry(item) {
+		setCreateToolHidden(createToolEntryId(item), true);
+	}
+
+	function showCreateToolEntryId(itemId, groupName = undefined) {
+		setCreateToolHidden(itemId, false);
+		if (groupName) {
+			setCreateToolGroupCollapsed(groupName, false);
+		}
+	}
+
+	function hideCreateToolGroup(groupName, groups) {
+		const group = createToolGroups(groups).find((candidate) => candidate.name === groupName);
+		if (!group) {
+			return;
+		}
+
+		const order = normalizeCreateToolbarOrder(createToolbarOrder.value);
+		const hiddenIds = new Set(order.hidden ?? []);
+		for (const item of group.entries ?? []) {
+			hiddenIds.add(createToolEntryId(item));
+		}
+
+		createToolbarOrder.value = {
+			...order,
+			hidden: [...hiddenIds]
+		};
+		persistCreateToolbarOrder();
+	}
+
+	function showAllCreateTools() {
+		const order = normalizeCreateToolbarOrder(createToolbarOrder.value);
+		createToolbarOrder.value = {
+			...order,
+			hidden: []
+		};
+		collapsedCreateToolGroups.value = [];
+		persistCreateToolbarOrder();
+		persistCollapsedCreateToolGroups();
+	}
+
+	function hiddenCreateToolEntries(groups) {
+		const order = normalizeCreateToolbarOrder(createToolbarOrder.value);
+		const hiddenIds = new Set(order.hidden ?? []);
+		const entries = [];
+
+		for (const group of createToolGroups(groups)) {
+			for (const item of group.entries ?? []) {
+				const id = createToolEntryId(item);
+				if (hiddenIds.has(id)) {
+					entries.push({
+						id,
+						groupName: group.name,
+						name: item.name
+					});
+				}
+			}
+		}
+
+		return entries;
+	}
+
+	function printDrawing(evt) {
+		evt.preventDefault();
+		window.print();
+	}
+
+	function openToolOptions(evt, options) {
+		evt.preventDefault();
+		evt.stopPropagation();
+		toolOptions.value = options;
+		showToolOptions.value = true;
+	}
+
+	function runToolOption(action) {
+		if (typeof action === 'function') {
+			action();
+		}
+		showToolOptions.value = false;
+	}
+
+	function validateAllInscriptions(docValue) {
+		let issueCount = 0;
+		for (const layer of docValue?.layers?.items ?? []) {
+			const before = errors.value.length;
+			validateEditedInscription(layer, docValue);
+			if (errors.value.length > before) {
+				issueCount += 1;
+			}
+		}
+
+		if (issueCount === 0) {
+			statusMessage.value = 'No inscription syntax problems found.';
+		} else {
+			statusMessage.value = `${issueCount} inscription syntax problem${issueCount === 1 ? '' : 's'} found.`;
+		}
+	}
+
+	function isInscriptionLayer(layer) {
+		return !!layer?.text && matchesTextType(layer, 'inscriptions');
+	}
+
+	function isQualifiedInscriptionTarget(layer) {
+		return isPlaceLayer(layer) || isArcLayer(layer) || isVirtualPlaceLayer(layer);
+	}
+
+	function relinkSelectedInscription(cast, docValue) {
+		const byId = layerMap(docValue);
+		const selected = selectedLayers.value.map((id) => byId.get(id)).filter(Boolean);
+		const inscriptions = selected.filter(isInscriptionLayer);
+		const targets = selected.filter((layer) => !isInscriptionLayer(layer));
+
+		if (inscriptions.length !== 1 || targets.length !== 1) {
+			queueError({
+				title: 'Selection Error',
+				message: 'Select exactly one inscription and one target figure.',
+				detail:
+					'The command changes which figure an inscription belongs to. It needs one selected inscription and one selected place or arc.'
+			});
+			return;
+		}
+
+		const target = targets[0];
+		if (!isQualifiedInscriptionTarget(target)) {
+			queueError({
+				title: 'Syntax Error',
+				message: 'The selected target cannot carry an inscription.',
+				detail:
+					'Renew accepts inscriptions on places and arcs. Select a place or arc together with the inscription.'
+			});
+			return;
+		}
+
+		cast('link_layer', {
+			layer_id: inscriptions[0].id,
+			target_layer_id: target.id
+		});
+	}
+
+	function inscriptionHitPoint(layer, textBoundsValue) {
+		if (!layer?.text) {
+			return undefined;
+		}
+
+		const bounds = textBoundsValue?.[layer.id];
+		const width = Number.isFinite(bounds?.width) ? bounds.width : 1;
+		const height = Number.isFinite(bounds?.height) ? bounds.height : 1;
+
+		return {
+			x: layer.text.position_x + width / 2,
+			y: layer.text.position_y + height / 2
+		};
+	}
+
+	function relinkMovedInscriptions(cast, docValue, layersInOrderValue, movedLayerIds) {
+		if (!cast || !docValue || !Array.isArray(layersInOrderValue) || !movedLayerIds?.length) {
+			return;
+		}
+
+		const byId = layerMap(docValue);
+		const tolerance = 10 * cameraScale.value;
+		const inscriptionContent = { renew_type: RENEW_TEXT_TYPE.INSCRIPTION };
+
+		for (const layerId of uniqueLayerIds(movedLayerIds)) {
+			const layer = byId.get(layerId);
+			if (!isInscriptionLayer(layer)) {
+				continue;
+			}
+
+			const point = inscriptionHitPoint(layer, textBounds.value);
+			if (!point) {
+				continue;
+			}
+
+			const target = linkedPrimitiveTargetAtPosition(
+				point,
+				layersInOrderValue,
+				docValue,
+				textBounds.value,
+				tolerance,
+				inscriptionContent
+			);
+
+			if (!target?.id || target.id === layer.hyperlink) {
+				continue;
+			}
+
+			cast('link_layer', {
+				layer_id: layer.id,
+				target_layer_id: target.id
+			});
+		}
+	}
+
+	function inscriptionForTarget(target, docValue) {
+		if (!target?.id) {
+			return null;
+		}
+
+		const byId = layerMap(docValue);
+		return (
+			(docValue?.layers?.items ?? []).find(
+				(layer) => isInscriptionLayer(layer) && textTargetLayer(layer, byId)?.id === target.id
+			) ?? null
+		);
+	}
+
+	function inscriptionPositionFromContext(evt, target, liveLenses, fallbackBounds) {
+		if (Number.isFinite(evt?.clientX) && Number.isFinite(evt?.clientY)) {
+			return snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY));
+		}
+
+		if (fallbackBounds) {
+			return snapCanvasPoint({
+				x: fallbackBounds.x + (fallbackBounds.width ?? 0) / 2,
+				y: fallbackBounds.y + (fallbackBounds.height ?? 0) / 2
+			});
+		}
+
+		if (target?.box) {
+			return snapCanvasPoint({
+				x: target.box.position_x + target.box.width / 2,
+				y: target.box.position_y + target.box.height / 2
+			});
+		}
+
+		if (target?.edge) {
+			return snapCanvasPoint({
+				x: (target.edge.source_x + target.edge.target_x) / 2,
+				y: (target.edge.source_y + target.edge.target_y) / 2
+			});
+		}
+
+		return { x: 0, y: 0 };
+	}
+
+	function beginDirectInscriptionEdit(
+		evt,
+		target,
+		liveLenses,
+		dispatch,
+		cast,
+		docValue,
+		fallbackBounds
+	) {
+		if (activeTool.value !== 'select' || !isQualifiedInscriptionTarget(target)) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		const existing = inscriptionForTarget(target, docValue);
+		if (existing) {
+			const bounds = textBounds.value?.[existing.id] ?? { lockToTextPosition: true };
+			return beginInlineTextEdit(evt, existing, bounds, cast, {
+				force: true,
+				select: true,
+				requireTextHit: false
+			});
+		}
+
+		const position = inscriptionPositionFromContext(evt, target, liveLenses, fallbackBounds);
+		const style = isArcLayer(target)
+			? {
+					background_color: '#ffffff',
+					background_opacity: 1
+				}
+			: undefined;
+
+		dispatch('create_layer', {
+			base_layer_id: target.id,
+			pos: position,
+			body: '',
+			semantic_tag: 'de.renew.gui.CPNTextFigure',
+			renew_type: RENEW_TEXT_TYPE.INSCRIPTION,
+			hyperlink: target.id,
+			style
+		})
+			.then(({ id }) => {
+				if (!id) {
+					return;
+				}
+				publishSelection(cast, [id]);
+				inlineTextEdit.value = {
+					id,
+					body: '',
+					bounds: { lockToTextPosition: true },
+					blankLines: false
+				};
+			})
+			.catch((e) => queueError(e, 'Inscription could not be created'));
+
+		return true;
+	}
+
 	function edgePoints(edge) {
 		const waypoints = L.get(localProp('waypoints'), edge) ?? edge.waypoints ?? [];
 		return [
@@ -1947,12 +4517,216 @@
 		return false;
 	}
 
+	function edgeWaypointInsertion(edge, point, tolerance) {
+		if (!edge || !point) {
+			return undefined;
+		}
+
+		const waypoints = L.get(localProp('waypoints'), edge) ?? edge.waypoints ?? [];
+		const points = [
+			{ x: edge.source_x, y: edge.source_y, id: null },
+			...waypoints,
+			{ x: edge.target_x, y: edge.target_y, id: '__target' }
+		].filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y));
+
+		let closest = undefined;
+
+		for (let i = 1; i < points.length; i++) {
+			const distance = Geo.pointToLineDistance(point, {
+				from: points[i - 1],
+				to: points[i]
+			});
+
+			if (!closest || distance < closest.distance) {
+				closest = {
+					distance,
+					after_waypoint_id: points[i - 1].id,
+					position: point
+				};
+			}
+		}
+
+		if (!closest || closest.distance > tolerance) {
+			return undefined;
+		}
+
+		return {
+			after_waypoint_id: closest.after_waypoint_id,
+			position: closest.position
+		};
+	}
+
+	function edgeWaypointNear(edge, point, tolerance) {
+		if (!edge || !point) {
+			return undefined;
+		}
+
+		const waypoints = L.get(localProp('waypoints'), edge) ?? edge.waypoints ?? [];
+		let closest = undefined;
+
+		for (const waypoint of waypoints) {
+			if (!waypoint?.id || !Number.isFinite(waypoint?.x) || !Number.isFinite(waypoint?.y)) {
+				continue;
+			}
+
+			const distance = Math.hypot(waypoint.x - point.x, waypoint.y - point.y);
+			if (!closest || distance < closest.distance) {
+				closest = {
+					id: waypoint.id,
+					distance
+				};
+			}
+		}
+
+		return closest && closest.distance <= tolerance ? closest : undefined;
+	}
+
+	function beginUnselectedEdgeWaypointDrag(evt, layer, edge, liveLenses) {
+		if (
+			!['select', 'edge'].includes(activeTool.value) ||
+			(activeTool.value === 'select' && selectedLayers.value.includes(layer?.id)) ||
+			!layer?.edge ||
+			!evt.isPrimary ||
+			!E.isLeftButton(evt)
+		) {
+			return false;
+		}
+
+		const start = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		const tolerance = 10 * cameraScale.value;
+		const existing =
+			activeTool.value === 'edge' ? edgeWaypointNear(edge, start, tolerance) : undefined;
+		const insertion = existing ? undefined : edgeWaypointInsertion(edge, start, tolerance);
+
+		if (!insertion && !existing) {
+			return false;
+		}
+
+		edgeWaypointDrag.value = {
+			pointerId: evt.pointerId,
+			layerId: layer.id,
+			afterWaypointId: insertion?.after_waypoint_id,
+			deleteWaypointId: existing?.id,
+			createOnClick: activeTool.value === 'edge',
+			start,
+			current: insertion?.position ?? start,
+			screenStart: { x: evt.clientX, y: evt.clientY },
+			moved: false
+		};
+		backoffValue.value = true;
+		evt.preventDefault();
+		evt.stopPropagation();
+		evt.currentTarget.setPointerCapture(evt.pointerId);
+		evt.currentTarget.currentPointerId = evt.pointerId;
+		return true;
+	}
+
+	function updateUnselectedEdgeWaypointDrag(evt, liveLenses) {
+		const drag = edgeWaypointDrag.value;
+		if (!drag || drag.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		const dx = evt.clientX - drag.screenStart.x;
+		const dy = evt.clientY - drag.screenStart.y;
+		edgeWaypointDrag.value = {
+			...drag,
+			current: liveLenses.clientToCanvas(evt.clientX, evt.clientY),
+			moved: drag.moved || Math.hypot(dx, dy) >= EDGE_WAYPOINT_DRAG_THRESHOLD
+		};
+		evt.preventDefault();
+		evt.stopPropagation();
+		return true;
+	}
+
+	function finishUnselectedEdgeWaypointDrag(evt, cast) {
+		const drag = edgeWaypointDrag.value;
+		if (!drag || drag.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		if (drag.deleteWaypointId && drag.moved) {
+			cast('update_waypoint_position', {
+				layer_id: drag.layerId,
+				waypoint_id: drag.deleteWaypointId,
+				value: drag.current
+			});
+		} else if (drag.deleteWaypointId) {
+			cast('delete_waypoint', {
+				layer_id: drag.layerId,
+				waypoint_id: drag.deleteWaypointId
+			});
+		} else if (drag.moved || drag.createOnClick) {
+			cast('create_waypoint', {
+				layer_id: drag.layerId,
+				after_waypoint_id: drag.afterWaypointId,
+				position: drag.current
+			});
+		}
+
+		publishSelection(cast, [drag.layerId]);
+		edgeWaypointDrag.value = undefined;
+		return true;
+	}
+
+	function cancelUnselectedEdgeWaypointDrag(evt) {
+		if (!edgeWaypointDrag.value || edgeWaypointDrag.value.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		edgeWaypointDrag.value = undefined;
+		return true;
+	}
+
+	function pendingWaypointPreview(waypoints, drag, layerId) {
+		if (!drag?.moved || drag.layerId !== layerId) {
+			return waypoints;
+		}
+
+		if (drag.deleteWaypointId) {
+			return Array.isArray(waypoints)
+				? waypoints.map((waypoint) =>
+						waypoint.id === drag.deleteWaypointId
+							? {
+									...waypoint,
+									x: drag.current.x,
+									y: drag.current.y
+								}
+							: waypoint
+					)
+				: waypoints;
+		}
+
+		const pending = {
+			id: '__pending',
+			x: drag.current.x,
+			y: drag.current.y
+		};
+		const list = Array.isArray(waypoints) ? waypoints : [];
+
+		if (!drag.afterWaypointId) {
+			return [pending, ...list];
+		}
+
+		const index = list.findIndex((waypoint) => waypoint.id === drag.afterWaypointId);
+
+		if (index === -1) {
+			return [...list, pending];
+		}
+
+		return [...list.slice(0, index + 1), pending, ...list.slice(index + 1)];
+	}
+
 	function linkedPrimitiveTargetAtPosition(
 		position,
 		layersInOrderValue,
 		docValue,
 		textBoundsValue,
-		tolerance
+		tolerance,
+		content = undefined
 	) {
 		const layerById = new Map(docValue.layers.items.map((layer) => [layer.id, layer]));
 
@@ -1976,7 +4750,10 @@
 				continue;
 			}
 
-			if (layer.box || edgeContainsPoint(layer.edge, position, tolerance)) {
+			if (
+				(layer.box || edgeContainsPoint(layer.edge, position, tolerance)) &&
+				(!content || canTargetLinkedPrimitiveContent(content, layer))
+			) {
 				return layer;
 			}
 		}
@@ -2084,22 +4861,72 @@
 	}
 
 	function primitiveToolId(item) {
-		return item?.data?.content?.semantic_tag ?? item?.name;
+		return `primitive:${item?.name ?? ''}:${item?.data?.content?.semantic_tag ?? ''}`;
+	}
+
+	function isVirtualPlaceContent(content) {
+		const tag = content?.semantic_tag ?? '';
+		return tag === 'de.renew.gui.VirtualPlaceFigure' || tag.endsWith('.VirtualPlaceFigure');
+	}
+
+	function isVirtualTransitionContent(content) {
+		const tag = content?.semantic_tag ?? '';
+		return (
+			tag === 'de.renew.gui.VirtualTransitionFigure' || tag.endsWith('.VirtualTransitionFigure')
+		);
+	}
+
+	function isVirtualPrimitiveContent(content) {
+		return isVirtualPlaceContent(content) || isVirtualTransitionContent(content);
+	}
+
+	function primitiveContent(tool) {
+		return tool?.item?.data?.content ?? {};
+	}
+
+	function primitiveCreatesVirtualPlace(tool) {
+		return tool?.type === 'primitive' && isVirtualPlaceContent(primitiveContent(tool));
+	}
+
+	function primitiveCreatesVirtualTransition(tool) {
+		return tool?.type === 'primitive' && isVirtualTransitionContent(primitiveContent(tool));
+	}
+
+	function primitiveCreatesVirtualFigure(tool) {
+		return primitiveCreatesVirtualPlace(tool) || primitiveCreatesVirtualTransition(tool);
 	}
 
 	function createToolGroups(groups) {
-		return [...(groups ?? [])].map((group) => ({
+		const order = normalizeCreateToolbarOrder(createToolbarOrder.value);
+		const groupList = [...(groups ?? [])].map((group) => ({
 			...group,
-			entries: group?.items ?? []
+			entries: orderedByPreference(
+				group?.items ?? [],
+				order.entries?.[group?.name],
+				createToolEntryId
+			)
 		}));
+
+		return orderedByPreference(groupList, order.groups, (group) => group.name);
 	}
 
 	function isEdgeCreateToolEntry(entry) {
 		return entry?.kind === 'edge-tool';
 	}
 
+	function edgeToolId(entry) {
+		return `edge:${entry?.name ?? ''}`;
+	}
+
 	function createToolEntryId(entry) {
-		return isEdgeCreateToolEntry(entry) ? 'edge' : primitiveToolId(entry);
+		return isEdgeCreateToolEntry(entry) ? edgeToolId(entry) : primitiveToolId(entry);
+	}
+
+	function visibleCreateToolEntries(group) {
+		const hiddenIds = new Set(normalizeCreateToolbarOrder(createToolbarOrder.value).hidden ?? []);
+		return (group?.entries ?? []).filter((entry) => {
+			return !hiddenIds.has(createToolEntryId(entry));
+		});
 	}
 
 	function isSelectableCreatePrimitive(item) {
@@ -2112,6 +4939,50 @@
 
 	function isActiveCreatePrimitive(item) {
 		return activeCreateTool.value?.id === primitiveToolId(item);
+	}
+
+	function edgeToolData(item) {
+		return item?.data ?? {};
+	}
+
+	function isActiveEdgeCreateTool(item) {
+		return activeTool.value === 'edge' && activeEdgeTool.value?.id === edgeToolId(item);
+	}
+
+	function activateEdgeCreateTool(item, persistent = false, cast = undefined) {
+		if (!isEdgeCreateToolEntry(item)) {
+			return false;
+		}
+
+		clearSelectionForNonSelectTool('edge', cast);
+		activeCreateTool.value = undefined;
+		primitiveCreation.value = undefined;
+		inlineTextEdit.value = undefined;
+		activeTool.value = 'edge';
+		edgeToolPersistent = persistent;
+		activeEdgeTool.value = {
+			id: edgeToolId(item),
+			...edgeToolData(item)
+		};
+		return true;
+	}
+
+	function activeEdgeValue(key, fallback = undefined) {
+		const tool = activeTool.value === 'edge' ? activeEdgeTool.value : undefined;
+		if (!tool) {
+			return fallback;
+		}
+
+		return Object.prototype.hasOwnProperty.call(tool, key) ? tool[key] : fallback;
+	}
+
+	function activeEdgePayload() {
+		if (activeTool.value !== 'edge' || !activeEdgeTool.value) {
+			return {};
+		}
+
+		const { id, ...payload } = activeEdgeTool.value;
+		return payload;
 	}
 
 	function clearSelectionForNonSelectTool(toolId, cast) {
@@ -2136,8 +5007,9 @@
 			id: primitiveToolId(item),
 			item,
 			persistent,
-			linkedTargetId: undefined
+			linkedTargetId
 		};
+		activeEdgeTool.value = undefined;
 		primitiveCreation.value = undefined;
 		inlineTextEdit.value = undefined;
 		activeTool.value = CREATE_TOOL_ID;
@@ -2171,6 +5043,7 @@
 			blueprintId,
 			persistent
 		};
+		activeEdgeTool.value = undefined;
 		primitiveCreation.value = undefined;
 		inlineTextEdit.value = undefined;
 		activeTool.value = CREATE_TOOL_ID;
@@ -2192,6 +5065,7 @@
 	function selectEditorTool(toolId, cast = undefined, persistent = false) {
 		clearSelectionForNonSelectTool(toolId, cast);
 		activeCreateTool.value = undefined;
+		activeEdgeTool.value = undefined;
 		primitiveCreation.value = undefined;
 		inlineTextEdit.value = undefined;
 		activeTool.value = toolId;
@@ -2247,7 +5121,8 @@
 			start,
 			current: start,
 			screenStart: { x: evt.clientX, y: evt.clientY },
-			screenCurrent: { x: evt.clientX, y: evt.clientY }
+			screenCurrent: { x: evt.clientX, y: evt.clientY },
+			square: evt.shiftKey || evt.ctrlKey || evt.metaKey
 		};
 		backoffValue.value = true;
 
@@ -2265,7 +5140,8 @@
 		primitiveCreation.value = {
 			...primitiveCreation.value,
 			current: snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY)),
-			screenCurrent: { x: evt.clientX, y: evt.clientY }
+			screenCurrent: { x: evt.clientX, y: evt.clientY },
+			square: evt.shiftKey || evt.ctrlKey || evt.metaKey
 		};
 		evt.preventDefault();
 		evt.stopPropagation();
@@ -2273,11 +5149,20 @@
 	}
 
 	function primitiveSupportsSizedCreation(tool) {
-		return tool?.type === 'primitive' && !!tool?.item?.data?.content?.shape_id;
+		return (
+			tool?.type === 'primitive' &&
+			(!!tool?.item?.data?.content?.shape_id || Array.isArray(tool?.item?.data?.content?.points)) &&
+			!primitiveCreatesVirtualFigure(tool)
+		);
 	}
 
 	function primitiveCreatesText(tool) {
 		return tool?.type === 'primitive' && typeof tool?.item?.data?.content?.body === 'string';
+	}
+
+	function primitiveCreatesImage(tool) {
+		const tag = primitiveContent(tool)?.semantic_tag ?? '';
+		return tool?.type === 'primitive' && tag.endsWith('.ImageFigure');
 	}
 
 	function shouldInlineEditCreatedPrimitive(tool) {
@@ -2384,23 +5269,191 @@
 	}
 
 	function primitivePreviewIsEllipse(content) {
-		return content?.shape_id === CIRCLE_SHAPE_ID;
+		const tag = content?.semantic_tag ?? '';
+		return (
+			content?.shape_id === CIRCLE_SHAPE_ID ||
+			tag.endsWith('.PlaceFigure') ||
+			tag.endsWith('.VirtualPlaceFigure')
+		);
+	}
+
+	function primitivePreviewIsTriangle(content) {
+		const tag = content?.semantic_tag ?? '';
+		return tag.endsWith('.TriangleFigure');
+	}
+
+	function primitivePreviewIsDiamond(content) {
+		const tag = content?.semantic_tag ?? '';
+		return tag.endsWith('.DiamondFigure');
+	}
+
+	function primitivePreviewIsPie(content) {
+		const tag = content?.semantic_tag ?? '';
+		return tag.endsWith('.PieFigure');
+	}
+
+	function primitivePreviewIsLine(content) {
+		return Array.isArray(content?.points);
+	}
+
+	function primitivePreviewRoundRadius(content) {
+		const attrs = content?.shape_attributes ?? {};
+		return attrs.rx ?? attrs['rx'] ?? 0;
+	}
+
+	function primitivePreviewTrianglePath(box) {
+		return `M ${box.x + box.width / 2} ${box.y} L ${box.x + box.width} ${box.y + box.height} L ${box.x} ${box.y + box.height} Z`;
+	}
+
+	function primitivePreviewDiamondPath(box) {
+		return `M ${box.x + box.width / 2} ${box.y} L ${box.x + box.width} ${box.y + box.height / 2} L ${box.x + box.width / 2} ${box.y + box.height} L ${box.x} ${box.y + box.height / 2} Z`;
+	}
+
+	function primitivePreviewPiePath(box) {
+		const rx = box.width / 2;
+		const ry = box.height / 2;
+		const cx = box.x + rx;
+		const cy = box.y + ry;
+		return `M ${cx} ${cy} L ${cx} ${box.y} A ${rx} ${ry} 0 1 1 ${box.x} ${cy} Z`;
+	}
+
+	function primitivePreviewLinePath(box) {
+		return `M ${box.x} ${box.y + box.height / 2} L ${box.x + box.width} ${box.y + box.height / 2}`;
 	}
 
 	function primitiveNeedsLinkedTarget(tool) {
-		return tool?.type === 'primitive' && !!tool?.item?.data?.content?.hyperlink;
+		const content = primitiveContent(tool);
+		return (
+			tool?.type === 'primitive' && (!!content?.hyperlink || isVirtualPrimitiveContent(content))
+		);
 	}
 
 	function primitiveHasLinkedTarget(tool) {
 		return !primitiveNeedsLinkedTarget(tool) || typeof tool?.linkedTargetId === 'string';
 	}
 
+	function primitiveCanBeLinkedToSelection(item, selectedLayer) {
+		const tool = { type: 'primitive', item };
+		if (!primitiveNeedsLinkedTarget(tool)) {
+			return undefined;
+		}
+
+		return canTargetLinkedPrimitive(tool, selectedLayer) ? selectedLayer?.id : undefined;
+	}
+
 	function canTargetLinkedPrimitive(tool, layer) {
-		return (
-			primitiveNeedsLinkedTarget(tool) &&
-			typeof layer?.id === 'string' &&
-			(!!layer?.box || !!layer?.edge)
-		);
+		const content = primitiveContent(tool);
+
+		if (primitiveCreatesVirtualPlace(tool)) {
+			return typeof layer?.id === 'string' && isPlaceLayer(layer);
+		}
+
+		if (primitiveCreatesVirtualTransition(tool)) {
+			return typeof layer?.id === 'string' && isTransitionLayer(layer);
+		}
+
+		return primitiveNeedsLinkedTarget(tool) && canTargetLinkedPrimitiveContent(content, layer);
+	}
+
+	function canTargetLinkedPrimitiveContent(content, layer) {
+		if (isVirtualPlaceContent(content)) {
+			return typeof layer?.id === 'string' && isPlaceLayer(layer);
+		}
+
+		if (isVirtualTransitionContent(content)) {
+			return typeof layer?.id === 'string' && isTransitionLayer(layer);
+		}
+
+		if (Number(content?.renew_type) === RENEW_TEXT_TYPE.INSCRIPTION) {
+			return typeof layer?.id === 'string' && isQualifiedInscriptionTarget(layer);
+		}
+
+		if (Number(content?.renew_type) === RENEW_TEXT_TYPE.NAME) {
+			return typeof layer?.id === 'string' && isNodeLayer(layer);
+		}
+
+		return typeof layer?.id === 'string' && (!!layer?.box || !!layer?.edge);
+	}
+
+	function linkedPrimitiveSemanticTargetLayer(tool, layer, docValue) {
+		if (!primitiveCreatesVirtualFigure(tool)) {
+			return layer;
+		}
+
+		return linkedVirtualSemanticTargetLayer(primitiveContent(tool), layer, docValue);
+	}
+
+	function linkedPrimitiveContentSemanticTargetLayer(content, layer, docValue) {
+		if (!isVirtualPrimitiveContent(content)) {
+			return layer;
+		}
+
+		return linkedVirtualSemanticTargetLayer(content, layer, docValue);
+	}
+
+	function linkedVirtualSemanticTargetLayer(content, layer, docValue) {
+		const byId = layerMap(docValue);
+		let target = layer;
+		const seen = new Set();
+
+		while (
+			target?.hyperlink &&
+			!seen.has(target.id) &&
+			((isVirtualPlaceContent(content) && isVirtualPlaceLayer(target)) ||
+				(isVirtualTransitionContent(content) && isVirtualTransitionLayer(target)))
+		) {
+			seen.add(target.id);
+			target = byId.get(target.hyperlink);
+		}
+
+		return target ?? layer;
+	}
+
+	function virtualNameCloneTemplates(sourceLayer, docValue) {
+		if (!sourceLayer?.id || !sourceLayer?.box) {
+			return [];
+		}
+
+		return (docValue?.layers?.items ?? [])
+			.filter((layer) => layer?.text && layer.hyperlink === sourceLayer.id)
+			.filter((layer) => renewTextType(layer) === RENEW_TEXT_TYPE.NAME)
+			.map((layer) => ({
+				body: layer.text.body ?? '',
+				semantic_tag: layer.semantic_tag ?? 'de.renew.gui.CPNTextFigure',
+				renew_type: RENEW_TEXT_TYPE.NAME,
+				style: layer.text.style,
+				offsetX: Number(layer.text.position_x ?? 0) - Number(sourceLayer.box.position_x ?? 0),
+				offsetY: Number(layer.text.position_y ?? 0) - Number(sourceLayer.box.position_y ?? 0)
+			}));
+	}
+
+	function createVirtualNameClones(tool, createdLayerId, position, size, content, dispatch) {
+		const templates = tool?.virtualNameClones ?? [];
+		if (!primitiveCreatesVirtualFigure(tool) || !createdLayerId || templates.length === 0) {
+			return;
+		}
+
+		const width = Number(size?.width ?? content?.width ?? 20);
+		const height = Number(size?.height ?? content?.height ?? 20);
+		const boxX = Number(position?.x ?? 0) - width / 2;
+		const boxY = Number(position?.y ?? 0) - height / 2;
+
+		for (const template of templates) {
+			dispatch('create_layer', {
+				base_layer_id: createdLayerId,
+				pos: {
+					x: boxX + Number(template.offsetX ?? 0),
+					y: boxY + Number(template.offsetY ?? 0)
+				},
+				body: template.body,
+				semantic_tag: template.semantic_tag,
+				renew_type: template.renew_type,
+				style: template.style,
+				hyperlink: createdLayerId
+			}).catch((e) => {
+				queueError(e, 'Virtual figure name could not be copied');
+			});
+		}
 	}
 
 	function canCreateUnlinkedTextPrimitive(tool) {
@@ -2423,20 +5476,43 @@
 		return true;
 	}
 
-	function createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, layer) {
+	function createLinkedPrimitiveOnLayer(evt, liveLenses, dispatch, cast, docValue, layer) {
+		if (suppressNextLinkedPrimitiveClick) {
+			suppressNextLinkedPrimitiveClick = false;
+			evt.preventDefault();
+			evt.stopPropagation();
+			return true;
+		}
+
 		const tool = activeCreateTool.value;
 		if (!canTargetLinkedPrimitive(tool, layer)) {
 			return false;
 		}
 
 		const position = snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY));
+		const linkedTargetLayer = linkedPrimitiveSemanticTargetLayer(tool, layer, docValue);
+		const virtualNameClones = primitiveCreatesVirtualFigure(tool)
+			? virtualNameCloneTemplates(layer, docValue)
+			: [];
+		const createAt =
+			primitiveCreatesVirtualFigure(tool) && layer?.box
+				? {
+						x: layer.box.position_x + layer.box.width / 2,
+						y: layer.box.position_y + layer.box.height / 2
+					}
+				: position;
+		const createSize =
+			primitiveCreatesVirtualFigure(tool) && layer?.box
+				? { width: layer.box.width, height: layer.box.height }
+				: undefined;
 		rememberPasteLocation(position);
 		createPrimitiveLayer(
-			{ ...tool, linkedTargetId: layer.id },
-			position,
-			undefined,
+			{ ...tool, linkedTargetId: linkedTargetLayer?.id, virtualNameClones },
+			createAt,
+			createSize,
 			dispatch,
-			layer.id
+			layer.id,
+			cast
 		);
 		backoffValue.value = true;
 
@@ -2449,7 +5525,112 @@
 		return true;
 	}
 
-	function createPrimitiveLayer(tool, position, size, dispatch, baseLayerId) {
+	function linkedPrimitiveInitialPlacement(tool, layer, position) {
+		if (primitiveCreatesVirtualFigure(tool) && layer?.box) {
+			return {
+				position: {
+					x: layer.box.position_x + layer.box.width / 2,
+					y: layer.box.position_y + layer.box.height / 2
+				},
+				size: { width: layer.box.width, height: layer.box.height }
+			};
+		}
+
+		return { position, size: undefined };
+	}
+
+	function beginLinkedPrimitiveCreation(evt, liveLenses, docValue, layer) {
+		const tool = activeCreateTool.value;
+		if (
+			!evt.isPrimary ||
+			!E.isLeftButton(evt) ||
+			!primitiveCreatesVirtualFigure(tool) ||
+			!canTargetLinkedPrimitive(tool, layer)
+		) {
+			return false;
+		}
+
+		const pointerPosition = snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY));
+		const linkedTargetLayer = linkedPrimitiveSemanticTargetLayer(tool, layer, docValue);
+		const placement = linkedPrimitiveInitialPlacement(tool, layer, pointerPosition);
+		const virtualNameClones = virtualNameCloneTemplates(layer, docValue);
+
+		linkedPrimitiveCreation.value = {
+			pointerId: evt.pointerId,
+			tool: { ...tool, linkedTargetId: linkedTargetLayer?.id, virtualNameClones },
+			baseLayerId: layer.id,
+			initial: placement.position,
+			current: placement.position,
+			size: placement.size,
+			screenStart: { x: evt.clientX, y: evt.clientY },
+			screenCurrent: { x: evt.clientX, y: evt.clientY }
+		};
+		rememberPasteLocation(pointerPosition);
+		backoffValue.value = true;
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		evt.currentTarget.setPointerCapture(evt.pointerId);
+		return true;
+	}
+
+	function updateLinkedPrimitiveCreation(evt, liveLenses) {
+		if (linkedPrimitiveCreation.value?.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		linkedPrimitiveCreation.value = {
+			...linkedPrimitiveCreation.value,
+			current: snapCanvasPoint(liveLenses.clientToCanvas(evt.clientX, evt.clientY)),
+			screenCurrent: { x: evt.clientX, y: evt.clientY }
+		};
+		evt.preventDefault();
+		evt.stopPropagation();
+		return true;
+	}
+
+	function finishLinkedPrimitiveCreation(evt, dispatch, cast) {
+		const creation = linkedPrimitiveCreation.value;
+		if (creation?.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+			evt.currentTarget.releasePointerCapture(evt.pointerId);
+		}
+
+		const isDrag = isPrimitiveCreationDrag(creation);
+		const position = isDrag ? creation.current : creation.initial;
+		createPrimitiveLayer(
+			creation.tool,
+			position,
+			creation.size,
+			dispatch,
+			creation.baseLayerId,
+			cast
+		);
+
+		if (!creation.tool.persistent && !keepCreateToolWhileEditingCreatedPrimitive(creation.tool)) {
+			resetToSelectTool();
+		}
+
+		linkedPrimitiveCreation.value = undefined;
+		suppressNextLinkedPrimitiveClick = true;
+		evt.preventDefault();
+		evt.stopPropagation();
+		return true;
+	}
+
+	function cancelLinkedPrimitiveCreation(evt) {
+		if (evt && linkedPrimitiveCreation.value?.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		linkedPrimitiveCreation.value = undefined;
+		return true;
+	}
+
+	function createPrimitiveLayer(tool, position, size, dispatch, baseLayerId, cast = undefined) {
 		const content = { ...(tool?.item?.data?.content ?? {}) };
 		const editCreatedPrimitive = shouldInlineEditCreatedPrimitive(tool);
 
@@ -2457,11 +5638,16 @@
 			return;
 		}
 
+		if (primitiveCreatesImage(tool) && !content.image && !content.background_url) {
+			createImageLayerFromPicker(position, size, dispatch, cast, baseLayerId);
+			return;
+		}
+
 		if (editCreatedPrimitive) {
 			content.body = '';
 		}
 
-		if (content.hyperlink) {
+		if (content.hyperlink || primitiveCreatesVirtualFigure(tool)) {
 			content.hyperlink = tool.linkedTargetId;
 		}
 
@@ -2471,13 +5657,25 @@
 			...content
 		};
 
-		if (size) {
+		if (Array.isArray(content.points)) {
+			payload.points = Array.isArray(size?.points)
+				? size.points
+				: content.points.map((point) => ({
+						x: position.x + Number(point?.x ?? 0),
+						y: position.y + Number(point?.y ?? 0)
+					}));
+			delete payload.pos;
+		}
+
+		if (size && !Array.isArray(content.points)) {
 			payload.width = size.width;
 			payload.height = size.height;
 		}
 
 		dispatch('create_layer', payload)
 			.then((layer) => {
+				createVirtualNameClones(tool, layer?.id, position, size, content, dispatch);
+
 				if (editCreatedPrimitive && layer?.id) {
 					inlineTextEdit.value = {
 						id: layer.id,
@@ -2485,11 +5683,82 @@
 						bounds: { lockToTextPosition: true },
 						blankLines: !!content?.style?.blank_lines
 					};
+				} else if (layer?.id && cast) {
+					publishSelection(cast, [layer.id]);
 				}
 			})
 			.catch((e) => {
 				queueError(e, 'Layer could not be created');
 			});
+	}
+
+	function chooseImageFile() {
+		return new Promise((resolve, reject) => {
+			const input = document.createElement('input');
+			input.type = 'file';
+			input.accept = 'image/*';
+			input.style.display = 'none';
+			input.onchange = () => {
+				resolve(input.files?.[0] ?? null);
+				input.remove();
+			};
+			input.oncancel = () => {
+				resolve(null);
+				input.remove();
+			};
+			document.body.append(input);
+			input.click();
+		});
+	}
+
+	function createImageLayerFromFile(file, position, size, dispatch, cast, baseLayerId) {
+		if (!file) {
+			return Promise.resolve(null);
+		}
+
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = (event) => {
+				const image = new Image();
+				image.onload = () => {
+					const naturalWidth = Number(image.naturalWidth || image.width || 40);
+					const naturalHeight = Number(image.naturalHeight || image.height || 32);
+					const width = Number(size?.width || naturalWidth);
+					const height = Number(size?.height || naturalHeight);
+
+					dispatch('create_layer', {
+						base_layer_id: baseLayerId,
+						pos: {
+							x: position.x - width / 2,
+							y: position.y - height / 2,
+							width,
+							height
+						},
+						image: event.target.result
+					})
+						.then((layer) => {
+							if (layer?.id) {
+								publishSelection(cast, [layer.id]);
+							}
+							resolve(layer);
+						})
+						.catch(reject);
+				};
+				image.onerror = () => reject(new Error('Image could not be loaded'));
+				image.src = event.target.result;
+			};
+			reader.onerror = () => reject(new Error('Image could not be read'));
+			reader.readAsDataURL(file);
+		});
+	}
+
+	async function createImageLayerFromPicker(position, size, dispatch, cast, baseLayerId) {
+		try {
+			const file = await chooseImageFile();
+			await createImageLayerFromFile(file, position, size, dispatch, cast, baseLayerId);
+		} catch (e) {
+			queueError(e, 'Image could not be inserted');
+		}
 	}
 
 	function createBlueprintInstance(tool, position, dispatch, cast) {
@@ -2501,6 +5770,232 @@
 			.catch((e) => {
 				queueError(e, 'Document could not be inserted');
 			});
+	}
+
+	function handleDroppedLayerContent(content, pos, dispatch, cast) {
+		if (!content || typeof content !== 'object') {
+			return;
+		}
+
+		const layerContent = { ...content };
+		const droppedImagePrimitive =
+			typeof layerContent.semantic_tag === 'string' &&
+			layerContent.semantic_tag.endsWith('.ImageFigure') &&
+			!layerContent.image &&
+			!layerContent.background_url;
+		const editDroppedText = typeof layerContent.body === 'string';
+		let baseLayerId = L.get('id', singleSelectedLayer.value);
+
+		if (droppedImagePrimitive) {
+			createImageLayerFromPicker(
+				pos,
+				{ width: layerContent.width, height: layerContent.height },
+				dispatch,
+				cast,
+				baseLayerId
+			);
+			return;
+		}
+
+		if (editDroppedText) {
+			layerContent.body = '';
+		}
+
+		if (layerContent.hyperlink || isVirtualPrimitiveContent(layerContent)) {
+			const linkedLayer =
+				typeof layerContent.hyperlink === 'string'
+					? layerMap(doc.value).get(layerContent.hyperlink)
+					: linkedPrimitiveTargetAtPosition(
+							pos,
+							layersInOrder.value,
+							doc.value,
+							textBounds.value,
+							12 * cameraScale.value,
+							layerContent
+						);
+			const linkedTargetLayer = linkedPrimitiveContentSemanticTargetLayer(
+				layerContent,
+				linkedLayer,
+				doc.value
+			);
+			const linkedTargetId = linkedTargetLayer?.id;
+
+			if (!linkedTargetId) {
+				return;
+			}
+
+			layerContent.hyperlink = linkedTargetId;
+			baseLayerId = linkedLayer?.id ?? linkedTargetId;
+		}
+
+		dispatch('create_layer', {
+			base_layer_id: baseLayerId,
+			pos,
+			...layerContent
+		})
+			.then((l) => {
+				if (editDroppedText && l?.id) {
+					inlineTextEdit.value = {
+						id: l.id,
+						body: '',
+						bounds: { lockToTextPosition: true },
+						blankLines: !!layerContent?.style?.blank_lines
+					};
+				} else if (l?.id) {
+					publishSelection(cast, [l.id]);
+				}
+			})
+			.catch((e) => {
+				queueError(e, 'Layer could not be created');
+			});
+	}
+
+	function handleDroppedBlueprintContent(content, pos, dispatch, cast) {
+		if (!content?.blueprint_id) {
+			return;
+		}
+
+		dispatch('insert_document', {
+			document_id: content.blueprint_id,
+			position: pos
+		})
+			.then((result) => selectInsertedLayers(cast, result))
+			.catch((e) => {
+				queueError(e, 'Document could not be inserted');
+			});
+	}
+
+	function handleDroppedContent(mime, content, pos, dispatch, cast) {
+		if (mime === LAYER_PRIMITIVE_MIME_TYPE) {
+			handleDroppedLayerContent(content, pos, dispatch, cast);
+		} else if (mime === BLUEPRINT_MIME_TYPE) {
+			handleDroppedBlueprintContent(content, pos, dispatch, cast);
+		}
+	}
+
+	function handleDroppedFile(file, pos, dispatch, cast) {
+		if (file?.type?.startsWith('image/') && file.type !== 'image/svg+xml') {
+			createImageLayerFromFile(file, pos, undefined, dispatch, cast, L.get('id', singleSelectedLayer.value))
+				.catch((e) => {
+					queueError(e, 'Image could not be inserted');
+				});
+			return;
+		}
+
+		const reader = new FileReader();
+		reader.onload = function (event) {
+			new Promise((res) => {
+				const parser = new DOMParser();
+				const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
+				const isSvg = !svgDoc.querySelector('parsererror');
+				if (isSvg) {
+					res({ type: 'svg', svg: svgDoc });
+				} else {
+					res({ type: 'other', data: event.target.result });
+				}
+			})
+				.then((doc) => {
+					if (doc.type == 'svg') {
+						return data.commands.uploadSvg(doc.svg).then((j) =>
+							dispatch('create_layer', {
+								base_layer_id: L.get('id', singleSelectedLayer.value),
+								pos: {
+									x: -doc.svg.documentElement.width.baseVal.value / 2 + pos.x,
+									y: -doc.svg.documentElement.height.baseVal.value / 2 + pos.y,
+									width: doc.svg.documentElement.width.baseVal.value,
+									height: doc.svg.documentElement.height.baseVal.value
+								},
+								image: j.url
+							}).then((l) => {
+								publishSelection(cast, [l.id]);
+							})
+						);
+					}
+
+					return dispatch('insert_file', {
+						content: doc.data,
+						file_name: file.name,
+						x: pos.x,
+						y: pos.y
+					}).then((result) => selectInsertedLayers(cast, result));
+				})
+				.catch((e) => {
+					queueError(e, 'File could not be inserted');
+				});
+		};
+		reader.readAsText(file);
+	}
+
+	function fallbackDropPosition() {
+		return lastPasteLocation.value ?? { x: 0, y: 0 };
+	}
+
+	function handleToolbarDrop(evt, dispatch, cast) {
+		const transfer = evt.dataTransfer;
+		if (!transfer) {
+			return;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		const pos = fallbackDropPosition();
+		let handledStructuredContent = false;
+
+		for (const file of transfer.files ?? []) {
+			handleDroppedFile(file, pos, dispatch, cast);
+		}
+
+		for (const mime of [LAYER_PRIMITIVE_MIME_TYPE, BLUEPRINT_MIME_TYPE]) {
+			if (!hasTransferContent(transfer, mime)) {
+				continue;
+			}
+
+			const raw = getTransferContent(transfer, mime);
+			const content = safeJsonParse(raw);
+			if (content) {
+				handleDroppedContent(mime, content, pos, dispatch, cast);
+				handledStructuredContent = true;
+			}
+		}
+
+		if (!handledStructuredContent && hasTransferContent(transfer, 'text/plain')) {
+			const workaround = safeJsonParse(getTransferContent(transfer, 'text/plain'));
+			if (
+				workaround &&
+				typeof workaround.mime === 'string' &&
+				Object.prototype.hasOwnProperty.call(workaround, 'data')
+			) {
+				handleDroppedContent(workaround.mime, workaround.data, pos, dispatch, cast);
+			}
+		}
+	}
+
+	function editorDropZone(node, context) {
+		let current = context;
+
+		function dragover(evt) {
+			if (evt.dataTransfer?.types?.length || evt.dataTransfer?.files?.length) {
+				evt.preventDefault();
+				evt.dataTransfer.dropEffect = 'copy';
+			}
+		}
+
+		function drop(evt) {
+			handleToolbarDrop(evt, current.dispatch, current.cast);
+		}
+
+		node.addEventListener('dragover', dragover);
+		node.addEventListener('drop', drop);
+
+		return {
+			update(next) {
+				current = next;
+			},
+			destroy() {
+				node.removeEventListener('dragover', dragover);
+				node.removeEventListener('drop', drop);
+			}
+		};
 	}
 
 	function finishPrimitiveCreation(evt, liveLenses, dispatch, cast, baseLayerId) {
@@ -2523,17 +6018,29 @@
 			if (primitiveHasLinkedTarget(tool)) {
 				if (primitiveSupportsSizedCreation(tool) && isPrimitiveCreationDrag(creation)) {
 					const box = normalizedBox(creation);
-					createPrimitiveLayer(
-						tool,
-						{ x: box.x + box.width / 2, y: box.y + box.height / 2 },
-						{ width: box.width, height: box.height },
-						dispatch,
-						baseLayerId
-					);
+					if (Array.isArray(primitiveContent(tool).points)) {
+						createPrimitiveLayer(
+							tool,
+							creation.start,
+							{ points: [creation.start, creation.current] },
+							dispatch,
+							baseLayerId,
+							cast
+						);
+					} else {
+						createPrimitiveLayer(
+							tool,
+							{ x: box.x + box.width / 2, y: box.y + box.height / 2 },
+							{ width: box.width, height: box.height },
+							dispatch,
+							baseLayerId,
+							cast
+						);
+					}
 				} else if (tool.type === 'blueprint') {
 					createBlueprintInstance(tool, creation.start, dispatch, cast);
 				} else {
-					createPrimitiveLayer(tool, creation.start, undefined, dispatch, baseLayerId);
+					createPrimitiveLayer(tool, creation.start, undefined, dispatch, baseLayerId, cast);
 				}
 
 				if (!tool.persistent && !keepCreateToolWhileEditingCreatedPrimitive(tool)) {
@@ -2749,6 +6256,8 @@
 		}
 
 		const body = edit.body ?? '';
+		const docValue = deleteShortcutContext.doc?.value;
+		const editedLayer = layerMap(docValue).get(edit.id);
 		if (textEditorIsEmpty(body)) {
 			if (selectedLayers.value.includes(edit.id)) {
 				publishSelection(
@@ -2774,6 +6283,7 @@
 			layer_id: edit.id,
 			val: body
 		});
+		validateEditedInscription(editedLayer, docValue);
 		inlineTextEdit.value = undefined;
 	}
 
@@ -2889,8 +6399,263 @@
 			});
 	}
 
-	function causeError(e) {
-		queueError('Test error');
+	function openNavigatorPane() {
+		showMinimap.value = true;
+		showHierarchy.value = true;
+	}
+
+	function importFiles(dispatch, cast, accept = '.rnw,.draw,.svg,image/*') {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.multiple = true;
+		input.accept = accept;
+		input.onchange = () => {
+			for (const file of input.files ?? []) {
+				handleDroppedFile(file, fallbackDropPosition(), dispatch, cast);
+			}
+		};
+		input.click();
+	}
+
+	function normalizeOpenUrlInput(rawUrl) {
+		const trimmed = `${rawUrl ?? ''}`.trim();
+
+		if (!trimmed) {
+			return null;
+		}
+
+		if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
+			return trimmed;
+		}
+
+		return `http://${trimmed}`;
+	}
+
+	function fileNameFromOpenUrl(href) {
+		try {
+			const url = new URL(href);
+			const name = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() ?? '');
+			return name || 'drawing.rnw';
+		} catch {
+			return 'drawing.rnw';
+		}
+	}
+
+	async function openUrl(dispatch, cast) {
+		const href = normalizeOpenUrlInput(prompt('URL'));
+		if (!href) {
+			return;
+		}
+
+		try {
+			const response = await fetch(href);
+			if (!response.ok) {
+				throw new Error(`Unexpected server response (${response.status})`);
+			}
+
+			const contentType = response.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
+			const blob = await response.blob();
+			const file = new File([blob], fileNameFromOpenUrl(href), { type: contentType });
+			handleDroppedFile(file, fallbackDropPosition(), dispatch, cast);
+		} catch (e) {
+			queueError(
+				e,
+				'URL could not be opened. The browser may have blocked access, or the URL did not point to an importable drawing.'
+			);
+		}
+	}
+
+	function closeAllDrawings() {
+		location.href = resolve(`/projects/${data.document.links.project.id}/documents`);
+	}
+
+	function exitEditor() {
+		location.href = resolve('/projects');
+	}
+
+	const commandConsoleHelp = [
+		'help',
+		'new drawing',
+		'select all',
+		'invert selection',
+		'clear selection',
+		'delete',
+		'copy',
+		'cut',
+		'paste',
+		'duplicate',
+		'search <text>',
+		'check syntax',
+		'group',
+		'ungroup',
+		'toggle snap',
+		'show grid',
+		'hide grid',
+		'snap grid',
+		'fit',
+		'reset zoom',
+		'zoom in',
+		'zoom out',
+		'reset rotation',
+		'rotate left',
+		'rotate right',
+		'show hierarchy',
+		'hide hierarchy',
+		'show minimap',
+		'hide minimap',
+		'show toolbars',
+		'hide toolbars',
+		'navigator',
+		'print',
+		'export renew',
+		'export svg',
+		'export png',
+		'export json',
+		'export struct',
+		'simulate'
+	];
+
+	async function runEditorConsoleCommand(dispatch, cast, docValue, layersInOrderValue) {
+		const rawCommand = commandConsoleText.value.trim();
+		const command = rawCommand.toLocaleLowerCase();
+
+		if (!command) {
+			return;
+		}
+
+		commandConsoleOutput.value = '';
+
+		try {
+			if (command === 'help' || command === '?') {
+				commandConsoleOutput.value = `Available commands:\n${commandConsoleHelp.join('\n')}`;
+			} else if (command === 'new drawing') {
+				showNewDrawing.value = true;
+				commandConsoleOutput.value = 'New drawing dialog opened.';
+			} else if (command === 'select all') {
+				selectAllLayers(cast, layersInOrderValue);
+				commandConsoleOutput.value = 'Selected all visible figures.';
+			} else if (command === 'invert selection') {
+				invertSelection(cast, layersInOrderValue);
+				commandConsoleOutput.value = 'Inverted selection.';
+			} else if (command === 'clear selection') {
+				clearSelection(cast);
+				commandConsoleOutput.value = 'Selection cleared.';
+			} else if (command === 'delete') {
+				deleteSelectedLayers(cast, layersInOrderValue);
+				commandConsoleOutput.value = 'Delete command sent.';
+			} else if (command === 'copy') {
+				await copySelectedLayers(dispatch, layersInOrderValue);
+				commandConsoleOutput.value = 'Selection copied.';
+			} else if (command === 'cut') {
+				await copySelectedLayers(dispatch, layersInOrderValue);
+				deleteSelectedLayers(cast, layersInOrderValue);
+				commandConsoleOutput.value = 'Selection cut.';
+			} else if (command === 'paste') {
+				await pasteLayerClipboard(dispatch, cast, undefined, layersInOrderValue);
+				commandConsoleOutput.value = 'Clipboard pasted.';
+			} else if (command === 'duplicate') {
+				await duplicateSelectedLayers(dispatch, cast, layersInOrderValue);
+				commandConsoleOutput.value = 'Selection duplicated.';
+			} else if (command.startsWith('search ')) {
+				searchQuery.value = rawCommand.slice(rawCommand.indexOf(' ') + 1);
+				runSearch(cast, docValue, layersInOrderValue);
+				commandConsoleOutput.value = `Search selected ${searchLayerIds(docValue, layersInOrderValue).length} figure(s).`;
+			} else if (command === 'check syntax') {
+				validateAllInscriptions(docValue);
+				commandConsoleOutput.value = 'Local inscription syntax checks finished.';
+			} else if (command === 'group') {
+				wrapSelectedLayersInGroup(dispatch, cast, layersInOrderValue);
+				commandConsoleOutput.value = 'Selected figures grouped.';
+			} else if (command === 'ungroup') {
+				ungroupSelectedLayers(cast, layersInOrderValue);
+				commandConsoleOutput.value = 'Selected groups ungrouped.';
+			} else if (command === 'toggle snap') {
+				snapToGrid.value = !snapToGrid.value;
+				commandConsoleOutput.value = `Snap to grid ${snapToGrid.value ? 'enabled' : 'disabled'}.`;
+			} else if (command === 'show grid') {
+				showGrid.value = true;
+				commandConsoleOutput.value = 'Grid shown.';
+			} else if (command === 'hide grid') {
+				showGrid.value = false;
+				commandConsoleOutput.value = 'Grid hidden.';
+			} else if (command === 'snap grid' || command === 'snap grid now') {
+				snapSelectedLayersToGrid(dispatch, docValue, layersInOrderValue, textBounds.value);
+				commandConsoleOutput.value = 'Selection snapped to grid.';
+			} else if (command === 'fit') {
+				call((c) => {
+					c && c.resetCamera();
+				}, cameraScroller);
+				commandConsoleOutput.value = 'Camera fitted to drawing.';
+			} else if (command === 'reset zoom') {
+				cameraZoom.value = 0;
+				commandConsoleOutput.value = 'Zoom reset.';
+			} else if (command === 'zoom in') {
+				update(R.add(0.2), cameraZoom);
+				commandConsoleOutput.value = 'Zoomed in.';
+			} else if (command === 'zoom out') {
+				update(R.add(-0.2), cameraZoom);
+				commandConsoleOutput.value = 'Zoomed out.';
+			} else if (command === 'reset rotation') {
+				cameraRotation.value = 0;
+				commandConsoleOutput.value = 'Rotation reset.';
+			} else if (command === 'rotate left' || command === 'rotate counter-clockwise') {
+				update(R.add(-90), cameraRotation);
+				commandConsoleOutput.value = 'Rotated left.';
+			} else if (command === 'rotate right' || command === 'rotate clockwise') {
+				update(R.add(90), cameraRotation);
+				commandConsoleOutput.value = 'Rotated right.';
+			} else if (command === 'show hierarchy') {
+				showHierarchy.value = true;
+				commandConsoleOutput.value = 'Hierarchy shown.';
+			} else if (command === 'hide hierarchy') {
+				showHierarchy.value = false;
+				commandConsoleOutput.value = 'Hierarchy hidden.';
+			} else if (command === 'show minimap') {
+				showMinimap.value = true;
+				commandConsoleOutput.value = 'Minimap shown.';
+			} else if (command === 'hide minimap') {
+				showMinimap.value = false;
+				commandConsoleOutput.value = 'Minimap hidden.';
+			} else if (command === 'show toolbars') {
+				showHorizontalToolbar.value = true;
+				showCreateToolbar.value = true;
+				commandConsoleOutput.value = 'Toolbars shown.';
+			} else if (command === 'hide toolbars') {
+				showHorizontalToolbar.value = false;
+				showCreateToolbar.value = false;
+				commandConsoleOutput.value = 'Toolbars hidden.';
+			} else if (command === 'navigator') {
+				openNavigatorPane();
+				commandConsoleOutput.value = 'Navigator panels opened.';
+			} else if (command === 'print') {
+				printDrawing({ preventDefault() {} });
+				commandConsoleOutput.value = 'Print dialog requested.';
+			} else if (command === 'export renew') {
+				await data.commands.exportRenew();
+				commandConsoleOutput.value = 'Renew export requested.';
+			} else if (command === 'export svg') {
+				downloadSvgDrawing(docValue);
+				commandConsoleOutput.value = 'SVG export requested.';
+			} else if (command === 'export png') {
+				await downloadPngDrawing(docValue);
+				commandConsoleOutput.value = 'PNG export requested.';
+			} else if (command === 'export json') {
+				await data.commands.downloadJson();
+				commandConsoleOutput.value = 'JSON export requested.';
+			} else if (command === 'export struct') {
+				await data.commands.downloadStruct();
+				commandConsoleOutput.value = 'Struct export requested.';
+			} else if (command === 'simulate') {
+				simulateThisDocument({ preventDefault() {} });
+				commandConsoleOutput.value = 'Simulation start requested.';
+			} else {
+				commandConsoleOutput.value = `Unknown command: ${rawCommand}\nType "help" for available commands.`;
+			}
+		} catch (error) {
+			const described = describeError(error);
+			commandConsoleOutput.value = [described.message, described.detail].filter(Boolean).join('\n\n');
+			queueError(error, 'Command could not be executed');
+		}
 	}
 
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
@@ -2939,7 +6704,14 @@
 	const currentFormalism = atom();
 </script>
 
-<svelte:document onkeydown={handleDocumentDeleteKeydown} />
+<svelte:document
+	onkeydown={(evt) => {
+		if (handleDocumentMovementKeydown(evt)) {
+			return;
+		}
+		handleDocumentDeleteKeydown(evt);
+	}}
+/>
 
 <div class="full-page">
 	<AppBar
@@ -2952,7 +6724,7 @@
 	/>
 
 	<LiveResource socket={data.live_socket} resource={data.document}>
-		{#snippet children(doc, presence, { dispatch, cast })}
+		{#snippet children(doc, presence, { dispatch, cast, queuedActions })}
 			{@const currentSyntax = view(
 				[
 					'syntax',
@@ -2987,7 +6759,7 @@
 			<span
 				aria-hidden="true"
 				style="display: none"
-				use:deleteShortcutContextAction={{ cast, layersInOrder }}
+				use:deleteShortcutContextAction={{ cast, doc, layersInOrder }}
 			></span>
 			{@const _layerMoveCommitSync = clearCommittedLayerMove(doc.value)}
 			{@const documentDisplayBounds = read(
@@ -3051,17 +6823,178 @@
 				singleSelectedLayerType
 			)}
 
+			<Modal bind:visible={showInspect.value} closeLabel="Close">
+				<h2>Inspect Figure</h2>
+				<textarea
+					class="form-field"
+					readonly
+					style="width: min(80vw, 70rem); height: min(65vh, 38rem); font-family: monospace;"
+					value={inspectedLayerJson()}
+				></textarea>
+			</Modal>
+
+			<Modal bind:visible={showAbout.value} closeLabel="Close">
+				<h2>About PetriStation</h2>
+				<p>
+					PetriStation document editor with Renew-compatible drawing, clipboard and simulation
+					functions.
+				</p>
+				<p>Document: {doc.value.name}</p>
+			</Modal>
+
+			<Modal bind:visible={showCommandConsole.value} closeLabel="Close">
+				<form
+					onsubmit={(evt) => {
+						evt.preventDefault();
+						runEditorConsoleCommand(dispatch, cast, doc.value, layersInOrder.value);
+					}}
+				>
+					<h2>Command Console</h2>
+					<dl class="command-console">
+						<dt>Command</dt>
+						<dd>
+							<input
+								class="form-field"
+								type="text"
+								bind:value={commandConsoleText.value}
+								placeholder="help"
+								autofocus
+							/>
+						</dd>
+						<dt></dt>
+						<dd class="command-console-actions">
+							<button type="submit" class="form-button">Run</button>
+							<button
+								type="button"
+								class="form-button"
+								onclick={() => {
+									commandConsoleText.value = 'help';
+									runEditorConsoleCommand(dispatch, cast, doc.value, layersInOrder.value);
+								}}>Help</button
+							>
+						</dd>
+						{#if commandConsoleOutput.value}
+							<dt>Output</dt>
+							<dd>
+								<textarea
+									class="form-field command-console-output"
+									readonly
+									value={commandConsoleOutput.value}
+								></textarea>
+							</dd>
+						{/if}
+					</dl>
+				</form>
+			</Modal>
+
+			<Modal bind:visible={showToolOptions.value} closeLabel="Close">
+				<h2>Tool Options</h2>
+				{#if toolOptions.value}
+					<div class="tool-options-dialog">
+						<p><strong>{toolOptions.value.name}</strong></p>
+						{#if toolOptions.value.description}
+							<p>{toolOptions.value.description}</p>
+						{/if}
+						<div class="tool-options-actions">
+							{#if toolOptions.value.activate}
+								<button type="button" onclick={() => runToolOption(toolOptions.value.activate)}>
+									Activate
+								</button>
+							{/if}
+							{#if toolOptions.value.keepActive}
+								<button type="button" onclick={() => runToolOption(toolOptions.value.keepActive)}>
+									Keep active
+								</button>
+							{/if}
+							{#if toolOptions.value.reset}
+								<button type="button" onclick={() => runToolOption(toolOptions.value.reset)}>
+									Reset
+								</button>
+							{/if}
+							{#each toolOptions.value.actions ?? [] as action}
+								<button
+									type="button"
+									disabled={!action.run}
+									onclick={() => runToolOption(action.run)}
+								>
+									{action.label}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</Modal>
+
+			<Modal bind:visible={showNewDrawing.value} closeLabel="Cancel">
+				{@const newDrawingName = atom('Untitled')}
+				{@const newDrawingKind = atom(data.document.content?.kind || 'de.renew.gui.CPNDrawing')}
+				{@const predefinedNewDrawingKind = view(
+					[
+						L.lens(
+							(v) => (drawingKinds.indexOf(v) > -1 ? v : undefined),
+							(n, o) => n
+						),
+						L.defaults('')
+					],
+					newDrawingKind
+				)}
+
+				<form onsubmit={createNewDrawing} method="post" accept-charset="utf-8">
+					<h2>New Drawing</h2>
+					<dl
+						style="display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 1ex; max-width: 50vw"
+					>
+						<dt>Document Name</dt>
+						<dd>
+							<input
+								class="form-field"
+								style="width: 100%; box-sizing: border-box;"
+								type="text"
+								name="name"
+								bind:value={newDrawingName.value}
+								autofocus
+							/>
+						</dd>
+						<dt>Document Kind</dt>
+						<dd style="display: grid; gap: 1ex; grid-auto-rows: 1fr 1fr;">
+							<select name="kind" class="form-field" bind:value={predefinedNewDrawingKind.value}>
+								<option value="">Other</option>
+								{#each drawingKinds as dk}
+									<option value={dk}>{dk}</option>
+								{/each}
+							</select>
+							<input
+								name="custom_kind"
+								class={{ 'form-field': true, hidden: predefinedNewDrawingKind.value.length > 0 }}
+								style="width: 100%; box-sizing: border-box;"
+								type="text"
+								bind:value={newDrawingKind.value}
+							/>
+						</dd>
+						<dt>Syntax</dt>
+						<dd style="display: grid; gap: 1ex; grid-template-columns: 1fr; align-items: baseline;">
+							{#await data.syntaxes}
+								loading
+							{:then syntaxes}
+								{@const transientSyntax = atom(doc.value.syntax?.id)}
+								{@const syntaxId = view([L.valueOr('none'), L.defaults('none')], transientSyntax)}
+								<select name="syntax_id" class="form-field" bind:value={syntaxId.value}>
+									<option value="none">None</option>
+									{#each syntaxes.items as s}
+										<option value={s.id}>{s.name}</option>
+									{/each}
+								</select>
+							{:catch}
+								error
+							{/await}
+						</dd>
+						<dt></dt>
+						<dd><button type="submit" class="form-button">Create</button></dd>
+					</dl>
+				</form>
+			</Modal>
+
 			<Modal bind:visible={showRename.value} closeLabel="Cancel">
-				{@const drawingKinds = [
-					'CH.ifa.draw.standard.StandardDrawing',
-					'de.renew.hierarchicalworkflownets.gui.HNViewDrawing',
-					'de.renew.gui.CPNDrawing',
-					'de.renew.sdnet.gui.SDNDrawing',
-					'de.renew.diagram.drawing.DiagramDrawing'
-				]}
-				{@const syntaxes = {
-					foo: 'baar'
-				}}
 				{@const transientKind = atom(doc.value.kind)}
 				{@const predefinedKind = view(
 					[
@@ -3199,7 +7132,7 @@
 				</form>
 			</Modal>
 
-			<header class="header">
+			<header class="header" use:editorDropZone={{ dispatch, cast }}>
 				<div class="header-titel">
 					<a
 						href={resolve(`/projects/${data.document.links.project.id}/documents`)}
@@ -3218,9 +7151,53 @@
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
+										shortcut={{ ctrlKey: true, key: 'n' }}
+										onclick={(evt) => {
+											evt.preventDefault();
+											showNewDrawing.value = true;
+										}}>New Drawing...</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
 										onclick={() => {
-											alert('the document is saved automatically');
+											statusMessage.value = 'The document is saved automatically.';
 										}}>Save</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Recently saved</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each recentDocuments.value as recent}
+											<li class="menu-bar-menu-item">
+												<a class="menu-bar-item-button" href={recent.href}>{recent.name}</a>
+											</li>
+										{:else}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton disabled>No recent drawings</MenuBarButton>
+											</li>
+										{/each}
+										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={recentDocuments.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													clearRecentDocuments();
+												}}>Clear list</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											openNavigatorPane();
+										}}>Open Navigator</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
@@ -3230,6 +7207,46 @@
 										}}>Rename</MenuBarButton
 									>
 								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Import</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													importFiles(dispatch, cast, '.rnw');
+												}}>Renew .rnw...</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													importFiles(dispatch, cast, '.draw');
+												}}>Draw...</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													importFiles(dispatch, cast, '.svg');
+												}}>SVG...</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													importFiles(dispatch, cast, 'image/*');
+												}}>Image...</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
 										onclick={() => {
@@ -3237,26 +7254,119 @@
 										}}>Duplicate</MenuBarButton
 									>
 								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Export</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={() => {
+													data.commands
+														.exportRenew()
+														.catch((e) => queueError(e, 'Renew export failed'));
+												}}>Renew .rnw</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													downloadSvgDrawing(doc.value);
+												}}>SVG</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													downloadPngDrawing(doc.value);
+												}}>PNG</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={() => {
+													data.commands
+														.downloadJson()
+														.catch((e) => queueError(e, 'JSON export failed'));
+												}}>JSON</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												class="menu-bar-item-button"
+												onclick={() => {
+													data.commands
+														.downloadStruct()
+														.catch((e) => queueError(e, 'Document structure export failed'));
+												}}>Struct</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
 								<li class="menu-bar-menu-item">
-									<MenuBarButton
-										onclick={() => {
-											data.commands.downloadJson();
-										}}>Download JSON</MenuBarButton
+									<MenuBarButton shortcut={{ ctrlKey: true, key: 'p' }} onclick={printDrawing}
+										>Print Drawing</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
-										class="menu-bar-item-button"
-										onclick={() => {
-											data.commands.downloadStruct();
-										}}>Download Struct</MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											openUrl(dispatch, cast);
+										}}>Open URL...</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Open Drawings</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each documentTabs(doc.value) as tab (tab.id)}
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													class:active={tab.id === data.document.id}
+													href={tab.href}
+													data-sveltekit-preload-data="off"
+													title={tab.name}>{tab.name}</a
+												>
+											</li>
+										{:else}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton disabled>No open drawings</MenuBarButton>
+											</li>
+										{/each}
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={documentTabs(doc.value).length <= 1}
+										onclick={(evt) => {
+											evt.preventDefault();
+											closeOtherDrawings();
+										}}>Close Other Drawings</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											closeAllDrawings();
+										}}>Close All Drawings</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
-										onclick={() => {
-											data.commands.exportRenew();
-										}}>export .rnw</MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											exitEditor();
+										}}>Exit</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
@@ -3265,15 +7375,6 @@
 										>Delete Document</MenuBarButton
 									>
 								</li>
-								<!--
-
-								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-								<li class="menu-bar-menu-item">
-									<button class="menu-bar-item-button" onclick={causeError} style="color: #aa0000"
-										>Cause Error</button
-									>
-								</li>
-								-->
 							</ul>
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
@@ -3406,6 +7507,15 @@
 										}}>Wrap in Group</MenuBarButton
 									>
 								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedGroupLayerIds(layersInOrder.value).length === 0}
+										onclick={(evt) => {
+											evt.preventDefault();
+											ungroupSelectedLayers(cast, layersInOrder.value);
+										}}>Ungroup</MenuBarButton
+									>
+								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
@@ -3417,6 +7527,15 @@
 												layer_id: singleSelectedLayer.value.id
 											});
 										}}>Mark Layer as Thumbnail</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!layerTargetUrl(singleSelectedLayer.value)}
+										onclick={(evt) => {
+											evt.preventDefault();
+											openLayerTargetLocation(singleSelectedLayer.value);
+										}}>Open Target Location</MenuBarButton
 									>
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
@@ -3567,6 +7686,76 @@
 										{/each}
 									</ul>
 								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Figure Size</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedLayers.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													promptSelectedFigureSize(
+														dispatch,
+														doc.value,
+														layersInOrder.value,
+														textBounds.value
+													);
+												}}>Set Size...</MenuBarButton
+											>
+										</li>
+										{#each [{ label: 'Same Width', dimension: 'width' }, { label: 'Same Height', dimension: 'height' }, { label: 'Same Size', dimension: 'both' }] as { label, dimension }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length < 2}
+													onclick={(evt) => {
+														evt.preventDefault();
+														equalizeSelectedFigureSize(
+															dispatch,
+															doc.value,
+															layersInOrder.value,
+															textBounds.value,
+															dimension
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											automaticLayout(dispatch, doc.value, layersInOrder.value, textBounds.value);
+										}}>Automatic Layout...</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Location</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedLayers.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													promptSelectedLocation(
+														dispatch,
+														doc.value,
+														layersInOrder.value,
+														textBounds.value
+													);
+												}}>Set Location...</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item"><div style="padding: 1ex">Reorder:</div></li>
 								{#each [{ target_rel: 'before_parent', label: 'Below Parent' }, { target_rel: 'after_parent', label: 'Above Parent' }, { target_rel: 'into_prev', label: 'Indent' }, { target_rel: 'frontwards', label: 'Frontwards' }, { target_rel: 'backwards', label: 'Backwards' }, { target_rel: 'to_front', label: 'To Front' }, { target_rel: 'to_back', label: 'To Back' }] as { label, target_rel }}
@@ -3585,6 +7774,183 @@
 						<li class="menu-bar-item" tabindex="-1">
 							Attributes
 							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Fill Opacity</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: '100%', value: 1 }, { label: '75%', value: 0.75 }, { label: '50%', value: 0.5 }, { label: '25%', value: 0.25 }] as { label, value }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														changeSelectedStyle(
+															cast,
+															doc.value,
+															layersInOrder.value,
+															'layer',
+															'background_opacity',
+															value,
+															(layer) => !!layer?.box
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedLayers.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													promptSelectedOpacity(
+														cast,
+														doc.value,
+														layersInOrder.value,
+														'layer',
+														'background_opacity',
+														'Fill opacity',
+														(layer) => !!layer?.box
+													);
+												}}>Custom...</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Pen Opacity</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: '100%', value: 1 }, { label: '75%', value: 0.75 }, { label: '50%', value: 0.5 }, { label: '25%', value: 0.25 }] as { label, value }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														changeSelectedStyle(
+															cast,
+															doc.value,
+															layersInOrder.value,
+															'layer',
+															'border_opacity',
+															value,
+															(layer) => !!layer?.box
+														);
+														changeSelectedStyle(
+															cast,
+															doc.value,
+															layersInOrder.value,
+															'edge',
+															'stroke_opacity',
+															value,
+															(layer) => !!layer?.edge
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedLayers.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													const val = Number(prompt('Pen opacity', '1'));
+													if (!Number.isFinite(val)) {
+														return;
+													}
+													const opacity = R.clamp(0, 1, val);
+													changeSelectedStyle(
+														cast,
+														doc.value,
+														layersInOrder.value,
+														'layer',
+														'border_opacity',
+														opacity,
+														(layer) => !!layer?.box
+													);
+													changeSelectedStyle(
+														cast,
+														doc.value,
+														layersInOrder.value,
+														'edge',
+														'stroke_opacity',
+														opacity,
+														(layer) => !!layer?.edge
+													);
+												}}>Custom...</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Line Style</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'Solid', value: '' }, { label: 'Dashed', value: '8 4' }, { label: 'Dotted', value: '2 4' }, { label: 'Dash-dot', value: '8 4 2 4' }] as { label, value }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														changeSelectedStyle(
+															cast,
+															doc.value,
+															layersInOrder.value,
+															'layer',
+															'border_dash_array',
+															value,
+															(layer) => !!layer?.box
+														);
+														changeSelectedStyle(
+															cast,
+															doc.value,
+															layersInOrder.value,
+															'edge',
+															'stroke_dash_array',
+															value,
+															(layer) => !!layer?.edge
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedLayers.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													const value = prompt('Dash pattern, for example: 8 4 2 4', '');
+													if (value === null) {
+														return;
+													}
+													changeSelectedStyle(
+														cast,
+														doc.value,
+														layersInOrder.value,
+														'layer',
+														'border_dash_array',
+														value,
+														(layer) => !!layer?.box
+													);
+													changeSelectedStyle(
+														cast,
+														doc.value,
+														layersInOrder.value,
+														'edge',
+														'stroke_dash_array',
+														value,
+														(layer) => !!layer?.edge
+													);
+												}}>Custom...</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
 								<li class="menu-bar-menu-item submenu">
 									<button type="button" class="menu-bar-item-button submenu-trigger">
 										<span>Round corners</span>
@@ -3615,6 +7981,286 @@
 											</li>
 										{/await}
 									</ul>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Font</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'Sans Serif', value: 'sans-serif' }, { label: 'Serif', value: 'serif' }, { label: 'Monospace', value: 'monospace' }, { label: 'Dialog', value: 'Dialog, sans-serif' }, { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' }, { label: 'Times', value: '"Times New Roman", Times, serif' }, { label: 'Courier', value: '"Courier New", Courier, monospace' }] as { label, value }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														changeSelectedStyle(
+															cast,
+															doc.value,
+															layersInOrder.value,
+															'text',
+															'font_family',
+															value,
+															(layer) => !!layer?.text
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedLayers.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													promptSelectedStyle(
+														cast,
+														doc.value,
+														layersInOrder.value,
+														'text',
+														'font_size',
+														'Font size',
+														(layer) => !!layer?.text
+													);
+											}}>Font Size...</MenuBarButton
+										>
+										</li>
+										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+										{#each [{ label: 'Bold', attr: 'bold' }, { label: 'Italic', attr: 'italic' }, { label: 'Underline', attr: 'underline' }] as { label, attr }}
+											<li class="menu-bar-menu-item submenu">
+												<button type="button" class="menu-bar-item-button submenu-trigger">
+													<span>{label}</span>
+													<span class="submenu-arrow">&gt;</span>
+												</button>
+												<ul class="menu-bar-menu submenu-menu">
+													{#each [{ label: 'On', value: true }, { label: 'Off', value: false }] as { label, value }}
+														<li class="menu-bar-menu-item">
+															<MenuBarButton
+																disabled={selectedLayers.value.length === 0}
+																onclick={(evt) => {
+																	evt.preventDefault();
+																	changeSelectedStyle(
+																		cast,
+																		doc.value,
+																		layersInOrder.value,
+																		'text',
+																		attr,
+																		value,
+																		(layer) => !!layer?.text
+																	);
+																}}>{label}</MenuBarButton
+															>
+														</li>
+													{/each}
+												</ul>
+											</li>
+										{/each}
+										<li class="menu-bar-menu-item submenu">
+											<button type="button" class="menu-bar-item-button submenu-trigger">
+												<span>Alignment</span>
+												<span class="submenu-arrow">&gt;</span>
+											</button>
+											<ul class="menu-bar-menu submenu-menu">
+												{#each [{ label: 'Left', value: 'left' }, { label: 'Center', value: 'center' }, { label: 'Right', value: 'right' }] as { label, value }}
+													<li class="menu-bar-menu-item">
+														<MenuBarButton
+															disabled={selectedLayers.value.length === 0}
+															onclick={(evt) => {
+																evt.preventDefault();
+																changeSelectedStyle(
+																	cast,
+																	doc.value,
+																	layersInOrder.value,
+																	'text',
+																	'alignment',
+																	value,
+																	(layer) => !!layer?.text
+																);
+															}}>{label}</MenuBarButton
+														>
+													</li>
+												{/each}
+											</ul>
+										</li>
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Text Opacity</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: '100%', value: 1 }, { label: '75%', value: 0.75 }, { label: '50%', value: 0.5 }, { label: '25%', value: 0.25 }] as { label, value }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														changeSelectedStyle(
+															cast,
+															doc.value,
+															layersInOrder.value,
+															'text',
+															'opacity',
+															value,
+															(layer) => !!layer?.text
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedLayers.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													promptSelectedOpacity(
+														cast,
+														doc.value,
+														layersInOrder.value,
+														'text',
+														'opacity',
+														'Text opacity',
+														(layer) => !!layer?.text
+													);
+												}}>Custom...</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Text Background</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'Transparent', value: 'transparent' }, { label: 'White', value: '#ffffff' }, { label: 'Yellow', value: '#fff4a3' }] as { label, value }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														changeSelectedStyle(
+															cast,
+															doc.value,
+															layersInOrder.value,
+															'text',
+															'background_color',
+															value,
+															(layer) => !!layer?.text
+														);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={selectedLayers.value.length === 0}
+												onclick={(evt) => {
+													evt.preventDefault();
+													promptSelectedStyle(
+														cast,
+														doc.value,
+														layersInOrder.value,
+														'text',
+														'background_color',
+														'Text background color',
+														(layer) => !!layer?.text
+													);
+												}}>Custom...</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item submenu">
+											<button type="button" class="menu-bar-item-button submenu-trigger">
+												<span>Opacity</span>
+												<span class="submenu-arrow">&gt;</span>
+											</button>
+											<ul class="menu-bar-menu submenu-menu">
+												{#each [{ label: '100%', value: 1 }, { label: '75%', value: 0.75 }, { label: '50%', value: 0.5 }, { label: '25%', value: 0.25 }] as { label, value }}
+													<li class="menu-bar-menu-item">
+														<MenuBarButton
+															disabled={selectedLayers.value.length === 0}
+															onclick={(evt) => {
+																evt.preventDefault();
+																changeSelectedStyle(
+																	cast,
+																	doc.value,
+																	layersInOrder.value,
+																	'text',
+																	'background_opacity',
+																	value,
+																	(layer) => !!layer?.text
+																);
+															}}>{label}</MenuBarButton
+														>
+													</li>
+												{/each}
+												<li class="menu-bar-menu-item">
+													<MenuBarButton
+														disabled={selectedLayers.value.length === 0}
+														onclick={(evt) => {
+															evt.preventDefault();
+															promptSelectedOpacity(
+																cast,
+																doc.value,
+																layersInOrder.value,
+																'text',
+																'background_opacity',
+																'Text background opacity',
+																(layer) => !!layer?.text
+															);
+														}}>Custom...</MenuBarButton
+													>
+												</li>
+											</ul>
+										</li>
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Text Type</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										{#each [{ label: 'Label', value: RENEW_TEXT_TYPE.LABEL }, { label: 'Inscription', value: RENEW_TEXT_TYPE.INSCRIPTION }, { label: 'Name', value: RENEW_TEXT_TYPE.NAME }, { label: 'Declaration', value: RENEW_TEXT_TYPE.AUX }, { label: 'Comment', value: RENEW_TEXT_TYPE.COMM }] as { label, value }}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={selectedLayers.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														changeSelectedTextType(cast, doc.value, layersInOrder.value, value);
+													}}>{label}</MenuBarButton
+												>
+											</li>
+										{/each}
+									</ul>
+								</li>
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							Net
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											validateAllInscriptions(doc.value);
+										}}>Check Inscriptions</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={selectedLayers.value.length !== 2}
+										onclick={(evt) => {
+											evt.preventDefault();
+											relinkSelectedInscription(cast, doc.value);
+										}}>Attach Inscription to Selection</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label class="menu-bar-item-button">
+										<input type="checkbox" bind:checked={showSequentialOnlyArcs.value} />
+										Show sequential-only arcs</label
+									>
 								</li>
 							</ul>
 						</li>
@@ -3885,6 +8531,113 @@
 										Show Minimap</label
 									>
 								</li>
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Toolbars</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu submenu-menu">
+										<li class="menu-bar-menu-item">
+											<label>
+												<input type="checkbox" bind:checked={showHorizontalToolbar.value} />
+												Horizontal Tools</label
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<label>
+												<input type="checkbox" bind:checked={showCreateToolbar.value} />
+												Create Tools</label
+											>
+										</li>
+										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													saveToolbarLayout();
+												}}>Save Layout...</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item submenu">
+											<button type="button" class="menu-bar-item-button submenu-trigger">
+												<span>Saved Layouts</span>
+												<span class="submenu-arrow">&gt;</span>
+											</button>
+											<ul class="menu-bar-menu submenu-menu">
+												{#each toolbarLayoutNames() as layoutName}
+													<li class="menu-bar-menu-item submenu">
+														<button type="button" class="menu-bar-item-button submenu-trigger">
+															<span>{layoutName}</span>
+															<span class="submenu-arrow">&gt;</span>
+														</button>
+														<ul class="menu-bar-menu submenu-menu">
+															<li class="menu-bar-menu-item">
+																<MenuBarButton
+																	onclick={(evt) => {
+																		evt.preventDefault();
+																		loadToolbarLayout(layoutName);
+																	}}>Load</MenuBarButton
+																>
+															</li>
+															<li class="menu-bar-menu-item">
+																<MenuBarButton
+																	onclick={(evt) => {
+																		evt.preventDefault();
+																		deleteToolbarLayout(layoutName);
+																	}}>Delete</MenuBarButton
+																>
+															</li>
+														</ul>
+													</li>
+												{:else}
+													<li class="menu-bar-menu-item disabled-menu-item">No saved layouts</li>
+												{/each}
+											</ul>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													resetToolbarLayout();
+												}}>Reset Layout</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+										<li class="menu-bar-menu-item submenu">
+											<button type="button" class="menu-bar-item-button submenu-trigger">
+												<span>Hidden Create Tools</span>
+												<span class="submenu-arrow">&gt;</span>
+											</button>
+											<ul class="menu-bar-menu submenu-menu">
+												{#await data.primitives then groups}
+													{@const hiddenEntries = hiddenCreateToolEntries(groups)}
+													{#if hiddenEntries.length}
+														{#each hiddenEntries as entry (entry.id)}
+															<li class="menu-bar-menu-item">
+																<MenuBarButton
+																	onclick={(evt) => {
+																		evt.preventDefault();
+																		showCreateToolEntryId(entry.id, entry.groupName);
+																	}}>{entry.groupName}: {entry.name}</MenuBarButton
+																>
+															</li>
+														{/each}
+													{:else}
+														<li class="menu-bar-menu-item disabled-menu-item">No hidden tools</li>
+													{/if}
+												{/await}
+											</ul>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												onclick={(evt) => {
+													evt.preventDefault();
+													showAllCreateTools();
+												}}>Show All Create Tools</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
 								<li class="menu-bar-menu-item">
 									<label>
 										<input type="checkbox" bind:checked={showHierarchy.value} />
@@ -3997,6 +8750,175 @@
 							</ul>
 						</li> -->
 						<li class="menu-bar-item" tabindex="-1">
+							Plugins
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<a class="menu-bar-item-button" href={backendUrl('/primitives')} target="_blank">
+										Primitives
+									</a>
+								</li>
+								<li class="menu-bar-menu-item">
+									<a class="menu-bar-item-button" href={backendUrl('/icons')} target="_blank">
+										Icons
+									</a>
+								</li>
+								<li class="menu-bar-menu-item">
+									<a
+										class="menu-bar-item-button"
+										href={backendUrl('/socket_schemas')}
+										target="_blank"
+									>
+										Socket Schemas
+									</a>
+								</li>
+								<li class="menu-bar-menu-item">
+									<a class="menu-bar-item-button" href={backendUrl('/syntax')} target="_blank">
+										Syntax Rules
+									</a>
+								</li>
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							Tools
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											openNavigatorPane();
+										}}>Navigator</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<a
+										class="menu-bar-item-button"
+										href={backendUrl(`/documents/${doc.value.id}/inspect`)}
+										target="_blank">Inspect Document</a
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											validateAllInscriptions(doc.value);
+										}}>Check Syntax</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											if (!commandConsoleText.value) {
+												commandConsoleText.value = 'help';
+											}
+											showCommandConsole.value = true;
+										}}>Command Console...</MenuBarButton
+									>
+								</li>
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							System
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item submenu">
+									<button type="button" class="menu-bar-item-button submenu-trigger">
+										<span>Look and Feel</span>
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu">
+										{#each LOOK_AND_FEEL_OPTIONS as option}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														lookAndFeel.value = setLookAndFeel(option.id);
+													}}>
+													{lookAndFeel.value === option.id ? '* ' : ''}{option.label}
+												</MenuBarButton>
+											</li>
+										{/each}
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<a class="menu-bar-item-button" href={backendUrl('/health')} target="_blank">
+										Health
+									</a>
+								</li>
+								<li class="menu-bar-menu-item">
+									<a class="menu-bar-item-button" href={backendUrl('/system')} target="_blank">
+										System
+									</a>
+								</li>
+								<li class="menu-bar-menu-item">
+									<button
+										class="menu-bar-item-button"
+										type="button"
+										onclick={() => data.authState.reconnectSocket()}>Reconnect</button
+									>
+								</li>
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
+							Windows
+							<ul class="menu-bar-menu">
+								<li class="menu-bar-menu-item">Open Drawings</li>
+								{#each documentTabs(doc.value) as tab (tab.id)}
+									<li class="menu-bar-menu-item document-window-menu-entry">
+										<a
+											class={{ 'menu-bar-item-button': true, active: tab.id === data.document.id }}
+											href={tab.href}
+											data-sveltekit-preload-data="off"
+											title={tab.name}
+										>
+											<span>{tab.id === data.document.id ? '* ' : ''}{tab.name}</span>
+										</a>
+										<button
+											type="button"
+											class="menu-bar-item-icon-button"
+											title="Close drawing"
+											aria-label="Close drawing"
+											onclick={(evt) => {
+												evt.preventDefault();
+												evt.stopPropagation();
+												closeDocumentWindow(tab);
+											}}>x</button
+										>
+									</li>
+								{/each}
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showHorizontalToolbar.value} />
+										Horizontal Tools</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showCreateToolbar.value} />
+										Create Tools</label
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<label>
+										<input type="checkbox" bind:checked={showHierarchy.value} />
+										Hierarchy</label
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											showHorizontalToolbar.value = true;
+											showCreateToolbar.value = true;
+											showHierarchy.value = true;
+										}}>Show All Panels</MenuBarButton
+									>
+								</li>
+							</ul>
+						</li>
+						<li class="menu-bar-item" tabindex="-1">
 							Help
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
@@ -4024,10 +8946,44 @@
 										href="https://www.youtube.com/@petristation">youtube/@petristation</a
 									>
 								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										onclick={(evt) => {
+											evt.preventDefault();
+											showAbout.value = true;
+										}}>About...</MenuBarButton
+									>
+								</li>
 							</ul>
 						</li>
 					</ol>
 				</menu>
+
+				<nav class="document-tabs" aria-label="Open documents">
+					{#each documentTabs(doc.value) as tab (tab.id)}
+						<a
+							class={{ 'document-tab': true, active: tab.id === data.document.id }}
+							href={tab.href}
+							data-sveltekit-preload-data="off"
+							title={tab.name}
+						>
+							<span class="document-tab-label">{tab.name}</span>
+							{#if tab.id !== data.document.id}
+								<button
+									type="button"
+									class="document-tab-close"
+									aria-label="Remove from tabs"
+									onclick={(evt) => {
+										evt.preventDefault();
+										evt.stopPropagation();
+										removeRecentDocument(tab.id);
+									}}>x</button
+								>
+							{/if}
+						</a>
+					{/each}
+				</nav>
 
 				<ul class="presence-list">
 					<!--<li class="presence-list-total">{presence.length}</li>-->
@@ -4051,105 +9007,10 @@
 						{camera}
 						domElement={dropperDomElement}
 						onDrop={(mime, content, pos) => {
-							if (mime === 'application/json+renewex-layer') {
-								const layerContent = { ...content };
-								const editDroppedText = typeof layerContent.body === 'string';
-								let baseLayerId = L.get('id', singleSelectedLayer.value);
-
-								if (editDroppedText) {
-									layerContent.body = '';
-								}
-
-								if (layerContent.hyperlink) {
-									const linkedTargetId =
-										typeof layerContent.hyperlink === 'string'
-											? layerContent.hyperlink
-											: linkedPrimitiveTargetAtPosition(
-													pos,
-													layersInOrder.value,
-													doc.value,
-													textBounds.value,
-													12 * cameraScale.value
-												)?.id;
-
-									if (!linkedTargetId) {
-										return;
-									}
-
-									layerContent.hyperlink = linkedTargetId;
-									baseLayerId = linkedTargetId;
-								}
-
-								dispatch('create_layer', {
-									base_layer_id: baseLayerId,
-									pos,
-									...layerContent
-								}).then((l) => {
-									if (editDroppedText && l?.id) {
-										inlineTextEdit.value = {
-											id: l.id,
-											body: '',
-											bounds: { lockToTextPosition: true },
-											blankLines: !!layerContent?.style?.blank_lines
-										};
-									} else {
-										publishSelection(cast, [l.id]);
-									}
-								});
-							} else if (mime === 'application/json+renewex-blueprint') {
-								dispatch('insert_document', {
-									document_id: content.blueprint_id,
-									position: pos
-								})
-									.then((result) => selectInsertedLayers(cast, result))
-									.catch((e) => {
-										queueError(e, 'Document could not be inserted');
-									});
-							}
+							handleDroppedContent(mime, content, pos, dispatch, cast);
 						}}
 						onDropFile={(file, pos) => {
-							const reader = new FileReader();
-							reader.onload = function (event) {
-								new Promise((res, reject) => {
-									const parser = new DOMParser();
-									const svgDoc = parser.parseFromString(event.target.result, 'image/svg+xml');
-									const isSvg = !svgDoc.querySelector('parsererror');
-									if (isSvg) {
-										res({ type: 'svg', svg: svgDoc });
-									} else {
-										res({ type: 'other', data: event.target.result });
-									}
-								})
-									.then((doc) => {
-										if (doc.type == 'svg') {
-											return data.commands.uploadSvg(doc.svg).then((j) => {
-												return dispatch('create_layer', {
-													base_layer_id: L.get('id', singleSelectedLayer.value),
-													pos: {
-														x: -doc.svg.documentElement.width.baseVal.value / 2 + pos.x,
-														y: -doc.svg.documentElement.height.baseVal.value / 2 + pos.y,
-														width: doc.svg.documentElement.width.baseVal.value,
-														height: doc.svg.documentElement.height.baseVal.value
-													},
-													image: j.url
-												}).then((l) => {
-													publishSelection(cast, [l.id]);
-												});
-											});
-										} else {
-											return dispatch('insert_file', {
-												content: doc.data,
-												file_name: file.name,
-												x: pos.x,
-												y: pos.y
-											}).then((result) => selectInsertedLayers(cast, result));
-										}
-									})
-									.catch((e) => {
-										queueError(e, 'File could not be inserted');
-									});
-							};
-							reader.readAsText(file);
+							handleDroppedFile(file, pos, dispatch, cast);
 						}}
 					>
 						<CameraScroller bind:this={cameraScroller.value} {camera} {extension}>
@@ -4260,11 +9121,11 @@
 										<g transform={rotationTransform.value}>
 											<g id="full-document-{data.document.id}">
 												{#each layersInOrder.value as { index, id, depth, hidden } (id)}
-													{#if !hidden}
-														{@const el = view(
-															['layers', 'items', L.find((el) => el.id == id)],
-															doc
-														)}
+													{@const el = view(
+														['layers', 'items', L.find((el) => el.id == id)],
+														doc
+													)}
+													{#if layerVisibleInDrawing(el.value, hidden)}
 
 														{#if el.value?.box}
 															<g
@@ -4273,16 +9134,81 @@
 																transform={layerMoveTransform(id, layersInOrder.value)}
 																cursor={canvasInteractionCursor()}
 																oncontextmenu={(evt) => {
-																	openTargetLocation(evt, el.value);
+																	if (
+																		beginDirectInscriptionEdit(
+																			evt,
+																			el.value,
+																			liveLenses,
+																			dispatch,
+																			cast,
+																			doc.value,
+																			{
+																				x: el.value?.box?.position_x,
+																				y: el.value?.box?.position_y,
+																				width: el.value?.box?.width,
+																				height: el.value?.box?.height
+																			}
+																		)
+																	) {
+																		return;
+																	}
+																	openTargetLocationOrDirectModification(evt, el.value, cast);
 																}}
-																onpointerdown={(evt) =>
-																	rememberPointerPasteLocation(evt, liveLenses)}
+																ondblclick={(evt) => inspectLayer(evt, el.value)}
+																onpointerdown={(evt) => {
+																	if (
+																		beginLinkedPrimitiveCreation(
+																			evt,
+																			liveLenses,
+																			doc.value,
+																			el.value
+																		)
+																	) {
+																		return;
+																	}
+																	if (
+																		activeTool.value === 'select' &&
+																		!evt.shiftKey &&
+																		beginLayerMove(
+																			evt,
+																			liveLenses,
+																			el.value.id,
+																			layersInOrder.value,
+																			doc.value,
+																			el.value.id
+																		)
+																	) {
+																		return;
+																	}
+																	rememberPointerPasteLocation(evt, liveLenses);
+																}}
+																onpointermove={(evt) => {
+																	updateLayerMove(evt, liveLenses, doc, layersInOrder.value);
+																	updateLinkedPrimitiveCreation(evt, liveLenses);
+																}}
+																onpointerup={(evt) => {
+																	if (groupDrag.value?.pointerId === evt.pointerId) {
+																		finishLayerMove(evt, dispatch, doc, layersInOrder.value);
+																		return;
+																	}
+																	finishLinkedPrimitiveCreation(evt, dispatch, cast);
+																}}
+																onpointercancel={(evt) => {
+																	cancelLayerMove(evt);
+																	cancelLinkedPrimitiveCreation(evt);
+																}}
+																onlostpointercapture={(evt) => {
+																	cancelLayerMove(evt);
+																	cancelLinkedPrimitiveCreation(evt);
+																}}
 																onclick={(evt) => {
 																	if (
 																		createLinkedPrimitiveOnLayer(
 																			evt,
 																			liveLenses,
 																			dispatch,
+																			cast,
+																			doc.value,
 																			el.value
 																		)
 																	) {
@@ -4319,7 +9245,9 @@
 																	}
 																}}
 																fill={el.value?.style?.background_color ?? '#70DB93'}
+																fill-opacity={el.value?.style?.background_opacity ?? '1'}
 																stroke={el.value?.style?.border_color ?? 'black'}
+																stroke-opacity={el.value?.style?.border_opacity ?? '1'}
 																stroke-dasharray={el.value?.style?.border_dash_array ?? 'none'}
 																stroke-width={el.value?.style?.border_width ?? '1'}
 																opacity={el.value?.style?.opacity ?? '1'}
@@ -4351,10 +9279,32 @@
 																		if (beginContextTextEdit(evt, el.value, thisbbox.value, cast)) {
 																			return;
 																		}
-																		openTargetLocation(evt, el.value);
+																		openTargetLocationOrDirectModification(evt, el.value, cast);
 																	}}
-																	onpointerdown={(evt) =>
-																		rememberPointerPasteLocation(evt, liveLenses)}
+																	ondblclick={(evt) => inspectLayer(evt, el.value)}
+																	onpointerdown={(evt) => {
+																		if (
+																			activeTool.value === 'select' &&
+																			!evt.shiftKey &&
+																			beginLayerMove(
+																				evt,
+																				liveLenses,
+																				el.value.id,
+																				layersInOrder.value,
+																				doc.value,
+																				el.value.id
+																			)
+																		) {
+																			return;
+																		}
+																		rememberPointerPasteLocation(evt, liveLenses);
+																	}}
+																	onpointermove={(evt) =>
+																		updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
+																	onpointerup={(evt) =>
+																		finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
+																	onpointercancel={cancelLayerMove}
+																	onlostpointercapture={cancelLayerMove}
 																	onclick={(evt) => {
 																		if (beginInlineTextEdit(evt, el.value, thisbbox.value, cast)) {
 																			return;
@@ -4400,22 +9350,120 @@
 															{/key}
 														{/if}
 														{#if el.value?.edge}
+															{@const previewEdge = renderedEdgePreview(
+																el.value,
+																doc.value,
+																layersInOrder.value,
+																groupDrag.value,
+																groupDragDelta.value
+															)}
+															{@const basePreviewWaypoints =
+																L.get(localProp('waypoints'), previewEdge) ??
+																previewEdge?.waypoints ??
+																[]}
+															{@const previewWaypoints = pendingWaypointPreview(
+																basePreviewWaypoints,
+																edgeWaypointDrag.value,
+																el.value?.id
+															)}
 															<g
 																role="button"
 																data-editor-layer-id={el.value?.id}
-																transform={layerMoveTransform(id, layersInOrder.value)}
+																transform={edgePreviewTransform(
+																	id,
+																	layersInOrder.value,
+																	el.value.edge,
+																	previewEdge
+																)}
 																cursor={canvasInteractionCursor()}
 																oncontextmenu={(evt) => {
-																	openTargetLocation(evt, el.value);
+																	if (
+																		beginDirectInscriptionEdit(
+																			evt,
+																			el.value,
+																			liveLenses,
+																			dispatch,
+																			cast,
+																			doc.value
+																		)
+																	) {
+																		return;
+																	}
+																	openTargetLocationOrDirectModification(evt, el.value, cast);
 																}}
-																onpointerdown={(evt) =>
-																	rememberPointerPasteLocation(evt, liveLenses)}
+																ondblclick={(evt) => inspectLayer(evt, el.value)}
+																onpointerdown={(evt) => {
+																	if (
+																		beginLinkedPrimitiveCreation(
+																			evt,
+																			liveLenses,
+																			doc.value,
+																			el.value
+																		)
+																	) {
+																		return;
+																	}
+																	if (
+																		beginUnselectedEdgeWaypointDrag(
+																			evt,
+																			el.value,
+																			previewEdge,
+																			liveLenses
+																		)
+																	) {
+																		return;
+																	}
+																	if (
+																		activeTool.value === 'select' &&
+																		!evt.shiftKey &&
+																		beginLayerMove(
+																			evt,
+																			liveLenses,
+																			el.value.id,
+																			layersInOrder.value,
+																			doc.value,
+																			el.value.id
+																		)
+																	) {
+																		return;
+																	}
+																	rememberPointerPasteLocation(evt, liveLenses);
+																}}
+																onpointermove={(evt) => {
+																	if (updateUnselectedEdgeWaypointDrag(evt, liveLenses)) {
+																		return;
+																	}
+																	updateLayerMove(evt, liveLenses, doc, layersInOrder.value);
+																	updateLinkedPrimitiveCreation(evt, liveLenses);
+																}}
+																onpointerup={(evt) => {
+																	if (finishUnselectedEdgeWaypointDrag(evt, cast)) {
+																		return;
+																	}
+																	if (groupDrag.value?.pointerId === evt.pointerId) {
+																		finishLayerMove(evt, dispatch, doc, layersInOrder.value);
+																		return;
+																	}
+																	finishLinkedPrimitiveCreation(evt, dispatch, cast);
+																}}
+																onpointercancel={(evt) => {
+																	cancelUnselectedEdgeWaypointDrag(evt);
+																	cancelLayerMove(evt);
+																	cancelLinkedPrimitiveCreation(evt);
+																}}
+																onlostpointercapture={(evt) => {
+																	cancelUnselectedEdgeWaypointDrag(evt);
+																	cancelLayerMove(evt);
+																	cancelLinkedPrimitiveCreation(evt);
+																}}
 																onclick={(evt) => {
 																	if (
 																		createLinkedPrimitiveOnLayer(
 																			evt,
 																			liveLenses,
 																			dispatch,
+																			cast,
+																			doc.value,
 																			el.value
 																		)
 																	) {
@@ -4454,63 +9502,63 @@
 																opacity={el.value?.style?.opacity ?? '1'}
 																stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
 																stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
+																stroke-opacity={el.value?.edge?.style?.stroke_opacity ?? '1'}
+																fill-opacity={el.value?.edge?.style?.stroke_opacity ?? '1'}
 																stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
 																stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
 															>
 																<path
-																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																		el.value?.edge,
-																		L.get(localProp('waypoints'), el.value?.edge)
+																	d={edgePath[previewEdge?.style?.smoothness ?? 'linear'](
+																		previewEdge,
+																		previewWaypoints
 																	)}
 																	pointer-events="stroke"
-																	fill={el.value?.edge?.cyclic
+																	fill={previewEdge?.cyclic
 																		? (el.value?.style?.background_color ?? 'none')
 																		: 'none'}
 																	stroke="none"
-																	stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+																	stroke-width={(previewEdge?.style?.stroke_width ?? 1) * 1 +
 																		10 * cameraScale.value}
 																/>
 																<path
-																	d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																		el.value?.edge,
-																		L.get(localProp('waypoints'), el.value?.edge)
+																	d={edgePath[previewEdge?.style?.smoothness ?? 'linear'](
+																		previewEdge,
+																		previewWaypoints
 																	)}
-																	stroke-dasharray={el.value?.edge?.style?.stroke_dash_array ??
-																		'none'}
-																	fill={el.value?.edge?.cyclic
+																	stroke-dasharray={previewEdge?.style?.stroke_dash_array ?? 'none'}
+																	fill={previewEdge?.cyclic
 																		? (el.value?.style?.background_color ?? 'none')
 																		: 'none'}
 																/>
 
-																{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+																{#if previewEdge?.style?.source_tip_symbol_shape_id}
 																	{@const source_angle = edgeAngle['source'](
-																		el.value?.edge,
-																		L.get(localProp('waypoints'), el.value?.edge)
+																		previewEdge,
+																		previewWaypoints
 																	)}
 																	{@const size =
-																		(el.value?.edge?.style?.stroke_width ?? 1) *
-																		(el.value?.edge?.style?.source_tip_size ?? 1)}
+																		(previewEdge?.style?.stroke_width ?? 1) *
+																		(previewEdge?.style?.source_tip_size ?? 1)}
 
 																	<g
 																		fill={tipColor(
 																			el.value?.style?.background_color,
-																			el.value?.edge?.style?.stroke_color,
+																			previewEdge?.style?.stroke_color,
 																			'black'
 																		)}
 																		stroke={tipColor(
 																			el.value?.style?.background_color,
-																			el.value?.edge?.style?.stroke_color,
+																			previewEdge?.style?.stroke_color,
 																			'black'
 																		)}
-																		transform="rotate({source_angle} {el.value?.edge.source_x} {el
-																			.value?.edge.source_y})"
+																		transform="rotate({source_angle} {previewEdge.source_x} {previewEdge.source_y})"
 																	>
 																		<Symbol
 																			symbols={data.symbols}
-																			symbolId={el.value?.edge?.style?.source_tip_symbol_shape_id}
+																			symbolId={previewEdge?.style?.source_tip_symbol_shape_id}
 																			box={{
-																				x: el.value?.edge.source_x - size,
-																				y: el.value?.edge.source_y - size,
+																				x: previewEdge.source_x - size,
+																				y: previewEdge.source_y - size,
 																				width: 2 * size,
 																				height: 2 * size
 																			}}
@@ -4518,34 +9566,33 @@
 																	</g>
 																{/if}
 
-																{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+																{#if previewEdge?.style?.target_tip_symbol_shape_id}
 																	{@const target_angle = edgeAngle['target'](
-																		el.value?.edge,
-																		L.get(localProp('waypoints'), el.value?.edge)
+																		previewEdge,
+																		previewWaypoints
 																	)}
 																	{@const size =
-																		(el.value?.edge?.style?.stroke_width ?? 1) *
-																		(el.value?.edge?.style?.target_tip_size ?? 1)}
+																		(previewEdge?.style?.stroke_width ?? 1) *
+																		(previewEdge?.style?.target_tip_size ?? 1)}
 																	<g
 																		fill={tipColor(
 																			el.value?.style?.background_color,
-																			el.value?.edge?.style?.stroke_color,
+																			previewEdge?.style?.stroke_color,
 																			'black'
 																		)}
 																		stroke={tipColor(
 																			el.value?.style?.background_color,
-																			el.value?.edge?.style?.stroke_color,
+																			previewEdge?.style?.stroke_color,
 																			'black'
 																		)}
-																		transform="rotate({target_angle} {el.value?.edge.target_x} {el
-																			.value?.edge.target_y})"
+																		transform="rotate({target_angle} {previewEdge.target_x} {previewEdge.target_y})"
 																	>
 																		<Symbol
 																			symbols={data.symbols}
-																			symbolId={el.value?.edge?.style?.target_tip_symbol_shape_id}
+																			symbolId={previewEdge?.style?.target_tip_symbol_shape_id}
 																			box={{
-																				x: el.value?.edge.target_x - size,
-																				y: el.value?.edge.target_y - size,
+																				x: previewEdge.target_x - size,
+																				y: previewEdge.target_y - size,
 																				width: 2 * size,
 																				height: 2 * size
 																			}}
@@ -4588,7 +9635,8 @@
 															onclick={(evt) => clickSelectedLayerHitbox(evt, cast, id)}
 															onpointerdown={(evt) =>
 																beginLayerMove(evt, liveLenses, id, layersInOrder.value, doc.value)}
-															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
+															onpointermove={(evt) =>
+																updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
 															onpointerup={(evt) =>
 																finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
 															onpointercancel={cancelLayerMove}
@@ -4637,38 +9685,59 @@
 														{/if}
 													{/if}
 													{#if el.edge}
+														{@const linkedPreviewEdge = renderedEdgePreview(
+															el,
+															doc.value,
+															layersInOrder.value,
+															groupDrag.value,
+															groupDragDelta.value
+														)}
+														{@const linkedPreviewWaypoints =
+															L.get(localProp('waypoints'), linkedPreviewEdge) ??
+															linkedPreviewEdge?.waypoints ??
+															[]}
 														<path
 															class="link-selected"
-															transform={layerMoveTransform(el.id, layersInOrder.value)}
-															d={edgePath[el.edge?.style?.smoothness ?? 'linear'](
+															transform={edgePreviewTransform(
+																el.id,
+																layersInOrder.value,
 																el.edge,
-																L.get(localProp('waypoints'), el.edge)
+																linkedPreviewEdge
+															)}
+															d={edgePath[linkedPreviewEdge?.style?.smoothness ?? 'linear'](
+																linkedPreviewEdge,
+																linkedPreviewWaypoints
 															)}
 															stroke="black"
 															fill="none"
-															stroke-width={(el.edge?.style?.stroke_width ?? 1) * 1 +
+															stroke-width={(linkedPreviewEdge?.style?.stroke_width ?? 1) * 1 +
 																6 * cameraScale.value}
-															stroke-linejoin={el.edge?.style?.stroke_join ?? 'miter'}
-															stroke-linecap={el.edge?.style?.stroke_cap ?? 'butt'}
+															stroke-linejoin={linkedPreviewEdge?.style?.stroke_join ?? 'miter'}
+															stroke-linecap={linkedPreviewEdge?.style?.stroke_cap ?? 'butt'}
 														/>
 
-														{#if el.edge?.style?.source_tip_symbol_shape_id}
+														{#if linkedPreviewEdge?.style?.source_tip_symbol_shape_id}
 															{@const source_angle = edgeAngle['source'](
-																el.edge,
-																L.get(localProp('waypoints'), el.edge)
+																linkedPreviewEdge,
+																linkedPreviewWaypoints
 															)}
 															<g
 																class="link-selected"
-																transform="{layerMoveTransform(el.id, layersInOrder.value) ??
-																	''} rotate({source_angle} {el.edge.source_x} {el.edge.source_y})"
+																transform="{edgePreviewTransform(
+																	el.id,
+																	layersInOrder.value,
+																	el.edge,
+																	linkedPreviewEdge
+																) ??
+																	''} rotate({source_angle} {linkedPreviewEdge.source_x} {linkedPreviewEdge.source_y})"
 															>
 																{#await data.symbols then symbols}
 																	{@const symbol = symbols.get(
-																		el.edge?.style?.source_tip_symbol_shape_id
+																		linkedPreviewEdge?.style?.source_tip_symbol_shape_id
 																	)}
 																	{@const size =
-																		(el.edge?.style?.stroke_width ?? 1) *
-																		(el.edge?.style?.source_tip_size ?? 1)}
+																		(linkedPreviewEdge?.style?.stroke_width ?? 1) *
+																		(linkedPreviewEdge?.style?.source_tip_size ?? 1)}
 
 																	{#if symbol}
 																		{#each symbol.paths as path, i (i)}
@@ -4677,8 +9746,8 @@
 																				stroke={path.stroke_color ?? 'transparent'}
 																				d={buildPath(
 																					{
-																						x: el.edge.source_x - size,
-																						y: el.edge.source_y - size,
+																						x: linkedPreviewEdge.source_x - size,
+																						y: linkedPreviewEdge.source_y - size,
 																						width: 2 * size,
 																						height: 2 * size
 																					},
@@ -4692,23 +9761,28 @@
 															</g>
 														{/if}
 
-														{#if el.edge?.style?.target_tip_symbol_shape_id}
+														{#if linkedPreviewEdge?.style?.target_tip_symbol_shape_id}
 															{@const target_angle = edgeAngle['target'](
-																el.edge,
-																L.get(localProp('waypoints'), el.edge)
+																linkedPreviewEdge,
+																linkedPreviewWaypoints
 															)}
 															<g
 																class="link-selected"
-																transform="{layerMoveTransform(el.id, layersInOrder.value) ??
-																	''} rotate({target_angle} {el.edge.target_x} {el.edge.target_y})"
+																transform="{edgePreviewTransform(
+																	el.id,
+																	layersInOrder.value,
+																	el.edge,
+																	linkedPreviewEdge
+																) ??
+																	''} rotate({target_angle} {linkedPreviewEdge.target_x} {linkedPreviewEdge.target_y})"
 															>
 																{#await data.symbols then symbols}
 																	{@const symbol = symbols.get(
-																		el.edge?.style?.target_tip_symbol_shape_id
+																		linkedPreviewEdge?.style?.target_tip_symbol_shape_id
 																	)}
 																	{@const size =
-																		(el.edge?.style?.stroke_width ?? 1) *
-																		(el.edge?.style?.target_tip_size ?? 1)}
+																		(linkedPreviewEdge?.style?.stroke_width ?? 1) *
+																		(linkedPreviewEdge?.style?.target_tip_size ?? 1)}
 
 																	{#if symbol}
 																		{#each symbol.paths as path, i (i)}
@@ -4717,8 +9791,8 @@
 																				stroke={path.stroke_color ?? 'transparent'}
 																				d={buildPath(
 																					{
-																						x: el.edge.target_x - size,
-																						y: el.edge.target_y - size,
+																						x: linkedPreviewEdge.target_x - size,
+																						y: linkedPreviewEdge.target_y - size,
 																						width: 2 * size,
 																						height: 2 * size
 																					},
@@ -4766,19 +9840,35 @@
 													{/if}
 												{/if}
 												{#if linkedEl.value?.edge}
+													{@const linkedTargetPreviewEdge = renderedEdgePreview(
+														linkedEl.value,
+														doc.value,
+														layersInOrder.value,
+														groupDrag.value,
+														groupDragDelta.value
+													)}
+													{@const linkedTargetPreviewWaypoints =
+														L.get(localProp('waypoints'), linkedTargetPreviewEdge) ??
+														linkedTargetPreviewEdge?.waypoints ??
+														[]}
 													<path
 														class="link-selected"
-														transform={layerMoveTransform(linkedTargetId, layersInOrder.value)}
-														d={edgePath[linkedEl.value.edge?.style?.smoothness ?? 'linear'](
+														transform={edgePreviewTransform(
+															linkedTargetId,
+															layersInOrder.value,
 															linkedEl.value.edge,
-															L.get(localProp('waypoints'), linkedEl.value.edge)
+															linkedTargetPreviewEdge
+														)}
+														d={edgePath[linkedTargetPreviewEdge?.style?.smoothness ?? 'linear'](
+															linkedTargetPreviewEdge,
+															linkedTargetPreviewWaypoints
 														)}
 														stroke="black"
 														fill="none"
-														stroke-width={(linkedEl.value.edge?.style?.stroke_width ?? 1) * 1 +
+														stroke-width={(linkedTargetPreviewEdge?.style?.stroke_width ?? 1) * 1 +
 															6 * cameraScale.value}
-														stroke-linejoin={linkedEl.value.edge?.style?.stroke_join ?? 'miter'}
-														stroke-linecap={linkedEl.value.edge?.style?.stroke_cap ?? 'butt'}
+														stroke-linejoin={linkedTargetPreviewEdge?.style?.stroke_join ?? 'miter'}
+														stroke-linecap={linkedTargetPreviewEdge?.style?.stroke_cap ?? 'butt'}
 													/>
 												{/if}
 											{/each}
@@ -4815,39 +9905,60 @@
 													{/if}
 												{/if}
 												{#if el.value?.edge}
+													{@const selectedLayerPreviewEdge = renderedEdgePreview(
+														el.value,
+														doc.value,
+														layersInOrder.value,
+														groupDrag.value,
+														groupDragDelta.value
+													)}
+													{@const selectedLayerPreviewWaypoints =
+														L.get(localProp('waypoints'), selectedLayerPreviewEdge) ??
+														selectedLayerPreviewEdge?.waypoints ??
+														[]}
 													<path
 														class="selected"
-														transform={layerMoveTransform(id, layersInOrder.value)}
-														d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-															el.value?.edge,
-															L.get(localProp('waypoints'), el.value?.edge)
+														transform={edgePreviewTransform(
+															id,
+															layersInOrder.value,
+															el.value.edge,
+															selectedLayerPreviewEdge
+														)}
+														d={edgePath[selectedLayerPreviewEdge?.style?.smoothness ?? 'linear'](
+															selectedLayerPreviewEdge,
+															selectedLayerPreviewWaypoints
 														)}
 														stroke="black"
 														fill="none"
-														stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+														stroke-width={(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) * 1 +
 															6 * cameraScale.value}
-														stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
-														stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
+														stroke-linejoin={selectedLayerPreviewEdge?.style?.stroke_join ??
+															'miter'}
+														stroke-linecap={selectedLayerPreviewEdge?.style?.stroke_cap ?? 'butt'}
 													/>
 
-													{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+													{#if selectedLayerPreviewEdge?.style?.source_tip_symbol_shape_id}
 														{@const source_angle = edgeAngle['source'](
-															el.value?.edge,
-															L.get(localProp('waypoints'), el.value?.edge)
+															selectedLayerPreviewEdge,
+															selectedLayerPreviewWaypoints
 														)}
 														<g
 															class="selected"
-															transform="{layerMoveTransform(id, layersInOrder.value) ??
-																''} rotate({source_angle} {el.value?.edge.source_x} {el.value?.edge
-																.source_y})"
+															transform="{edgePreviewTransform(
+																id,
+																layersInOrder.value,
+																el.value.edge,
+																selectedLayerPreviewEdge
+															) ??
+																''} rotate({source_angle} {selectedLayerPreviewEdge.source_x} {selectedLayerPreviewEdge.source_y})"
 														>
 															{#await data.symbols then symbols}
 																{@const symbol = symbols.get(
-																	el.value?.edge?.style?.source_tip_symbol_shape_id
+																	selectedLayerPreviewEdge?.style?.source_tip_symbol_shape_id
 																)}
 																{@const size =
-																	(el.value?.edge?.style?.stroke_width ?? 1) *
-																	(el.value?.edge?.style?.source_tip_size ?? 1)}
+																	(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) *
+																	(selectedLayerPreviewEdge?.style?.source_tip_size ?? 1)}
 
 																{#if symbol}
 																	{#each symbol.paths as path, i (i)}
@@ -4856,8 +9967,8 @@
 																			stroke={path.stroke_color ?? 'transparent'}
 																			d={buildPath(
 																				{
-																					x: el.value?.edge.source_x - size,
-																					y: el.value?.edge.source_y - size,
+																					x: selectedLayerPreviewEdge.source_x - size,
+																					y: selectedLayerPreviewEdge.source_y - size,
 																					width: 2 * size,
 																					height: 2 * size
 																				},
@@ -4871,24 +9982,28 @@
 														</g>
 													{/if}
 
-													{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+													{#if selectedLayerPreviewEdge?.style?.target_tip_symbol_shape_id}
 														{@const target_angle = edgeAngle['target'](
-															el.value?.edge,
-															L.get(localProp('waypoints'), el.value?.edge)
+															selectedLayerPreviewEdge,
+															selectedLayerPreviewWaypoints
 														)}
 														<g
 															class="selected"
-															transform="{layerMoveTransform(id, layersInOrder.value) ??
-																''} rotate({target_angle} {el.value?.edge.target_x} {el.value?.edge
-																.target_y})"
+															transform="{edgePreviewTransform(
+																id,
+																layersInOrder.value,
+																el.value.edge,
+																selectedLayerPreviewEdge
+															) ??
+																''} rotate({target_angle} {selectedLayerPreviewEdge.target_x} {selectedLayerPreviewEdge.target_y})"
 														>
 															{#await data.symbols then symbols}
 																{@const symbol = symbols.get(
-																	el.value?.edge?.style?.target_tip_symbol_shape_id
+																	selectedLayerPreviewEdge?.style?.target_tip_symbol_shape_id
 																)}
 																{@const size =
-																	(el.value?.edge?.style?.stroke_width ?? 1) *
-																	(el.value?.edge?.style?.target_tip_size ?? 1)}
+																	(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) *
+																	(selectedLayerPreviewEdge?.style?.target_tip_size ?? 1)}
 
 																{#if symbol}
 																	{#each symbol.paths as path, i (i)}
@@ -4897,8 +10012,8 @@
 																			stroke={path.stroke_color ?? 'transparent'}
 																			d={buildPath(
 																				{
-																					x: el.value?.edge.target_x - size,
-																					y: el.value?.edge.target_y - size,
+																					x: selectedLayerPreviewEdge.target_x - size,
+																					y: selectedLayerPreviewEdge.target_y - size,
 																					width: 2 * size,
 																					height: 2 * size
 																				},
@@ -4967,38 +10082,50 @@
 																{/if}
 															{/if}
 															{#if el.value?.edge}
+																{@const remotePreviewEdge = renderedEdgePreview(
+																	el.value,
+																	doc.value,
+																	layersInOrder.value,
+																	groupDrag.value,
+																	groupDragDelta.value
+																)}
+																{@const remotePreviewWaypoints =
+																	L.get(localProp('waypoints'), remotePreviewEdge) ??
+																	remotePreviewEdge?.waypoints ??
+																	[]}
 																<g>
 																	<path
 																		class="selected"
-																		d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																			el.value?.edge,
-																			L.get(localProp('waypoints'), el.value?.edge)
+																		d={edgePath[remotePreviewEdge?.style?.smoothness ?? 'linear'](
+																			remotePreviewEdge,
+																			remotePreviewWaypoints
 																		)}
 																		stroke="black"
 																		fill="none"
-																		stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+																		stroke-width={(remotePreviewEdge?.style?.stroke_width ?? 1) *
+																			1 +
 																			4 * cameraScale.value}
-																		stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
-																		stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
+																		stroke-linejoin={remotePreviewEdge?.style?.stroke_join ??
+																			'miter'}
+																		stroke-linecap={remotePreviewEdge?.style?.stroke_cap ?? 'butt'}
 																	/>
 
-																	{#if el.value?.edge?.style?.source_tip_symbol_shape_id}
+																	{#if remotePreviewEdge?.style?.source_tip_symbol_shape_id}
 																		{@const source_angle = edgeAngle['source'](
-																			el.value?.edge,
-																			L.get(localProp('waypoints'), el.value?.edge)
+																			remotePreviewEdge,
+																			remotePreviewWaypoints
 																		)}
 																		<g
 																			class="selected"
-																			transform="rotate({source_angle} {el.value?.edge.source_x} {el
-																				.value?.edge.source_y})"
+																			transform="rotate({source_angle} {remotePreviewEdge.source_x} {remotePreviewEdge.source_y})"
 																		>
 																			{#await data.symbols then symbols}
 																				{@const symbol = symbols.get(
-																					el.value?.edge?.style?.source_tip_symbol_shape_id
+																					remotePreviewEdge?.style?.source_tip_symbol_shape_id
 																				)}
 																				{@const size =
-																					(el.value?.edge?.style?.stroke_width ?? 1) *
-																					(el.value?.edge?.style?.source_tip_size ?? 1)}
+																					(remotePreviewEdge?.style?.stroke_width ?? 1) *
+																					(remotePreviewEdge?.style?.source_tip_size ?? 1)}
 
 																				{#if symbol}
 																					{#each symbol.paths as path, i (i)}
@@ -5007,8 +10134,8 @@
 																							stroke={path.stroke_color ?? 'transparent'}
 																							d={buildPath(
 																								{
-																									x: el.value?.edge.source_x - size,
-																									y: el.value?.edge.source_y - size,
+																									x: remotePreviewEdge.source_x - size,
+																									y: remotePreviewEdge.source_y - size,
 																									width: 2 * size,
 																									height: 2 * size
 																								},
@@ -5022,23 +10149,22 @@
 																		</g>
 																	{/if}
 
-																	{#if el.value?.edge?.style?.target_tip_symbol_shape_id}
+																	{#if remotePreviewEdge?.style?.target_tip_symbol_shape_id}
 																		{@const target_angle = edgeAngle['target'](
-																			el.value?.edge,
-																			L.get(localProp('waypoints'), el.value?.edge)
+																			remotePreviewEdge,
+																			remotePreviewWaypoints
 																		)}
 																		<g
 																			class="selected"
-																			transform="rotate({target_angle} {el.value?.edge.target_x} {el
-																				.value?.edge.target_y})"
+																			transform="rotate({target_angle} {remotePreviewEdge.target_x} {remotePreviewEdge.target_y})"
 																		>
 																			{#await data.symbols then symbols}
 																				{@const symbol = symbols.get(
-																					el.value?.edge?.style?.target_tip_symbol_shape_id
+																					remotePreviewEdge?.style?.target_tip_symbol_shape_id
 																				)}
 																				{@const size =
-																					(el.value?.edge?.style?.stroke_width ?? 1) *
-																					(el.value?.edge?.style?.target_tip_size ?? 1)}
+																					(remotePreviewEdge?.style?.stroke_width ?? 1) *
+																					(remotePreviewEdge?.style?.target_tip_size ?? 1)}
 
 																				{#if symbol}
 																					{#each symbol.paths as path, i (i)}
@@ -5047,8 +10173,8 @@
 																							stroke={path.stroke_color ?? 'transparent'}
 																							d={buildPath(
 																								{
-																									x: el.value?.edge.target_x - size,
-																									y: el.value?.edge.target_y - size,
+																									x: remotePreviewEdge.target_x - size,
+																									y: remotePreviewEdge.target_y - size,
 																									width: 2 * size,
 																									height: 2 * size
 																								},
@@ -5097,8 +10223,16 @@
 											{@const creationBox = normalizedBox(primitiveCreation.value)}
 											{@const primitiveContent = activeCreateTool.value?.item?.data?.content ?? {}}
 											{@const previewStyle = primitivePreviewStyle(primitiveContent)}
+											{@const roundRadius = primitivePreviewRoundRadius(primitiveContent)}
 											<g transform={rotationTransform.value}>
-												{#if primitivePreviewIsEllipse(primitiveContent)}
+												{#if primitivePreviewIsLine(primitiveContent)}
+													<path
+														class="primitive-creation-preview-shape"
+														style:stroke={previewStyle.border}
+														fill="none"
+														d={primitivePreviewLinePath(creationBox)}
+													/>
+												{:else if primitivePreviewIsEllipse(primitiveContent)}
 													<ellipse
 														class="primitive-creation-preview-shape"
 														style:fill={previewStyle.background}
@@ -5107,6 +10241,27 @@
 														cy={creationBox.y + creationBox.height / 2}
 														rx={creationBox.width / 2}
 														ry={creationBox.height / 2}
+													/>
+												{:else if primitivePreviewIsTriangle(primitiveContent)}
+													<path
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														d={primitivePreviewTrianglePath(creationBox)}
+													/>
+												{:else if primitivePreviewIsDiamond(primitiveContent)}
+													<path
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														d={primitivePreviewDiamondPath(creationBox)}
+													/>
+												{:else if primitivePreviewIsPie(primitiveContent)}
+													<path
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														d={primitivePreviewPiePath(creationBox)}
 													/>
 												{:else}
 													<rect
@@ -5117,6 +10272,78 @@
 														y={creationBox.y}
 														width={creationBox.width}
 														height={creationBox.height}
+														rx={roundRadius}
+														ry={roundRadius}
+													/>
+												{/if}
+											</g>
+										{/if}
+
+										{#if linkedPrimitiveCreation.value}
+											{@const creation = linkedPrimitiveCreation.value}
+											{@const primitiveContent = creation.tool?.item?.data?.content ?? {}}
+											{@const previewStyle = primitivePreviewStyle(primitiveContent)}
+											{@const previewSize = creation.size ?? {
+												width: primitiveContent.width ?? 20,
+												height: primitiveContent.height ?? 20
+											}}
+											{@const creationBox = {
+												x: creation.current.x - previewSize.width / 2,
+												y: creation.current.y - previewSize.height / 2,
+												width: previewSize.width,
+												height: previewSize.height
+											}}
+											{@const roundRadius = primitivePreviewRoundRadius(primitiveContent)}
+											<g transform={rotationTransform.value}>
+												{#if primitivePreviewIsLine(primitiveContent)}
+													<path
+														class="primitive-creation-preview-shape"
+														style:stroke={previewStyle.border}
+														fill="none"
+														d={primitivePreviewLinePath(creationBox)}
+													/>
+												{:else if primitivePreviewIsEllipse(primitiveContent)}
+													<ellipse
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														cx={creationBox.x + creationBox.width / 2}
+														cy={creationBox.y + creationBox.height / 2}
+														rx={creationBox.width / 2}
+														ry={creationBox.height / 2}
+													/>
+												{:else if primitivePreviewIsTriangle(primitiveContent)}
+													<path
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														d={primitivePreviewTrianglePath(creationBox)}
+													/>
+												{:else if primitivePreviewIsDiamond(primitiveContent)}
+													<path
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														d={primitivePreviewDiamondPath(creationBox)}
+													/>
+												{:else if primitivePreviewIsPie(primitiveContent)}
+													<path
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														d={primitivePreviewPiePath(creationBox)}
+													/>
+												{:else}
+													<rect
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+														x={creationBox.x}
+														y={creationBox.y}
+														width={creationBox.width}
+														height={creationBox.height}
+														rx={roundRadius}
+														ry={roundRadius}
 													/>
 												{/if}
 											</g>
@@ -5297,12 +10524,28 @@
 														el
 													)}
 													{#if el.value?.edge}
+														{@const selectedPreviewEdge = renderedEdgePreview(
+															el.value,
+															doc.value,
+															layersInOrder.value,
+															groupDrag.value,
+															groupDragDelta.value
+														)}
+														{@const selectedPreviewWaypoints =
+															L.get(localProp('waypoints'), selectedPreviewEdge) ??
+															selectedPreviewEdge?.waypoints ??
+															[]}
 														<path
-															d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																el.value?.edge,
-																L.get(localProp('waypoints'), el.value?.edge)
+															d={edgePath[selectedPreviewEdge?.style?.smoothness ?? 'linear'](
+																selectedPreviewEdge,
+																selectedPreviewWaypoints
 															)}
-															transform={layerMoveTransform(id, layersInOrder.value)}
+															transform={edgePreviewTransform(
+																id,
+																layersInOrder.value,
+																el.value.edge,
+																selectedPreviewEdge
+															)}
 															tabindex="-1"
 															onkeydown={(evt) => {
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
@@ -5310,14 +10553,14 @@
 																}
 															}}
 															stroke={'transparent'}
-															fill={el.value?.edge?.cyclic
+															fill={selectedPreviewEdge?.cyclic
 																? (el.value?.style?.background_color ?? 'none')
 																: 'none'}
 															fill-opacity="0"
-															stroke-width={(el.value?.edge?.style?.stroke_width ?? 1) * 1 +
+															stroke-width={(selectedPreviewEdge?.style?.stroke_width ?? 1) * 1 +
 																10 * cameraScale.value}
-															stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
-															stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
+															stroke-linejoin={selectedPreviewEdge?.style?.stroke_join ?? 'miter'}
+															stroke-linecap={selectedPreviewEdge?.style?.stroke_cap ?? 'butt'}
 															style:pointer-events="painted"
 															cursor="default"
 															onpointerdown={(evt) =>
@@ -5329,7 +10572,8 @@
 																	doc.value
 																)}
 															onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
-															onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
+															onpointermove={(evt) =>
+																updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
 															onpointerup={(evt) =>
 																finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
 															onpointercancel={cancelLayerMove}
@@ -5374,7 +10618,12 @@
 																waypoints
 															)}
 															<g
-																transform={layerMoveTransform(id, layersInOrder.value)}
+																transform={edgePreviewTransform(
+																	id,
+																	layersInOrder.value,
+																	el.value.edge,
+																	selectedPreviewEdge
+																)}
 																onclick={(evt) => {
 																	evt.stopPropagation();
 																	backoffValue.value = undefined;
@@ -5431,7 +10680,14 @@
 																	}
 																}}
 																onpointermove={(evt) => {
-																	if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																	if (
+																		updateSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
 																		return;
 																	}
 
@@ -5491,10 +10747,23 @@
 																	r={4 * cameraScale.value}
 																	cx={wp_proposal.x}
 																	cy={wp_proposal.y}
+																/>
+																<path
+																	d="M {wp_proposal.x - 3 * cameraScale.value} {wp_proposal.y} H {wp_proposal.x +
+																		3 * cameraScale.value} M {wp_proposal.x} {wp_proposal.y -
+																		3 * cameraScale.value} V {wp_proposal.y + 3 * cameraScale.value}"
+																	stroke="#7af"
+																	stroke-width="1.5"
+																	vector-effect="non-scaling-stroke"
+																	pointer-events="none"
 																/></g
 															>
 														{/each}
 														{#each persistentWaypoints.value as wp, wi (wp.id)}
+															{@const previewWp = previewWaypointPosition(
+																selectedPreviewWaypoints,
+																wp
+															)}
 															{@const pos = view(
 																[
 																	L.find(R.whereEq({ id: wp.id }), { hint: wi }),
@@ -5504,7 +10773,12 @@
 																waypoints
 															)}
 															<g
-																transform={layerMoveTransform(id, layersInOrder.value)}
+																transform={edgePreviewTransform(
+																	id,
+																	layersInOrder.value,
+																	el.value.edge,
+																	selectedPreviewEdge
+																)}
 																onclick={(evt) => {
 																	backoffValue.value = undefined;
 																	evt.stopPropagation();
@@ -5549,7 +10823,14 @@
 																	}
 																}}
 																onpointermove={(evt) => {
-																	if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																	if (
+																		updateSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
 																		return;
 																	}
 
@@ -5621,8 +10902,8 @@
 																	cursor="default"
 																	stroke="none"
 																	r={12 * cameraScale.value}
-																	cx={wp.x}
-																	cy={wp.y}
+																	cx={previewWp.x}
+																	cy={previewWp.y}
 																	pointer-events="all"
 																/>
 																<circle
@@ -5632,8 +10913,8 @@
 																	stroke-width="2"
 																	vector-effect="non-scaling-stroke"
 																	r={6 * cameraScale.value}
-																	cx={wp.x}
-																	cy={wp.y}
+																	cx={previewWp.x}
+																	cy={previewWp.y}
 																	pointer-events="none"
 																/></g
 															>
@@ -5648,9 +10929,25 @@
 															el
 														)}
 														<g
-															transform={layerMoveTransform(id, layersInOrder.value)}
+															transform={edgePreviewTransform(
+																id,
+																layersInOrder.value,
+																el.value.edge,
+																selectedPreviewEdge
+															)}
 															onclick={(evt) => {
 																evt.stopPropagation();
+															}}
+															ondblclick={(evt) => {
+																evt.preventDefault();
+																evt.stopPropagation();
+																removeEdgeEndpoint(
+																	el.value,
+																	'source',
+																	waypoints.value,
+																	dispatch,
+																	cast
+																);
 															}}
 															onpointerdown={(evt) => {
 																if (
@@ -5680,7 +10977,14 @@
 																}
 															}}
 															onpointermove={(evt) => {
-																if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																if (
+																	updateSelectionMoveFromHandle(
+																		evt,
+																		liveLenses,
+																		doc,
+																		layersInOrder.value
+																	)
+																) {
 																	return;
 																}
 
@@ -5714,15 +11018,31 @@
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
-																	dispatch('update_edge_position', {
-																		layer_id: el.value.id,
-																		value: {
-																			source_x: newPos.x,
-																			source_y: newPos.y
-																		}
-																	}).then(({ source_x: x, source_y: y }) => {
-																		source_pos.value = { x, y };
-																	});
+																	Promise.all([data.socket_schemas, currentSyntaxValue])
+																		.then(([socketSchemas, syntax]) =>
+																			reconnectOrMoveEdgeEndpoint({
+																				layer: el.value,
+																				endpoint: 'source',
+																				position: newPos,
+																				socketSchemas,
+																				syntax,
+																				dispatch,
+																				cast,
+																				docValue: doc.value,
+																				layersInOrderValue: layersInOrder.value
+																			})
+																		)
+																		.then((result) => {
+																			if (result?.source_x !== undefined) {
+																				source_pos.value = {
+																					x: result.source_x,
+																					y: result.source_y
+																				};
+																			}
+																		})
+																		.catch((error) =>
+																			queueError(error, 'Edge endpoint could not be changed')
+																		);
 																}
 															}}
 															onkeydown={(evt) => {
@@ -5749,25 +11069,42 @@
 																cursor="default"
 																stroke="none"
 																pointer-events="all"
-																r={12 * cameraScale.value}
-																cx={el.value?.edge?.source_x}
-																cy={el.value?.edge?.source_y}
-															/><circle
-																fill="white"
+																r={7 * cameraScale.value}
+																cx={selectedPreviewEdge?.source_x}
+																cy={selectedPreviewEdge?.source_y}
+															/><rect
+																fill={isFreePointEdge(el.value) ? 'white' : '#35a66a'}
 																cursor="default"
 																pointer-events="none"
-																stroke="#7af"
-																stroke-width="2"
+																stroke={isFreePointEdge(el.value) ? '#111' : '#1f7048'}
+																stroke-width="1.5"
 																vector-effect="non-scaling-stroke"
-																r={6 * cameraScale.value}
-																cx={el.value?.edge?.source_x}
-																cy={el.value?.edge?.source_y}
+																x={selectedPreviewEdge?.source_x - 4 * cameraScale.value}
+																y={selectedPreviewEdge?.source_y - 4 * cameraScale.value}
+																width={8 * cameraScale.value}
+																height={8 * cameraScale.value}
 															/></g
 														>
 														<g
-															transform={layerMoveTransform(id, layersInOrder.value)}
+															transform={edgePreviewTransform(
+																id,
+																layersInOrder.value,
+																el.value.edge,
+																selectedPreviewEdge
+															)}
 															onclick={(evt) => {
 																evt.stopPropagation();
+															}}
+															ondblclick={(evt) => {
+																evt.preventDefault();
+																evt.stopPropagation();
+																removeEdgeEndpoint(
+																	el.value,
+																	'target',
+																	waypoints.value,
+																	dispatch,
+																	cast
+																);
 															}}
 															onpointerdown={(evt) => {
 																if (
@@ -5797,7 +11134,14 @@
 																}
 															}}
 															onpointermove={(evt) => {
-																if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																if (
+																	updateSelectionMoveFromHandle(
+																		evt,
+																		liveLenses,
+																		doc,
+																		layersInOrder.value
+																	)
+																) {
 																	return;
 																}
 
@@ -5831,15 +11175,31 @@
 																		pointerOffset.value,
 																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																	);
-																	dispatch('update_edge_position', {
-																		layer_id: el.value.id,
-																		value: {
-																			target_x: newPos.x,
-																			target_y: newPos.y
-																		}
-																	}).then(({ target_x: x, target_y: y }) => {
-																		target_pos.value = { x, y };
-																	});
+																	Promise.all([data.socket_schemas, currentSyntaxValue])
+																		.then(([socketSchemas, syntax]) =>
+																			reconnectOrMoveEdgeEndpoint({
+																				layer: el.value,
+																				endpoint: 'target',
+																				position: newPos,
+																				socketSchemas,
+																				syntax,
+																				dispatch,
+																				cast,
+																				docValue: doc.value,
+																				layersInOrderValue: layersInOrder.value
+																			})
+																		)
+																		.then((result) => {
+																			if (result?.target_x !== undefined) {
+																				target_pos.value = {
+																					x: result.target_x,
+																					y: result.target_y
+																				};
+																			}
+																		})
+																		.catch((error) =>
+																			queueError(error, 'Edge endpoint could not be changed')
+																		);
 																}
 															}}
 															onkeydown={(evt) => {
@@ -5866,19 +11226,20 @@
 																stroke="none"
 																cursor="default"
 																pointer-events="all"
-																r={12 * cameraScale.value}
-																cx={el.value?.edge?.target_x}
-																cy={el.value?.edge?.target_y}
-															/><circle
-																fill="white"
-																stroke="#7af"
+																r={7 * cameraScale.value}
+																cx={selectedPreviewEdge?.target_x}
+																cy={selectedPreviewEdge?.target_y}
+															/><rect
+																fill={isFreePointEdge(el.value) ? 'white' : '#35a66a'}
+																stroke={isFreePointEdge(el.value) ? '#111' : '#1f7048'}
 																cursor="default"
-																stroke-width="2"
+																stroke-width="1.5"
 																pointer-events="none"
 																vector-effect="non-scaling-stroke"
-																r={6 * cameraScale.value}
-																cx={el.value?.edge?.target_x}
-																cy={el.value?.edge?.target_y}
+																x={selectedPreviewEdge?.target_x - 4 * cameraScale.value}
+																y={selectedPreviewEdge?.target_y - 4 * cameraScale.value}
+																width={8 * cameraScale.value}
+																height={8 * cameraScale.value}
 															/></g
 														>
 													{/if}
@@ -6110,7 +11471,20 @@
 															) {
 																return;
 															}
-															openTargetLocation(evt, el.value);
+															if (
+																beginDirectInscriptionEdit(
+																	evt,
+																	el.value,
+																	liveLenses,
+																	dispatch,
+																	cast,
+																	doc.value,
+																	boxDim.value
+																)
+															) {
+																return;
+															}
+															openTargetLocationOrDirectModification(evt, el.value, cast);
 														}}
 														onpointerdown={(evt) =>
 															beginLayerMove(
@@ -6120,7 +11494,8 @@
 																layersInOrder.value,
 																doc.value
 															)}
-														onpointermove={(evt) => updateLayerMove(evt, liveLenses)}
+														onpointermove={(evt) =>
+															updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
 														onpointerup={(evt) =>
 															finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
 														onpointercancel={cancelLayerMove}
@@ -6134,12 +11509,18 @@
 														role="button"
 														tabindex="-1"
 													/>
-													{#each Object.entries(corners) as [type, { lens, dx, dy }]}
-														{@const pos = view(L.cond([R.prop('box'), ['box', lens]]), el)}
-														{@const posVal = pos.value}
-														{#if posVal}
+													{#each selectionHandlesForLayer(el.value) as handle (handle.type)}
+														{#if boxDim.value}
+															{@const posVal = selectionHandlePosition(boxDim.value, handle)}
+															{@const canResizeHandle = selectionHandleCanResize(el.value)}
+															{@const handleInteractive =
+																canResizeHandle || selectedLayers.value.length > 1}
 															<g
 																onpointerdown={(evt) => {
+																	if (!handleInteractive) {
+																		return;
+																	}
+
 																	if (
 																		beginSelectionMoveFromHandle(
 																			evt,
@@ -6152,6 +11533,10 @@
 																		return;
 																	}
 
+																	if (!canResizeHandle) {
+																		return;
+																	}
+
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		evt.currentTarget.focus({
@@ -6159,15 +11544,30 @@
 																		});
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		evt.currentTarget.currentPointerId = evt.pointerId;
-																		backoffValue.value = pos.value;
+																		backoffValue.value = normalizeResizeRect(boxDim.value);
 																		pointerOffset.value = Geo.diff2d(
 																			posVal,
 																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																		);
+																		resizeHandleDrag.value = {
+																			layerId: el.value.id,
+																			startRect: normalizeResizeRect(boxDim.value),
+																			currentRect: normalizeResizeRect(boxDim.value),
+																			dx: handle.dx,
+																			dy: handle.dy,
+																			pointerOffset: pointerOffset.value
+																		};
 																	}
 																}}
 																onpointermove={(evt) => {
-																	if (updateSelectionMoveFromHandle(evt, liveLenses)) {
+																	if (
+																		updateSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
 																		return;
 																	}
 
@@ -6175,10 +11575,20 @@
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
 																	) {
-																		pos.value = Geo.translate(
-																			pointerOffset.value,
+																		const drag = resizeHandleDrag.value;
+																		if (!drag || drag.layerId !== el.value.id) {
+																			return;
+																		}
+																		const pointer = Geo.translate(
+																			drag.pointerOffset,
 																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																		);
+																		const rect = resizeRectFromHandle(drag, pointer, evt);
+																		resizeHandleDrag.value = {
+																			...drag,
+																			currentRect: rect
+																		};
+																		previewLayerResize(doc, el.value, rect);
 																	}
 																}}
 																onpointerup={(evt) => {
@@ -6197,21 +11607,17 @@
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
 																	) {
-																		cast('update_box_size', {
-																			layer_id: el.value.id,
-																			value: L.get(
-																				[
-																					'box',
-																					L.props('position_x', 'position_y', 'width', 'height')
-																				],
-																				el.value
-																			)
-																		});
+																		const rect =
+																			resizeHandleDrag.value?.currentRect ??
+																			normalizeResizeRect(boxDim.value);
+																		commitLayerResize(cast, el.value, rect);
+																		resizeHandleDrag.value = undefined;
 																	}
 																}}
 																onclick={(evt) => {
 																	evt.stopPropagation();
 																	backoffValue.value = undefined;
+																	resizeHandleDrag.value = undefined;
 																}}
 																onkeydown={(evt) => {
 																	if (cancelSelectionMoveFromHandle(evt)) {
@@ -6226,40 +11632,574 @@
 																		evt.currentTarget.releasePointerCapture(
 																			evt.currentTarget.currentPointerId
 																		);
-																		pos.value = backoffValue.value;
+																		previewLayerResize(doc, el.value, backoffValue.value);
+																		resizeHandleDrag.value = undefined;
 																	}
 																}}
 																role="button"
 																tabindex="-1"
-																transform="{layerMoveTransform(id, layersInOrder.value) ??
-																	''} translate({dx * cameraScale.value * 6},{dy *
-																	cameraScale.value *
-																	6})"
+																transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
+															>
+																<rect
+																	fill="none"
+																	stroke="none"
+																	cursor="default"
+																	pointer-events={handleInteractive ? 'all' : 'none'}
+																	vector-effect="non-scaling-stroke"
+																	x={posVal.x - cameraScale.value * 6}
+																	y={posVal.y - cameraScale.value * 6}
+																	width={cameraScale.value * 12}
+																	height={cameraScale.value * 12}
+																/>
+																<rect
+																	fill={canResizeHandle ? 'white' : 'none'}
+																	stroke="#111"
+																	cursor="default"
+																	pointer-events="none"
+																	vector-effect="non-scaling-stroke"
+																	stroke-width="1.5"
+																	x={posVal.x - cameraScale.value * 4}
+																	y={posVal.y - cameraScale.value * 4}
+																	width={cameraScale.value * 8}
+																	height={cameraScale.value * 8}
+																/>
+															</g>
+														{/if}
+													{/each}
+													{#if el.value?.text && boxDim.value}
+														{@const fontHandlePos = {
+															x: boxDim.value.x,
+															y: boxDim.value.y + boxDim.value.height
+														}}
+														<g
+															role="button"
+															tabindex="-1"
+															transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
+															onpointerdown={(evt) => {
+																if (
+																	beginSelectionMoveFromHandle(
+																		evt,
+																		liveLenses,
+																		el.value.id,
+																		layersInOrder.value,
+																		doc.value
+																	)
+																) {
+																	return;
+																}
+
+																if (evt.isPrimary && E.isLeftButton(evt)) {
+																	evt.preventDefault();
+																	evt.currentTarget.focus({ preventScroll: true });
+																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	evt.currentTarget.currentPointerId = evt.pointerId;
+																	attributeHandleDrag.value = {
+																		type: 'font_size',
+																		layerId: el.value.id,
+																		startPointer: liveLenses.clientToCanvas(
+																			evt.clientX,
+																			evt.clientY
+																		),
+																		startFontSize: textEditorNumericFontSize(el.value),
+																		value: textEditorNumericFontSize(el.value)
+																	};
+																}
+															}}
+															onpointermove={(evt) => {
+																if (
+																	updateSelectionMoveFromHandle(
+																		evt,
+																		liveLenses,
+																		doc,
+																		layersInOrder.value
+																	)
+																) {
+																	return;
+																}
+
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
+																	const drag = attributeHandleDrag.value;
+																	if (drag?.type !== 'font_size' || drag.layerId !== el.value.id) {
+																		return;
+																	}
+																	const fontSize = textFontSizeFromDrag(
+																		drag,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
+																	attributeHandleDrag.value = { ...drag, value: fontSize };
+																	patchTextFontSizeLocally(doc, el.value.id, fontSize);
+																}
+															}}
+															onpointerup={(evt) => {
+																if (
+																	finishSelectionMoveFromHandle(
+																		evt,
+																		dispatch,
+																		doc,
+																		layersInOrder.value
+																	)
+																) {
+																	return;
+																}
+
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
+																	const fontSize =
+																		attributeHandleDrag.value?.value ??
+																		textEditorNumericFontSize(el.value);
+																	commitTextFontSize(cast, el.value, fontSize);
+																	attributeHandleDrag.value = undefined;
+																}
+															}}
+															onkeydown={(evt) => {
+																if (cancelSelectionMoveFromHandle(evt)) {
+																	return;
+																}
+
+																if (evt.key === 'Escape' || evt.key === 'Esc') {
+																	const drag = attributeHandleDrag.value;
+																	if (drag?.type !== 'font_size') {
+																		return;
+																	}
+																	evt.stopPropagation();
+																	evt.currentTarget.releasePointerCapture(
+																		evt.currentTarget.currentPointerId
+																	);
+																	patchTextFontSizeLocally(doc, el.value.id, drag.startFontSize);
+																	attributeHandleDrag.value = undefined;
+																}
+															}}
+														>
+															<circle
+																fill="none"
+																stroke="none"
+																cursor="default"
+																pointer-events="all"
+																r={cameraScale.value * 7}
+																cx={fontHandlePos.x}
+																cy={fontHandlePos.y}
+															/>
+															<circle
+																fill="#ffeb3b"
+																stroke="#111"
+																stroke-width="1.5"
+																vector-effect="non-scaling-stroke"
+																pointer-events="none"
+																r={cameraScale.value * 4}
+																cx={fontHandlePos.x}
+																cy={fontHandlePos.y}
+															/>
+														</g>
+													{/if}
+													{#if supportsRoundRadiusHandle(el.value)}
+														{@const radiusHandlePos = roundRadiusHandlePosition(el.value.box)}
+														<g
+															role="button"
+															tabindex="-1"
+															transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
+															onpointerdown={(evt) => {
+																if (
+																	beginSelectionMoveFromHandle(
+																		evt,
+																		liveLenses,
+																		el.value.id,
+																		layersInOrder.value,
+																		doc.value
+																	)
+																) {
+																	return;
+																}
+
+																if (evt.isPrimary && E.isLeftButton(evt)) {
+																	evt.preventDefault();
+																	evt.currentTarget.focus({ preventScroll: true });
+																	evt.currentTarget.setPointerCapture(evt.pointerId);
+																	evt.currentTarget.currentPointerId = evt.pointerId;
+																	attributeHandleDrag.value = {
+																		type: 'round_radius',
+																		layerId: el.value.id,
+																		startRadius: boxRoundRadius(el.value.box),
+																		value: boxRoundRadius(el.value.box)
+																	};
+																}
+															}}
+															onpointermove={(evt) => {
+																if (
+																	updateSelectionMoveFromHandle(
+																		evt,
+																		liveLenses,
+																		doc,
+																		layersInOrder.value
+																	)
+																) {
+																	return;
+																}
+
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
+																	const drag = attributeHandleDrag.value;
+																	if (
+																		drag?.type !== 'round_radius' ||
+																		drag.layerId !== el.value.id
+																	) {
+																		return;
+																	}
+																	const radius = roundRadiusFromPointer(
+																		el.value.box,
+																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	);
+																	attributeHandleDrag.value = { ...drag, value: radius };
+																	patchBoxRoundRadiusLocally(doc, el.value.id, radius);
+																}
+															}}
+															onpointerup={(evt) => {
+																if (
+																	finishSelectionMoveFromHandle(
+																		evt,
+																		dispatch,
+																		doc,
+																		layersInOrder.value
+																	)
+																) {
+																	return;
+																}
+
+																if (
+																	evt.isPrimary &&
+																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																) {
+																	const radius =
+																		attributeHandleDrag.value?.value ??
+																		boxRoundRadius(el.value.box);
+																	commitBoxRoundRadius(cast, el.value, radius);
+																	attributeHandleDrag.value = undefined;
+																}
+															}}
+															onkeydown={(evt) => {
+																if (cancelSelectionMoveFromHandle(evt)) {
+																	return;
+																}
+
+																if (evt.key === 'Escape' || evt.key === 'Esc') {
+																	const drag = attributeHandleDrag.value;
+																	if (drag?.type !== 'round_radius') {
+																		return;
+																	}
+																	evt.stopPropagation();
+																	evt.currentTarget.releasePointerCapture(
+																		evt.currentTarget.currentPointerId
+																	);
+																	patchBoxRoundRadiusLocally(doc, el.value.id, drag.startRadius);
+																	attributeHandleDrag.value = undefined;
+																}
+															}}
+														>
+															<circle
+																fill="none"
+																stroke="none"
+																cursor="default"
+																pointer-events="all"
+																r={cameraScale.value * 7}
+																cx={radiusHandlePos.x}
+																cy={radiusHandlePos.y}
+															/>
+															<circle
+																fill="#ffeb3b"
+																stroke="#111"
+																stroke-width="1.5"
+																vector-effect="non-scaling-stroke"
+																pointer-events="none"
+																r={cameraScale.value * 4}
+																cx={radiusHandlePos.x}
+																cy={radiusHandlePos.y}
+															/>
+														</g>
+													{/if}
+													{#if supportsPieAngleHandles(el.value)}
+														{#each ['start_angle', 'end_angle'] as angleKind (angleKind)}
+															{@const pieHandlePos = pieAngleHandlePosition(
+																el.value.box,
+																angleKind
+															)}
+															<g
+																role="button"
+																tabindex="-1"
+																transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
+																onpointerdown={(evt) => {
+																	if (
+																		beginSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			el.value.id,
+																			layersInOrder.value,
+																			doc.value
+																		)
+																	) {
+																		return;
+																	}
+
+																	if (evt.isPrimary && E.isLeftButton(evt)) {
+																		evt.preventDefault();
+																		evt.currentTarget.focus({ preventScroll: true });
+																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		evt.currentTarget.currentPointerId = evt.pointerId;
+																		attributeHandleDrag.value = {
+																			type: 'pie_angle',
+																			angleKind,
+																			layerId: el.value.id,
+																			startAngle: pieAngleValue(el.value.box, angleKind),
+																			value: pieAngleValue(el.value.box, angleKind)
+																		};
+																	}
+																}}
+																onpointermove={(evt) => {
+																	if (
+																		updateSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
+																		return;
+																	}
+
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		const drag = attributeHandleDrag.value;
+																		if (
+																			drag?.type !== 'pie_angle' ||
+																			drag.layerId !== el.value.id ||
+																			drag.angleKind !== angleKind
+																		) {
+																			return;
+																		}
+																		const angle = pieAngleFromPointer(
+																			el.value.box,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY),
+																			evt.ctrlKey || evt.metaKey
+																		);
+																		attributeHandleDrag.value = { ...drag, value: angle };
+																		patchPieAngleLocally(doc, el.value.id, angleKind, angle);
+																	}
+																}}
+																onpointerup={(evt) => {
+																	if (
+																		finishSelectionMoveFromHandle(
+																			evt,
+																			dispatch,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
+																		return;
+																	}
+
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		const angle =
+																			attributeHandleDrag.value?.value ??
+																			pieAngleValue(el.value.box, angleKind);
+																		commitPieAngle(cast, el.value, angleKind, angle);
+																		attributeHandleDrag.value = undefined;
+																	}
+																}}
+																onkeydown={(evt) => {
+																	if (cancelSelectionMoveFromHandle(evt)) {
+																		return;
+																	}
+
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		const drag = attributeHandleDrag.value;
+																		if (
+																			drag?.type !== 'pie_angle' ||
+																			drag.layerId !== el.value.id ||
+																			drag.angleKind !== angleKind
+																		) {
+																			return;
+																		}
+																		evt.stopPropagation();
+																		evt.currentTarget.releasePointerCapture(
+																			evt.currentTarget.currentPointerId
+																		);
+																		patchPieAngleLocally(doc, el.value.id, angleKind, drag.startAngle);
+																		attributeHandleDrag.value = undefined;
+																	}
+																}}
 															>
 																<circle
 																	fill="none"
 																	stroke="none"
 																	cursor="default"
 																	pointer-events="all"
-																	vector-effect="non-scaling-stroke"
-																	r={cameraScale.value * 12}
-																	cx={posVal.x}
-																	cy={posVal.y}
+																	r={cameraScale.value * 7}
+																	cx={pieHandlePos.x}
+																	cy={pieHandlePos.y}
 																/>
 																<circle
-																	fill="white"
-																	stroke="#7af"
-																	cursor="default"
-																	pointer-events="none"
+																	fill="#ffeb3b"
+																	stroke="#111"
+																	stroke-width="1.5"
 																	vector-effect="non-scaling-stroke"
-																	stroke-width="2"
-																	r={cameraScale.value * 6}
-																	cx={posVal.x}
-																	cy={posVal.y}
+																	pointer-events="none"
+																	r={cameraScale.value * 4}
+																	cx={pieHandlePos.x}
+																	cy={pieHandlePos.y}
+																/>
+															</g>
+														{/each}
+													{/if}
+													{#await data.symbols then symbols}
+														{#if supportsTriangleRotationHandle(el.value, symbols)}
+															{@const triangleRotationValue = triangleRotation(el.value, symbols)}
+															{@const triangleHandlePos = triangleRotationHandlePosition(
+																el.value.box,
+																triangleRotationValue,
+																cameraScale.value * 8
+															)}
+															<g
+																role="button"
+																tabindex="-1"
+																transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
+																onpointerdown={(evt) => {
+																	if (
+																		beginSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			el.value.id,
+																			layersInOrder.value,
+																			doc.value
+																		)
+																	) {
+																		return;
+																	}
+
+																	if (evt.isPrimary && E.isLeftButton(evt)) {
+																		evt.preventDefault();
+																		evt.currentTarget.focus({ preventScroll: true });
+																		evt.currentTarget.setPointerCapture(evt.pointerId);
+																		evt.currentTarget.currentPointerId = evt.pointerId;
+																		attributeHandleDrag.value = {
+																			type: 'triangle_rotation',
+																			layerId: el.value.id,
+																			startRotation: triangleRotationValue,
+																			startShapeId: el.value.box.shape,
+																			value: triangleRotationValue
+																		};
+																	}
+																}}
+																onpointermove={(evt) => {
+																	if (
+																		updateSelectionMoveFromHandle(
+																			evt,
+																			liveLenses,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
+																		return;
+																	}
+
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		const drag = attributeHandleDrag.value;
+																		if (
+																			drag?.type !== 'triangle_rotation' ||
+																			drag.layerId !== el.value.id
+																		) {
+																			return;
+																		}
+																		const rotation = triangleRotationFromPointer(
+																			el.value.box,
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																		);
+																		const shapeId = symbolIdByName(symbols, TRIANGLE_SHAPES[rotation]);
+																		if (!shapeId) {
+																			return;
+																		}
+																		attributeHandleDrag.value = { ...drag, value: rotation };
+																		patchTriangleShapeLocally(doc, el.value.id, shapeId);
+																	}
+																}}
+																onpointerup={(evt) => {
+																	if (
+																		finishSelectionMoveFromHandle(
+																			evt,
+																			dispatch,
+																			doc,
+																			layersInOrder.value
+																		)
+																	) {
+																		return;
+																	}
+
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		const rotation =
+																			attributeHandleDrag.value?.value ?? triangleRotationValue;
+																		commitTriangleRotation(cast, el.value, symbols, rotation);
+																		attributeHandleDrag.value = undefined;
+																	}
+																}}
+																onkeydown={(evt) => {
+																	if (cancelSelectionMoveFromHandle(evt)) {
+																		return;
+																	}
+
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		const drag = attributeHandleDrag.value;
+																		if (
+																			drag?.type !== 'triangle_rotation' ||
+																			drag.layerId !== el.value.id
+																		) {
+																			return;
+																		}
+																		evt.stopPropagation();
+																		evt.currentTarget.releasePointerCapture(
+																			evt.currentTarget.currentPointerId
+																		);
+																		patchTriangleShapeLocally(doc, el.value.id, drag.startShapeId);
+																		attributeHandleDrag.value = undefined;
+																	}
+																}}
+															>
+																<circle
+																	fill="none"
+																	stroke="none"
+																	cursor="default"
+																	pointer-events="all"
+																	r={cameraScale.value * 7}
+																	cx={triangleHandlePos.x}
+																	cy={triangleHandlePos.y}
+																/>
+																<circle
+																	fill="#ffeb3b"
+																	stroke="#111"
+																	stroke-width="1.5"
+																	vector-effect="non-scaling-stroke"
+																	pointer-events="none"
+																	r={cameraScale.value * 4}
+																	cx={triangleHandlePos.x}
+																	cy={triangleHandlePos.y}
 																/>
 															</g>
 														{/if}
-													{/each}
+													{/await}
 												{/each}
 											</g>
 										{/if}
@@ -6279,13 +12219,13 @@
 													{#if activeTool.value === 'edge' || selectedEdgeSourceLayerIds.value.length > 0}
 														<Edger
 															symbols={data.symbols}
-															sourceTipSymbolShapeId={syntaxEdgeTipSymbolShapeId(
-																syntax,
-																'source_tip_symbol_shape_id'
+															sourceTipSymbolShapeId={activeEdgeValue(
+																'source_tip_symbol_shape_id',
+																syntaxEdgeTipSymbolShapeId(syntax, 'source_tip_symbol_shape_id')
 															)}
-															targetTipSymbolShapeId={syntaxEdgeTipSymbolShapeId(
-																syntax,
-																'target_tip_symbol_shape_id'
+															targetTipSymbolShapeId={activeEdgeValue(
+																'target_tip_symbol_shape_id',
+																syntaxEdgeTipSymbolShapeId(syntax, 'target_tip_symbol_shape_id')
 															)}
 															sourceLayerIds={activeTool.value === 'select'
 																? selectedEdgeSourceLayerIds.value
@@ -6384,8 +12324,14 @@
 															clientToCanvas={liveLenses.clientToCanvas}
 															{rotationTransform}
 															{cameraScale}
+															onCancelToSelect={resetToSelectTool}
 															validEdge={(source, target) =>
-																syntaxAllowsEdge(syntax, source, target)}
+																syntaxAllowsEdge(
+																	syntax,
+																	source,
+																	target,
+																	activeEdgeValue('semantic_tag', 'de.renew.gui.ArcConnection')
+																)}
 															newEdge={(e, evt) => {
 																if (evt.shiftKey) {
 																	e = {
@@ -6393,9 +12339,35 @@
 																		target: e.source
 																	};
 																}
-																if (syntaxAllowsEdge(syntax, e.source, e.target)) {
+																if (
+																	syntaxAllowsEdge(
+																		syntax,
+																		e.source,
+																		e.target,
+																		activeEdgeValue('semantic_tag', 'de.renew.gui.ArcConnection')
+																	)
+																) {
 																	dispatch('create_layer', {
 																		base_layer_id: L.get('id', singleSelectedLayer.value),
+																		...activeEdgePayload(),
+																		source_tip_symbol_shape_id: activeEdgeValue(
+																			'source_tip_symbol_shape_id',
+																			syntaxEdgeTipSymbolShapeId(
+																				syntax,
+																				'source_tip_symbol_shape_id'
+																			)
+																		),
+																		target_tip_symbol_shape_id: activeEdgeValue(
+																			'target_tip_symbol_shape_id',
+																			syntaxEdgeTipSymbolShapeId(
+																				syntax,
+																				'target_tip_symbol_shape_id'
+																			)
+																		),
+																		semantic_tag: activeEdgeValue(
+																			'semantic_tag',
+																			'de.renew.gui.ArcConnection'
+																		),
 																		source: {
 																			socket_id: e.source.socket,
 																			layer_id: e.source.layer
@@ -6412,7 +12384,11 @@
 																}
 															}}
 															newEdgeNode={(e, evt) => {
-																const autoNodeType = syntaxAutoEdgeNodeForSource(syntax, e.source);
+																const autoNodeType = syntaxAutoEdgeNodeForSource(
+																	syntax,
+																	e.source,
+																	activeEdgeValue('semantic_tag', 'de.renew.gui.ArcConnection')
+																);
 
 																if (autoNodeType) {
 																	dispatch('create_layer', {
@@ -6431,11 +12407,18 @@
 																				...autoNodeType.edge.target
 																			},
 																			reverse: evt.shiftKey,
-																			target_tip_symbol_shape_id:
-																				autoNodeType.edge.target_tip_symbol_shape_id,
-																			source_tip_symbol_shape_id:
-																				autoNodeType.edge.source_tip_symbol_shape_id,
-																			semantic_tag: autoNodeType.edge.semantic_tag
+																			target_tip_symbol_shape_id: activeEdgeValue(
+																				'target_tip_symbol_shape_id',
+																				autoNodeType.edge.target_tip_symbol_shape_id
+																			),
+																			source_tip_symbol_shape_id: activeEdgeValue(
+																				'source_tip_symbol_shape_id',
+																				autoNodeType.edge.source_tip_symbol_shape_id
+																			),
+																			semantic_tag: activeEdgeValue(
+																				'semantic_tag',
+																				autoNodeType.edge.semantic_tag
+																			)
 																		}
 																	})
 																		.then((l) => {
@@ -6461,12 +12444,14 @@
 												clientToCanvas={liveLenses.clientToCanvas}
 												{cameraScale}
 												{rotationTransform}
+												smoothnessAmount={penSmoothnessAmount.value}
 												onDraw={(points) => {
 													dispatch('create_layer', {
 														base_layer_id: L.get('id', singleSelectedLayer.value),
 														points,
 														style: {
-															smoothness: penSmoothness.value
+															smoothness: penSmoothness.value,
+															smoothness_amount: penSmoothnessAmount.value
 														}
 													}).then((l) => {
 														publishSelection(cast, [l.id]);
@@ -6525,7 +12510,18 @@
 													dispatch('create_layer', {
 														base_layer_id: L.get('id', singleSelectedLayer.value),
 														points,
-														cyclic: !!closed
+														cyclic: !!closed,
+														style: {
+															smoothness: polygonSmoothness.value,
+															smoothness_amount: polygonSmoothnessAmount.value
+														},
+														layer_style: closed
+															? {
+																	background_color: '#70DB93',
+																	background_opacity: '1',
+																	border_color: 'black'
+																}
+															: undefined
 													}).then((l) => {
 														publishSelection(cast, [l.id]);
 													});
@@ -6556,14 +12552,35 @@
 												clientToCanvas={liveLenses.clientToCanvas}
 												{rotationTransform}
 												{cameraScale}
-												onDraw={(points) => {
-													alert('splines currently not implemented');
+												onDraw={(path) => {
+													const points = splinePathToPolylinePoints(path, splineSampleCount.value);
+													if (points.length < 2) {
+														return;
+													}
+
+													dispatch('create_layer', {
+														base_layer_id: L.get('id', singleSelectedLayer.value),
+														points,
+														cyclic:
+												points.length > 2 &&
+												Math.hypot(
+													points[0].x - points[points.length - 1].x,
+													points[0].y - points[points.length - 1].y
+												) < 0.01,
+											style: {
+												smoothness: 'linear'
+														}
+													}).then((l) => {
+														publishSelection(cast, [l.id]);
+													});
 												}}
 											/>
 										{/if}
 
 										<MountTrigger
 											onMount={() => {
+												recentDocuments.value = loadRecentDocuments();
+												rememberCurrentDocument();
 												requestAnimationFrame(() => {
 													call((c) => {
 														c && c.resetCamera();
@@ -6578,12 +12595,27 @@
 					</CanvasDropper>
 				</div>
 
-				<div class="topbar">
+				<div
+					class={{ topbar: true, hidden: !showHorizontalToolbar.value }}
+					use:editorDropZone={{ dispatch, cast }}
+				>
 					<div class="toolbar dense">
 						<div class="toolbar-body">
 							{#each tools as tool (tool.id)}
 								<label
 									class={{ 'tool-selector': true, active: activeTool.value == tool.id }}
+									title={tool.name}
+									data-tooltip={tool.name}
+									oncontextmenu={(evt) => {
+										openToolOptions(evt, {
+											name: tool.name,
+											description: 'Horizontal editor tool',
+											activate: () => selectEditorTool(tool.id, cast),
+											reset: tool.reset
+												? () => tool.reset(cameraScroller.value, cameraFocus, extension.value)
+												: undefined
+										});
+									}}
 									ondblclick={(evt) => {
 										evt.preventDefault();
 										tool.reset?.(cameraScroller.value, cameraFocus, extension.value);
@@ -6635,8 +12667,86 @@
 												/>
 											</svg></label
 										>
+										<label class="pretty-number">
+											<span class="pretty-number-label">Smoothness</span>
+											<input
+												class="pretty-number-control"
+												type="range"
+												min="0"
+												max="100"
+												step="1"
+												disabled={penSmoothness.value !== 'autobezier'}
+												bind:value={penSmoothnessAmount.value}
+											/>
+										</label>
 									</div>
 								</div>
+							{/if}
+							{#if activeTool.value === 'polygon'}
+								<hr class="tool-spacer" />
+								<div class="pretty-checkbox-group">
+									<span class="pretty-checkbox-group-head">Polygon</span>
+									<div class="pretty-checkbox-group-body">
+										<label class="pretty-checkbox"
+											><input
+												class="pretty-checkbox-control"
+												type="radio"
+												value="linear"
+												bind:group={polygonSmoothness.value}
+											/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+												><title>Raw line</title>
+												<path
+													stroke="currentColor"
+													stroke-width="5"
+													d="M-12,-12L5,-4L-5,4L12,12"
+													fill="none"
+												/>
+											</svg></label
+										>
+										<label class="pretty-checkbox"
+											><input
+												class="pretty-checkbox-control"
+												type="radio"
+												value="autobezier"
+												bind:group={polygonSmoothness.value}
+											/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+												><title>Smooth line</title>
+												<path
+													stroke="currentColor"
+													stroke-width="5"
+													d="M-12,-12  C 32,-7  -32,7  12,12"
+													fill="none"
+												/>
+											</svg></label
+										>
+										<label class="pretty-number">
+											<span class="pretty-number-label">Smoothness</span>
+											<input
+												class="pretty-number-control"
+												type="range"
+												min="0"
+												max="100"
+												step="1"
+												disabled={polygonSmoothness.value !== 'autobezier'}
+												bind:value={polygonSmoothnessAmount.value}
+											/>
+										</label>
+									</div>
+								</div>
+							{/if}
+							{#if activeTool.value === 'spline'}
+								<hr class="tool-spacer" />
+								<label class="pretty-number">
+									<span class="pretty-number-label">Curve samples</span>
+									<input
+										class="pretty-number-control"
+										type="range"
+										min="4"
+										max="32"
+										step="1"
+										bind:value={splineSampleCount.value}
+									/>
+								</label>
 							{/if}
 							<hr class="tool-spacer" />
 						</div>
@@ -6696,6 +12806,39 @@
 											val: evt.currentTarget.value
 										})}
 									use:bindValue={view(forceHex, strokeColor)}
+								/>
+							</label>
+
+							{@const strokeOpacityValue = view(
+								[
+									'edge',
+									'style',
+									'stroke_opacity',
+									L.rewrite(R.clamp(0, 1)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
+							<label class="pretty-number">
+								<span class="pretty-number-label">Line Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									onchange={(evt) => {
+										strokeOpacityValue.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'stroke_opacity',
+											val: strokeOpacityValue.value
+										});
+									}}
+									use:bindNumericValue={strokeOpacityValue}
 								/>
 							</label>
 
@@ -6903,6 +13046,10 @@
 								['edge', 'style', 'smoothness', L.valueOr('linear')],
 								singleSelectedLayer
 							)}
+							{@const smoothnessAmountValue = view(
+								['edge', 'style', 'smoothness_amount', L.rewrite(R.clamp(0, 100)), L.valueOr(50)],
+								singleSelectedLayer
+							)}
 
 							<div class="pretty-checkbox-group">
 								<span class="pretty-checkbox-group-head">smoothness</span>
@@ -6962,6 +13109,27 @@
 									>
 								</div>
 							</div>
+							<label class="pretty-number">
+								<span class="pretty-number-label">Smoothness</span>
+								<input
+									type="range"
+									class="pretty-number-control"
+									min="0"
+									max="100"
+									step="1"
+									disabled={smoothnessValue.value !== 'autobezier'}
+									onchange={(evt) => {
+										smoothnessAmountValue.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'edge',
+											attr: 'smoothness_amount',
+											val: smoothnessAmountValue.value
+										});
+									}}
+									use:bindNumericValue={smoothnessAmountValue}
+								/>
+							</label>
 							{@const strokeJoinValue = view(
 								['edge', 'style', 'stroke_join', L.valueOr('miter')],
 								singleSelectedLayer
@@ -7374,6 +13542,37 @@
 									</svg>
 								</button>
 							</div>
+							{@const backgroundOpacityValue = view(
+								[
+									'style',
+									'background_opacity',
+									L.rewrite(R.clamp(0, 1)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
+							<label class="pretty-number">
+								<span class="pretty-number-label">Fill Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									onchange={(evt) => {
+										backgroundOpacityValue.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'background_opacity',
+											val: backgroundOpacityValue.value
+										});
+									}}
+									use:bindNumericValue={backgroundOpacityValue}
+								/>
+							</label>
 							{@const borderColorValue = view(
 								['style', 'border_color', defaultStroke],
 								singleSelectedLayer
@@ -7459,6 +13658,37 @@
 									</svg>
 								</button>
 							</div>
+							{@const borderOpacityValue = view(
+								[
+									'style',
+									'border_opacity',
+									L.rewrite(R.clamp(0, 1)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
+							<label class="pretty-number">
+								<span class="pretty-number-label">Pen Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									onchange={(evt) => {
+										borderOpacityValue.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'layer',
+											attr: 'border_opacity',
+											val: borderOpacityValue.value
+										});
+									}}
+									use:bindNumericValue={borderOpacityValue}
+								/>
+							</label>
 							{@const opacityValueStrict = view(
 								[
 									'style',
@@ -7539,6 +13769,10 @@
 							Group
 						{/snippet}
 						{#snippet textProps()}
+							{@const textTypeValue = view(
+								['text', 'renew_type', L.valueOr(RENEW_TEXT_TYPE.LABEL)],
+								singleSelectedLayer
+							)}
 							{@const fontFamily = view(['text', 'style', 'font_family'], singleSelectedLayer)}
 							{@const bold = view(['text', 'style', 'bold', L.valueOr(false)], singleSelectedLayer)}
 							{@const italic = view(
@@ -7549,6 +13783,34 @@
 								['text', 'style', 'underline', L.valueOr(false)],
 								singleSelectedLayer
 							)}
+							<label class="pretty-select">
+								<span class="pretty-select-label">Text Type</span>
+								<span class="pretty-select-value">
+									{[
+										{ label: 'Label', value: RENEW_TEXT_TYPE.LABEL },
+										{ label: 'Inscription', value: RENEW_TEXT_TYPE.INSCRIPTION },
+										{ label: 'Name', value: RENEW_TEXT_TYPE.NAME },
+										{ label: 'Declaration', value: RENEW_TEXT_TYPE.AUX },
+										{ label: 'Comment', value: RENEW_TEXT_TYPE.COMM }
+									].find(({ value }) => value === Number(textTypeValue.value))?.label ?? 'Label'}
+								</span>
+								<select
+									class="pretty-select-control"
+									onchange={(evt) => {
+										const renewType = Number(evt.currentTarget.value);
+										textTypeValue.value = renewType;
+										cast('change_text_type', {
+											layer_id: singleSelectedLayer.value.id,
+											renew_type: renewType
+										});
+									}}
+									use:bindValue={textTypeValue}
+								>
+									{#each [{ label: 'Label', value: RENEW_TEXT_TYPE.LABEL }, { label: 'Inscription', value: RENEW_TEXT_TYPE.INSCRIPTION }, { label: 'Name', value: RENEW_TEXT_TYPE.NAME }, { label: 'Declaration', value: RENEW_TEXT_TYPE.AUX }, { label: 'Comment', value: RENEW_TEXT_TYPE.COMM }] as { label, value }}
+										<option value={value}>{label}</option>
+									{/each}
+								</select>
+							</label>
 							<label class="pretty-select">
 								<span class="pretty-select-label">Font Family</span>
 								<span style:font-family={fontFamily.value} class="pretty-select-value"
@@ -7565,9 +13827,13 @@
 										})}
 									use:bindValue={fontFamily}
 								>
-									<option style:font-family={'serif'} value="serif">serif</option>
 									<option style:font-family={'sans-serif'} value="sans-serif">sans-serif</option>
+									<option style:font-family={'serif'} value="serif">serif</option>
 									<option style:font-family={'monospace'} value="monospace">monospace</option>
+									<option style:font-family={'Dialog, sans-serif'} value="Dialog, sans-serif">Dialog</option>
+									<option style:font-family={'Helvetica, Arial, sans-serif'} value="Helvetica, Arial, sans-serif">Helvetica</option>
+									<option style:font-family={'Times New Roman, Times, serif'} value='"Times New Roman", Times, serif'>Times</option>
+									<option style:font-family={'Courier New, Courier, monospace'} value='"Courier New", Courier, monospace'>Courier</option>
 								</select>
 							</label>
 							<label class="pretty-number">
@@ -7747,6 +14013,132 @@
 									use:bindValue={view(forceHex, textColor)}
 								/>
 							</label>
+							{@const textOpacityValue = view(
+								[
+									'text',
+									'style',
+									'opacity',
+									L.rewrite(R.clamp(0, 1)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
+							<label class="pretty-number">
+								<span class="pretty-number-label">Text Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									onchange={(evt) => {
+										textOpacityValue.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'opacity',
+											val: textOpacityValue.value
+										});
+									}}
+									use:bindNumericValue={textOpacityValue}
+								/>
+							</label>
+							{@const textBackgroundColor = view(
+								['text', 'style', 'background_color', L.valueOr('transparent')],
+								singleSelectedLayer
+							)}
+							<label class="pretty-color">
+								<span class="pretty-color-label">Text Background</span>
+								<svg
+									preserveAspectRatio="xMinYMid meet"
+									class="pretty-color-value"
+									style:color={textBackgroundColor.value}
+									viewBox="-16 -16 32 32"
+								>
+									<rect
+										x="-12"
+										y="-10"
+										width="24"
+										height="20"
+										rx="2"
+										fill="currentColor"
+										stroke="#333"
+										stroke-width="2"
+									/>
+									{#if textBackgroundColor.value === 'transparent'}
+										<path line-joincap="round" stroke-width="4" d="M-11 -9 l 22 18" stroke="red" />
+									{/if}
+								</svg>
+
+								<input
+									type="color"
+									alpha
+									class="pretty-color-control"
+									onchange={(evt) =>
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'background_color',
+											val: evt.currentTarget.value
+										})}
+									use:bindValue={view(forceHex, textBackgroundColor)}
+								/>
+								<button
+									type="button"
+									class="pretty-color-clear"
+									aria-label="Clear text background color"
+									title="Clear text background color"
+									disabled={textBackgroundColor.value === 'transparent'}
+									onclick={(evt) => {
+										evt.preventDefault();
+										textBackgroundColor.value = 'transparent';
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'background_color',
+											val: 'transparent'
+										});
+									}}
+								>
+									<svg viewBox="-16 -16 32 32" class="pretty-color-clear-icon">
+										<path line-joincap="round" stroke-width="4" d="M6 6 l 20 20 " stroke="red" />
+									</svg>
+								</button>
+							</label>
+							{@const textBackgroundOpacityValue = view(
+								[
+									'text',
+									'style',
+									'background_opacity',
+									L.rewrite(R.clamp(0, 1)),
+									L.valueOr(1),
+									L.reread((num) => (Math.round(num * 100) / 100).toFixed(2))
+								],
+								singleSelectedLayer
+							)}
+							<label class="pretty-number">
+								<span class="pretty-number-label">Text Bg Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									onchange={(evt) => {
+										textBackgroundOpacityValue.value = evt.currentTarget.valueAsNumber;
+										cast('change_style', {
+											layer_id: singleSelectedLayer.value.id,
+											type: 'text',
+											attr: 'background_opacity',
+											val: textBackgroundOpacityValue.value
+										});
+									}}
+									use:bindNumericValue={textBackgroundOpacityValue}
+								/>
+							</label>
 							{@const alignmentValue = view(['text', 'style', 'alignment'], singleSelectedLayer)}
 
 							<div class="pretty-checkbox-group">
@@ -7923,7 +14315,7 @@
 					</div>
 				</div>
 
-				<div class="topsubbar">
+				<div class="topsubbar" use:editorDropZone={{ dispatch, cast }}>
 					{#if showDebug.value}
 						{@const symbolsOpen = view('symbols', debugTabs)}
 						{@const primitivesOpen = view('primitives', debugTabs)}
@@ -7986,7 +14378,7 @@
 					{/if}
 				</div>
 
-				<div class="sidebar right">
+				<div class="sidebar right" use:editorDropZone={{ dispatch, cast }}>
 					<Minimap
 						visible={showMinimap}
 						{extension}
@@ -8387,7 +14779,10 @@
 						>
 					</div>
 				</div>
-				<div class="sidebar left">
+				<div
+					class={{ sidebar: true, left: true, hidden: !showCreateToolbar.value }}
+					use:editorDropZone={{ dispatch, cast }}
+				>
 					<div
 						class="toolbar vertical"
 						use:polyfillDragDrop={{
@@ -8396,63 +14791,65 @@
 						}}
 					>
 						<small>Create</small>
-						{#snippet edgeCreateToolButton(item)}
+						{#snippet edgeCreateToolButton(item, groupName, groups)}
 							<div
 								class={{
 									'create-primitive-tool': true,
 									'edge-create-tool': true,
 									'selectable-create': true,
-									'active-create-tool': activeTool.value === 'edge',
-									'persistent-create-tool': activeTool.value === 'edge' && edgeToolPersistent
+									'active-create-tool': isActiveEdgeCreateTool(item),
+									'persistent-create-tool': isActiveEdgeCreateTool(item) && edgeToolPersistent
 								}}
 								role="button"
 								tabindex="0"
-								aria-pressed={activeTool.value === 'edge'}
+								aria-pressed={isActiveEdgeCreateTool(item)}
 								title={item.name}
+								data-tooltip={item.name}
 								style="display: grid; justify-content: center; align-content: center;"
 								onclick={(evt) => {
-									evt.preventDefault();
-									evt.stopPropagation();
-									selectEditorTool('edge', cast, false);
+									if (activateEdgeCreateTool(item, false, cast)) {
+										evt.preventDefault();
+										evt.stopPropagation();
+									}
+								}}
+								oncontextmenu={(evt) => {
+									openToolOptions(evt, {
+										name: item.name,
+										description: 'Edge creation tool',
+										activate: () => activateEdgeCreateTool(item, false, cast),
+										keepActive: () => activateEdgeCreateTool(item, true, cast),
+										actions: [
+											{
+												label: 'Move up',
+												run: () => moveCreateToolEntry(groupName, item, -1, groups)
+											},
+											{
+												label: 'Move down',
+												run: () => moveCreateToolEntry(groupName, item, 1, groups)
+											},
+											{
+												label: 'Hide',
+												run: () => hideCreateToolEntry(item)
+											}
+										]
+									});
 								}}
 								ondblclick={(evt) => {
-									evt.preventDefault();
-									evt.stopPropagation();
-									selectEditorTool('edge', cast, true);
+									if (activateEdgeCreateTool(item, true, cast)) {
+										evt.preventDefault();
+										evt.stopPropagation();
+									}
 								}}
 								onkeydown={(evt) => {
 									if (evt.key === 'Enter' || evt.key === ' ') {
 										evt.preventDefault();
-										selectEditorTool('edge', cast, false);
+										activateEdgeCreateTool(item, false, cast);
 									}
 								}}
 							>
 								<svg viewBox="-4 -4 40 40" width="32" aria-hidden="true">
 									<title>{item.name}</title>
-									<path
-										d="M 5 27 L 27 5"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="butt"
-									/>
-									{#await currentSyntaxValue then syntax}
-										{@const targetTipSymbolId = syntaxEdgeTipSymbolShapeId(
-											syntax,
-											'target_tip_symbol_shape_id'
-										)}
-										{#if targetTipSymbolId}
-											<g transform="rotate(-45 27 5)">
-												<Symbol
-													symbols={data.symbols}
-													symbolId={targetTipSymbolId}
-													box={{ x: 24.25, y: 2.25, width: 5.5, height: 5.5 }}
-												/>
-											</g>
-										{:else}
-											{@html item.icon}
-										{/if}
-									{/await}
+									{@html item.icon}
 								</svg>
 							</div>
 						{/snippet}
@@ -8460,106 +14857,200 @@
 							-
 						{:then groups}
 							{#each createToolGroups(groups) as g}
-								<div style="border-top: 1px solid gray;  padding-top: 1ex">
-									{#each g.entries as item (createToolEntryId(item))}
-										{@const linkedCreateTargetId = singleSelectedIsBoxOrEdge.value
-											? singleSelectedLayer.value.id
-											: undefined}
-										{#if isEdgeCreateToolEntry(item)}
-											{@render edgeCreateToolButton(item)}
-										{:else}
-											<div
-												class={{
-													'create-primitive-tool': true,
-													'selectable-create': isSelectableCreatePrimitive(item),
-													'disabled-create-tool':
-														isSelectableCreatePrimitive(item) &&
-														!canActivateCreatePrimitive(item, linkedCreateTargetId),
-													'active-create-tool': isActiveCreatePrimitive(item),
-													'persistent-create-tool':
-														isActiveCreatePrimitive(item) && activeCreateTool.value?.persistent
-												}}
-												role="button"
-												tabindex={canActivateCreatePrimitive(item, linkedCreateTargetId)
-													? '0'
-													: '-1'}
-												aria-disabled={!canActivateCreatePrimitive(item, linkedCreateTargetId)}
-												aria-pressed={isSelectableCreatePrimitive(item)
-													? isActiveCreatePrimitive(item)
-													: undefined}
-												style="display: grid; justify-content: center; align-content: center;"
-												draggable={isSelectableCreatePrimitive(item)}
-												style:touch-action="none"
-												onclick={(evt) => {
-													if (activateCreatePrimitive(item, false, linkedCreateTargetId, cast)) {
-														evt.preventDefault();
-														evt.stopPropagation();
-													}
-												}}
-												ondblclick={(evt) => {
-													if (activateCreatePrimitive(item, true, linkedCreateTargetId, cast)) {
-														evt.preventDefault();
-														evt.stopPropagation();
-													}
-												}}
-												onkeydown={(evt) => {
-													if (
-														canActivateCreatePrimitive(item, linkedCreateTargetId) &&
-														(evt.key === 'Enter' || evt.key === ' ')
-													) {
-														evt.preventDefault();
-														activateCreatePrimitive(item, false, linkedCreateTargetId, cast);
-													}
-												}}
-												ondragstart={(evt) => {
-													const d = {
-														...item.data,
-														content: {
-															...item.data.content,
-															hyperlink: item.data.content.hyperlink ? true : undefined
+								{@const visibleEntries = visibleCreateToolEntries(g)}
+								{@const groupCollapsed = createToolGroupCollapsed(g.name)}
+								{#if visibleEntries.length}
+									<div class="create-tool-group">
+										<div
+											class="create-tool-group-title"
+											role="button"
+											tabindex="0"
+											aria-expanded={!groupCollapsed}
+											onclick={(evt) => {
+												evt.preventDefault();
+												toggleCreateToolGroupCollapsed(g.name);
+											}}
+											oncontextmenu={(evt) => {
+												openToolOptions(evt, {
+													name: g.name,
+													description: 'Create tool group',
+													actions: [
+														{
+															label: groupCollapsed ? 'Expand group' : 'Collapse group',
+															run: () => toggleCreateToolGroupCollapsed(g.name)
+														},
+														{
+															label: 'Move group up',
+															run: () => moveCreateToolGroup(g.name, -1, groups)
+														},
+														{
+															label: 'Move group down',
+															run: () => moveCreateToolGroup(g.name, 1, groups)
+														},
+														{
+															label: 'Hide group',
+															run: () => hideCreateToolGroup(g.name, groups)
 														}
-													};
+													]
+												});
+											}}
+											onkeydown={(evt) => {
+												if (evt.key === 'Enter' || evt.key === ' ') {
+													evt.preventDefault();
+													toggleCreateToolGroupCollapsed(g.name);
+												}
+											}}
+										>
+											<span class="create-tool-group-arrow">{groupCollapsed ? '>' : 'v'}</span>
+											<span>{g.name}</span>
+										</div>
+										{#if !groupCollapsed}
+											{#each visibleEntries as item (createToolEntryId(item))}
+												{@const linkedCreateTargetId = primitiveCanBeLinkedToSelection(
+													item,
+													singleSelectedLayer.value
+												)}
+												{#if isEdgeCreateToolEntry(item)}
+													{@render edgeCreateToolButton(item, g.name, groups)}
+												{:else}
+													<div
+														class={{
+															'create-primitive-tool': true,
+															'selectable-create': isSelectableCreatePrimitive(item),
+															'disabled-create-tool':
+																isSelectableCreatePrimitive(item) &&
+																!canActivateCreatePrimitive(item, linkedCreateTargetId),
+															'active-create-tool': isActiveCreatePrimitive(item),
+															'persistent-create-tool':
+																isActiveCreatePrimitive(item) && activeCreateTool.value?.persistent
+														}}
+														role="button"
+														tabindex={canActivateCreatePrimitive(item, linkedCreateTargetId)
+															? '0'
+															: '-1'}
+														aria-disabled={!canActivateCreatePrimitive(item, linkedCreateTargetId)}
+														aria-pressed={isSelectableCreatePrimitive(item)
+															? isActiveCreatePrimitive(item)
+															: undefined}
+														title={item.name}
+														data-tooltip={item.name}
+														style="display: grid; justify-content: center; align-content: center;"
+														draggable={isSelectableCreatePrimitive(item)}
+														style:touch-action="none"
+														onclick={(evt) => {
+															if (activateCreatePrimitive(item, false, linkedCreateTargetId, cast)) {
+																evt.preventDefault();
+																evt.stopPropagation();
+															}
+														}}
+														oncontextmenu={(evt) => {
+															openToolOptions(evt, {
+																name: item.name,
+																description: 'Create tool',
+																activate: canActivateCreatePrimitive(item, linkedCreateTargetId)
+																	? () =>
+																			activateCreatePrimitive(
+																				item,
+																				false,
+																				linkedCreateTargetId,
+																				cast
+																			)
+																	: undefined,
+																keepActive: canActivateCreatePrimitive(item, linkedCreateTargetId)
+																	? () =>
+																			activateCreatePrimitive(
+																				item,
+																				true,
+																				linkedCreateTargetId,
+																				cast
+																			)
+																	: undefined,
+																actions: [
+																	{
+																		label: 'Move up',
+																		run: () => moveCreateToolEntry(g.name, item, -1, groups)
+																	},
+																	{
+																		label: 'Move down',
+																		run: () => moveCreateToolEntry(g.name, item, 1, groups)
+																	},
+																	{
+																		label: 'Hide',
+																		run: () => hideCreateToolEntry(item)
+																	}
+																]
+															});
+														}}
+														ondblclick={(evt) => {
+															if (activateCreatePrimitive(item, true, linkedCreateTargetId, cast)) {
+																evt.preventDefault();
+																evt.stopPropagation();
+															}
+														}}
+														onkeydown={(evt) => {
+															if (
+																canActivateCreatePrimitive(item, linkedCreateTargetId) &&
+																(evt.key === 'Enter' || evt.key === ' ')
+															) {
+																evt.preventDefault();
+																activateCreatePrimitive(item, false, linkedCreateTargetId, cast);
+															}
+														}}
+														ondragstart={(evt) => {
+															const d = {
+																...item.data,
+																content: {
+																	...item.data.content,
+																	hyperlink:
+																		item.data.content.hyperlink ||
+																		isVirtualPrimitiveContent(item.data.content)
+																			? true
+																			: undefined
+																}
+															};
 
-													evt.stopPropagation();
-													evt.dataTransfer.effectAllowed = 'copy';
-													evt.currentTarget.setAttribute('aria-grabbed', 'true');
-													const positionInfo = evt.currentTarget.getBoundingClientRect();
-													evt.dataTransfer.setDragImage(
-														evt.currentTarget,
-														positionInfo.width * d.alignX,
-														positionInfo.height * d.alignY
-													);
-													const data = d.dynamicContent
-														? d.dynamicContent(properties.value)
-														: d.content;
-													evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+															evt.stopPropagation();
+															evt.dataTransfer.effectAllowed = 'copy';
+															evt.currentTarget.setAttribute('aria-grabbed', 'true');
+															const positionInfo = evt.currentTarget.getBoundingClientRect();
+															evt.dataTransfer.setDragImage(
+																evt.currentTarget,
+																positionInfo.width * d.alignX,
+																positionInfo.height * d.alignY
+															);
+															const data = d.dynamicContent
+																? d.dynamicContent(properties.value)
+																: d.content;
+															evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
 
-													// Work-around for
-													// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-													evt.dataTransfer.setData(
-														'text/plain',
-														JSON.stringify({
-															mime: d.mimeType,
-															data: data
-														})
-													);
-												}}
-											>
-												<svg
-													class={{
-														droppable: isSelectableCreatePrimitive(item)
-													}}
-													style:opacity={isSelectableCreatePrimitive(item) ? 1 : 0.5}
-													viewBox="-4 -4 40 40"
-													width="32"
-												>
-													<title>{item.name}</title>
-													{@html item.icon}
-												</svg>
-											</div>
+															// Work-around for
+															// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+															evt.dataTransfer.setData(
+																'text/plain',
+																JSON.stringify({
+																	mime: d.mimeType,
+																	data: data
+																})
+															);
+														}}
+													>
+														<svg
+															class={{
+																droppable: isSelectableCreatePrimitive(item)
+															}}
+															style:opacity={isSelectableCreatePrimitive(item) ? 1 : 0.5}
+															viewBox="-4 -4 40 40"
+															width="32"
+														>
+															<title>{item.name}</title>
+															{@html item.icon}
+														</svg>
+													</div>
+												{/if}
+											{/each}
 										{/if}
-									{/each}
-								</div>
+									</div>
+								{/if}
 							{/each}
 						{:catch e}
 							error
@@ -8617,6 +15108,8 @@
 									tabindex={canActivateBlueprintTool(selectedBlueprint.value) ? '0' : '-1'}
 									aria-disabled={!canActivateBlueprintTool(selectedBlueprint.value)}
 									aria-pressed={isActiveBlueprintTool(selectedBlueprint.value)}
+									title="Insert"
+									data-tooltip="Insert"
 									style:cursor={!!selectedBlueprint.value ? 'pointer' : 'default'}
 									style:opacity={!!selectedBlueprint.value ? '1' : 0.5}
 									draggable={!!selectedBlueprint.value}
@@ -8626,6 +15119,18 @@
 											evt.preventDefault();
 											evt.stopPropagation();
 										}
+									}}
+									oncontextmenu={(evt) => {
+										openToolOptions(evt, {
+											name: 'Insert',
+											description: 'Insert selected document',
+											activate: canActivateBlueprintTool(selectedBlueprint.value)
+												? () => activateBlueprintTool(selectedBlueprint.value, false, cast)
+												: undefined,
+											keepActive: canActivateBlueprintTool(selectedBlueprint.value)
+												? () => activateBlueprintTool(selectedBlueprint.value, true, cast)
+												: undefined
+										});
 									}}
 									ondblclick={(evt) => {
 										if (activateBlueprintTool(selectedBlueprint.value, true, cast)) {
@@ -8724,6 +15229,23 @@
 					</div>
 				</div>
 			</div>
+			<footer class="statusbar" aria-live="polite">
+				<span>{activeTool.value}</span>
+				<span>
+					{#if selectedLayers.value.length === 0}
+						Nothing Selected
+					{:else if selectedLayers.value.length === 1}
+						1 {selectedLayersType.value[0] ?? 'layer'} selected
+					{:else}
+						{selectedLayers.value.length} layers selected
+					{/if}
+				</span>
+				<span>{statusMessage.value || doc.value.name}</span>
+				<span>{data.offline ? 'offline snapshot' : data.connectionState.value === false ? 'offline' : 'online'}</span>
+				{#if queuedActions.value > 0}
+					<span>{queuedActions.value} queued offline action{queuedActions.value === 1 ? '' : 's'}</span>
+				{/if}
+			</footer>
 		{/snippet}
 	</LiveResource>
 </div>
@@ -8755,6 +15277,59 @@
 		padding: 0 1ex;
 		display: block;
 		width: 100%;
+	}
+
+	.document-tabs {
+		grid-column: 1 / -1;
+		display: flex;
+		align-items: end;
+		gap: 1px;
+		min-height: 1.9rem;
+		padding: 0 1ex;
+		overflow-x: auto;
+		overflow-y: hidden;
+		background: #1f7753;
+		scrollbar-width: thin;
+	}
+
+	.document-tab {
+		display: inline-grid;
+		grid-template-columns: minmax(0, auto) auto;
+		align-items: center;
+		gap: 0.45em;
+		max-width: 16em;
+		min-width: 4em;
+		height: 1.75rem;
+		padding: 0 0.55em;
+		box-sizing: border-box;
+		background: #d7e2e6;
+		border: 1px solid #8aa0a8;
+		border-bottom: none;
+		color: #111;
+		text-decoration: none;
+		white-space: nowrap;
+	}
+
+	.document-tab.active {
+		background: #fff;
+		font-weight: bold;
+	}
+
+	.document-tab-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.document-tab-close {
+		width: 1.1rem;
+		height: 1.1rem;
+		padding: 0;
+		border: 1px solid #8aa0a8;
+		background: #eef3f4;
+		color: #222;
+		font: inherit;
+		line-height: 1;
+		cursor: pointer;
 	}
 
 	.header-titel {
@@ -8867,6 +15442,35 @@
 		width: 100%;
 		box-sizing: border-box;
 		padding: 1ex 4em 1ex 1ex;
+	}
+
+	.menu-bar-item-button.active {
+		font-weight: bold;
+	}
+
+	.document-window-menu-entry {
+		display: grid;
+		grid-template-columns: minmax(12rem, 1fr) auto;
+		align-items: stretch;
+	}
+
+	.document-window-menu-entry .menu-bar-item-button {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		padding-right: 1ex;
+	}
+
+	.menu-bar-item-icon-button {
+		border: none;
+		background: none;
+		font: inherit;
+		padding: 0 1ex;
+		cursor: pointer;
+	}
+
+	.menu-bar-item-icon-button:hover {
+		background: #eee;
 	}
 
 	.submenu-trigger {
@@ -9032,6 +15636,25 @@
 		grid-auto-rows: auto;
 	}
 
+	.statusbar {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: 250;
+		display: grid;
+		grid-template-columns: auto auto 1fr auto;
+		gap: 2em;
+		align-items: center;
+		padding: 0.25em 0.75em;
+		background: #eeeeee;
+		border-top: 1px solid #9a9a9a;
+		box-shadow: 0 -1px 3px #0002;
+		color: #222;
+		font-size: 0.78rem;
+		user-select: text;
+	}
+
 	.sidebar {
 		align-self: start;
 		justify-self: start;
@@ -9044,6 +15667,9 @@
 
 	.sidebar.left {
 		grid-area: left;
+		max-height: 100%;
+		overflow: auto;
+		scrollbar-width: thin;
 	}
 
 	.sidebar.right {
@@ -9117,6 +15743,50 @@
 		border-radius: 2px;
 		outline: 1px solid transparent;
 		outline-offset: 1px;
+		min-width: 2.5em;
+		min-height: 2.5em;
+		position: relative;
+	}
+
+	.create-tool-group {
+		border-top: 1px solid gray;
+		padding-top: 0.5ex;
+		display: grid;
+		justify-items: center;
+		gap: 0.15rem;
+	}
+
+	.create-tool-group-title {
+		align-items: center;
+		color: #333;
+		cursor: pointer;
+		display: flex;
+		font-size: 0.75rem;
+		gap: 0.35em;
+		justify-content: center;
+		justify-self: stretch;
+		line-height: 1.2;
+		overflow: hidden;
+		padding: 0.15rem 0.25rem;
+		text-align: center;
+		text-overflow: ellipsis;
+		user-select: none;
+		white-space: nowrap;
+	}
+
+	.create-tool-group-title:hover {
+		background: #eee;
+	}
+
+	.create-tool-group-title:focus-visible {
+		outline: 2px solid #23875d;
+	}
+
+	.create-tool-group-arrow {
+		display: inline-block;
+		font-weight: bold;
+		text-align: center;
+		width: 1em;
 	}
 
 	.create-primitive-tool.selectable-create {
@@ -9352,6 +16022,39 @@
 	.tool-selector {
 		padding: 1ex;
 		cursor: pointer;
+		position: relative;
+	}
+
+	.tool-selector[data-tooltip]:hover::after,
+	.tool-selector[data-tooltip]:focus-visible::after,
+	.create-primitive-tool[data-tooltip]:hover::after,
+	.create-primitive-tool[data-tooltip]:focus-visible::after {
+		background: #ffffe1;
+		border: 1px solid #777;
+		box-shadow: 1px 1px 2px #0002;
+		color: #111;
+		content: attr(data-tooltip);
+		font-size: 0.75rem;
+		left: 100%;
+		line-height: 1.2;
+		margin-left: 0.35rem;
+		max-width: 18rem;
+		padding: 0.25rem 0.35rem;
+		pointer-events: none;
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+		white-space: nowrap;
+		z-index: 2000;
+	}
+
+	.toolbar-body .tool-selector[data-tooltip]:hover::after,
+	.toolbar-body .tool-selector[data-tooltip]:focus-visible::after {
+		left: 0;
+		margin-left: 0;
+		margin-top: 0.35rem;
+		top: 100%;
+		transform: none;
 	}
 
 	.tool-selector.active {
@@ -9385,6 +16088,57 @@
 		font: inherit;
 		min-width: 5em;
 	}
+
+	.command-console {
+		align-items: start;
+		display: grid;
+		gap: 1ex;
+		grid-template-columns: auto minmax(22rem, 1fr);
+		max-width: min(56rem, 82vw);
+	}
+
+	.command-console input,
+	.command-console textarea {
+		width: 100%;
+	}
+
+	.command-console-actions {
+		display: flex;
+		gap: 1ex;
+		justify-content: flex-end;
+	}
+
+	.command-console-output {
+		font-family: monospace;
+		min-height: 12rem;
+		resize: vertical;
+		white-space: pre;
+	}
+
+	.tool-options-dialog {
+		min-width: min(24rem, 80vw);
+		max-width: min(34rem, 85vw);
+	}
+
+	.tool-options-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-top: 1rem;
+	}
+
+	.tool-options-actions button {
+		border: 1px solid #999;
+		background: #f4f4f4;
+		padding: 0.45rem 0.8rem;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.tool-options-actions button:hover {
+		background: #e8eef6;
+	}
+
 	[role='button'] {
 		outline: none;
 	}

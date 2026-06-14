@@ -11,6 +11,10 @@ export function cachedResource(key, load, ttlMs = 5 * 60 * 1000) {
 	const promise = Promise.resolve()
 		.then(load)
 		.catch((error) => {
+			if (existing) {
+				return existing.promise;
+			}
+
 			cache.delete(key);
 			throw error;
 		});

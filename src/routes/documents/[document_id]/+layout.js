@@ -10,6 +10,29 @@ import defaultSyntax from './defaultSyntax.json';
 
 export const ssr = false;
 
+const OFFLINE_DOCUMENT_CACHE_PREFIX = 'petristation:offline-document:';
+
+function offlineDocumentCacheKey(documentId) {
+	return `${OFFLINE_DOCUMENT_CACHE_PREFIX}${documentId}`;
+}
+
+function readOfflineDocument(documentId) {
+	try {
+		const cached = localStorage.getItem(offlineDocumentCacheKey(documentId));
+		return cached ? JSON.parse(cached) : null;
+	} catch {
+		return null;
+	}
+}
+
+function rememberOfflineDocument(document) {
+	try {
+		localStorage.setItem(offlineDocumentCacheKey(document.id), JSON.stringify(document));
+	} catch {
+		// Local storage may be full or disabled. Offline fallback is best effort.
+	}
+}
+
 function loadLinkJson(api, link, label) {
 	if (!link?.href) {
 		return Promise.reject({ error: 'link', message: `${label} link is missing` });
@@ -40,6 +63,18 @@ function createCommands(fetchFn, doc) {
 			return api.callJson(doc.links.duplicate).then((r) => {
 				return goto(resolve(`/documents/${r.id}/editor`));
 			});
+		},
+
+		createDocument(documentData = undefined, redirect = true) {
+			return api.loadJson(doc.links.project.href).then((project) =>
+				api.createDocument(project, documentData).then((r) => {
+					if (redirect) {
+						return goto(resolve(`/documents/${r.id}/editor`));
+					}
+
+					return r;
+				})
+			);
 		},
 
 		simulateDocument(formalism) {
@@ -147,9 +182,6 @@ function createCommands(fetchFn, doc) {
 					return r.blob().then((d) => {
 						downloadFile(d, `${doc.content.name}.json`);
 					});
-				})
-				.catch((e) => {
-					alert(formatErrorMessage(e, 'JSON export failed'));
 				});
 		},
 		downloadStruct(svg) {
@@ -159,9 +191,6 @@ function createCommands(fetchFn, doc) {
 					return r.blob().then((d) => {
 						downloadFile(d, `${doc.content.name}.iex`);
 					});
-				})
-				.catch((e) => {
-					alert(formatErrorMessage(e, 'Document structure export failed'));
 				});
 		},
 		exportRenew(svg) {
@@ -171,14 +200,55 @@ function createCommands(fetchFn, doc) {
 					return r.blob().then((d) => {
 						downloadFile(d, `${doc.content.name}.rnw`);
 					});
-				})
-				.catch((e) => {
-					alert(formatErrorMessage(e, 'Renew export failed'));
 				});
 		},
 		uploadSvg(svg) {
 			return api.uploadSvg(doc, svg);
 		}
+	};
+}
+
+function documentLoadData(api, fetchFn, document, syntaxes, offline = false) {
+	return {
+		document,
+		offline,
+		commands: createCommands(fetchFn, document),
+		symbols: cachedLinkJson(api, document.links.symbols, 'symbols').then((symbols) => {
+			return new Map(symbols.shapes.map((s) => [s.id, { name: s.name, paths: s.paths }]));
+		}),
+		socket_schemas: cachedLinkJson(api, document.links.socket_schemas, 'socket_schemas').then(
+			(socket_schemas) => {
+				return new Map(
+					socket_schemas.socket_schemas.map((s) => [
+						s.id,
+						{ name: s.name, stencil: s.stencil, sockets: s.sockets }
+					])
+				);
+			}
+		),
+		semantic_tags: cachedLinkJson(api, document.links.semantic_tags, 'semantic_tags').then(
+			(semantic_tags) => {
+				return semantic_tags.semantic_tags;
+			}
+		),
+		primitives: cachedLinkJson(api, document.links.primitives, 'primitives').then((primitives) => {
+			return primitives.groups;
+		}),
+		blueprints: cachedLinkJson(api, document.links.blueprints, 'blueprints').then((blueprints) => {
+			return new Map(blueprints.blueprints.map((s) => [s.id, { name: s.name, sockets: s.sockets }]));
+		}),
+		linked_simulations: cachedLinkJson(
+			api,
+			document.links.linked_simulations,
+			'linked_simulations'
+		),
+		formalisms: cachedLinkJson(api, document.links.formalisms, 'formalisms').then(
+			(r) => r.formalisms
+		),
+
+		syntaxes: syntaxes,
+		defaultSyntax,
+		loadJson: api.loadJson
 	};
 }
 
@@ -193,9 +263,18 @@ export async function load({ params, fetch }) {
 				'Content-Type': 'application/json',
 				Authorization: authState.authHeader
 			},
-			contentType: 'application/json'
-		})
+				contentType: 'application/json'
+			})
 			.catch((e) => {
+				const cached = readOfflineDocument(params.document_id);
+				if (cached) {
+					return {
+						ok: true,
+						offline: true,
+						json: () => Promise.resolve(cached)
+					};
+				}
+
 				throw error(
 					503,
 					errorPageBody(
@@ -207,50 +286,11 @@ export async function load({ params, fetch }) {
 			.then((r) => {
 				if (r.ok) {
 					return r.json().then((j) => {
-						return {
-							document: j,
-							commands: createCommands(fetch, j),
-							symbols: cachedLinkJson(api, j.links.symbols, 'symbols').then((symbols) => {
-								return new Map(symbols.shapes.map((s) => [s.id, { name: s.name, paths: s.paths }]));
-							}),
-							socket_schemas: cachedLinkJson(api, j.links.socket_schemas, 'socket_schemas').then(
-								(socket_schemas) => {
-									return new Map(
-										socket_schemas.socket_schemas.map((s) => [
-											s.id,
-											{ name: s.name, stencil: s.stencil, sockets: s.sockets }
-										])
-									);
-								}
-							),
-							semantic_tags: cachedLinkJson(api, j.links.semantic_tags, 'semantic_tags').then(
-								(semantic_tags) => {
-									return semantic_tags.semantic_tags;
-								}
-							),
-							primitives: cachedLinkJson(api, j.links.primitives, 'primitives').then(
-								(primitives) => {
-									return primitives.groups;
-								}
-							),
-							blueprints: loadLinkJson(api, j.links.blueprints, 'blueprints').then((blueprints) => {
-								return new Map(
-									blueprints.blueprints.map((s) => [s.id, { name: s.name, sockets: s.sockets }])
-								);
-							}),
-							linked_simulations: loadLinkJson(
-								api,
-								j.links.linked_simulations,
-								'linked_simulations'
-							),
-							formalisms: cachedLinkJson(api, j.links.formalisms, 'formalisms').then(
-								(r) => r.formalisms
-							),
+						if (!r.offline) {
+							rememberOfflineDocument(j);
+						}
 
-							syntaxes: syntaxes,
-							defaultSyntax,
-							loadJson: api.loadJson
-						};
+						return documentLoadData(api, fetch, j, syntaxes, r.offline === true);
 					});
 				} else {
 					return r

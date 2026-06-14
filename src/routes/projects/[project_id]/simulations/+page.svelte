@@ -1,5 +1,6 @@
 <script>
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import AppBar from '../../../AppBar.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
@@ -10,6 +11,7 @@
 	const { project } = data;
 
 	const { createSimulation, downloadFile, callJSON } = $derived(data.commands);
+	const requestedFormalismId = $derived(page.url.searchParams.get('formalism') ?? '');
 
 	let createFormVisible = $state(false);
 	let importing = $state(false);
@@ -17,10 +19,20 @@
 	let importError = atom(undefined);
 	const liveErrors = atom([]);
 
+	$effect(() => {
+		if (requestedFormalismId) {
+			createFormVisible = true;
+		}
+	});
+
 	function showCreateForm(evt) {
 		evt.preventDefault();
 
 		createFormVisible = true;
+	}
+
+	function formalismIsRequested(id) {
+		return requestedFormalismId === id;
 	}
 
 	function liveErrorSignature(error) {
@@ -166,7 +178,7 @@
 								required
 							>
 								{#each formalisms as { id, label } (id)}
-									<option value={id}>{label}</option>
+									<option value={id} selected={formalismIsRequested(id)}>{label}</option>
 								{:else}
 									<option disabled value="">Error loading formalisms</option>
 								{/each}

@@ -8,7 +8,7 @@
 
 	const { createProject, downloadFile } = $derived(data.commands);
 
-	let online = $state(true);
+	const online = $derived(!data.offline && data.connectionState.value !== false);
 	let renamingId = $state(null);
 	let renamingNewName = $state();
 	let renamingOrigName = $state();

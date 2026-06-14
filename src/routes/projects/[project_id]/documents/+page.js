@@ -5,9 +5,14 @@ import authState from '$lib/components/auth/local_state.svelte.js';
 import documentApi from '$lib/api/documents.js';
 import LiveState from '$lib/api/livestate';
 import { downloadFile } from '$lib/io/download';
-import { describeError, errorPageBody, formatErrorMessage } from '$lib/errors';
+import { describeError, errorPageBody, publishError } from '$lib/errors';
+import { offlineResource, readOfflineCache, writeOfflineCache } from '$lib/api/offline_cache.js';
 
 export const ssr = false;
+
+function projectDocumentsCacheKey(projectId) {
+	return `project-documents:${projectId}`;
+}
 
 function createCommands(api, project, fetchFn) {
 	return {
@@ -30,7 +35,7 @@ function createCommands(api, project, fetchFn) {
 					});
 				})
 				.catch((e) => {
-					alert(formatErrorMessage(e, 'Document export failed'));
+					publishError(e, 'Document export failed');
 				});
 		},
 
@@ -41,17 +46,33 @@ function createCommands(api, project, fetchFn) {
 }
 
 export async function load({ params, fetch, parent }) {
-	const { project } = await parent();
+	const { project, offline: projectOffline } = await parent();
 	if (authState.isAuthenticated) {
 		const api = documentApi(fetch, authState.routes, authState.authHeader);
+		const cacheKey = projectDocumentsCacheKey(project.id);
 
 		return api
 			.listDocuments(project.links.documents.href)
-			.then((j) => ({
-				documents: j,
-				commands: createCommands(api, project, fetch)
-			}))
+			.then((j) => {
+				writeOfflineCache(cacheKey, j);
+
+				return {
+					documents: j,
+					commands: createCommands(api, project, fetch),
+					offline: Boolean(projectOffline)
+				};
+			})
 			.catch((e) => {
+				const cached = readOfflineCache(cacheKey);
+
+				if (cached) {
+					return {
+						documents: offlineResource(cached, cacheKey),
+						commands: createCommands(api, project, fetch),
+						offline: true
+					};
+				}
+
 				const description = describeError(e, 'Documents could not be loaded');
 				return error(description.status || 503, errorPageBody(e, 'Documents could not be loaded'));
 			});

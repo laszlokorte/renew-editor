@@ -380,7 +380,7 @@
 
 	.draft-fill {
 		fill: #70db93;
-		fill-opacity: 0.25;
+		fill-opacity: 1;
 		stroke: none;
 	}
 

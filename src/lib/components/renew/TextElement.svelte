@@ -36,8 +36,10 @@
 <g opacity={el.style?.opacity ?? '1'}>
 	{#if bbox.value && showVisibleText}
 		<rect
-			fill={el.style?.background_color ?? 'transparent'}
+			fill={el.text?.style?.background_color ?? el.style?.background_color ?? 'transparent'}
+			fill-opacity={el.text?.style?.background_opacity ?? el.style?.background_opacity ?? 1}
 			stroke={el.style?.border_color ?? 'transparent'}
+			stroke-opacity={el.style?.border_opacity ?? 1}
 			stroke-dasharray={el.style?.border_dash_array ?? 'none'}
 			stroke-width={el.style?.border_width ?? '0'}
 			x={bbox.value.x}
@@ -51,6 +53,7 @@
 			data-layer-id={el.id}
 			text-rendering="geometricPrecision"
 			fill={el.text?.style?.text_color ?? 'black'}
+			opacity={el.text?.style?.opacity ?? 1}
 			x={el.text.position_x +
 				alignmentWeight[el.text?.style?.alignment ?? 'left'] * (bbox.value?.width ?? 0)}
 			y={el.text.position_y}
