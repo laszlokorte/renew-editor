@@ -138,6 +138,7 @@
 	const toolbarLayouts = atom(loadToolbarLayouts());
 	const createToolbarOrder = atom(loadCreateToolbarOrder());
 	const collapsedCreateToolGroups = atom(loadCollapsedCreateToolGroups());
+	const createToolbarDrag = atom(null);
 	const inspectedLayer = atom(null);
 	const searchReplaceMode = atom(false);
 	const searchQuery = atom('');
@@ -4144,6 +4145,104 @@
 		const [entry] = next.splice(index, 1);
 		next.splice(targetIndex, 0, entry);
 		return next;
+	}
+
+	function moveIdBeforeOrAfter(ids, movedId, targetId, after = false) {
+		const sourceIndex = ids.indexOf(movedId);
+		const targetIndex = ids.indexOf(targetId);
+
+		if (sourceIndex === -1 || targetIndex === -1 || movedId === targetId) {
+			return ids;
+		}
+
+		const next = [...ids];
+		const [entry] = next.splice(sourceIndex, 1);
+		const adjustedTargetIndex = next.indexOf(targetId);
+		next.splice(adjustedTargetIndex + (after ? 1 : 0), 0, entry);
+		return next;
+	}
+
+	function dragAfterTarget(evt) {
+		const rect = evt.currentTarget.getBoundingClientRect();
+		const horizontal = rect.width >= rect.height * 1.2;
+		return horizontal ? evt.clientX > rect.left + rect.width / 2 : evt.clientY > rect.top + rect.height / 2;
+	}
+
+	function beginCreateToolGroupDrag(evt, groupName) {
+		createToolbarDrag.value = { type: 'group', groupName };
+		evt.dataTransfer.effectAllowed = 'move';
+		evt.dataTransfer.setData('text/plain', `petristation-toolbar-group:${groupName}`);
+	}
+
+	function beginCreateToolEntryDrag(evt, groupName, item) {
+		createToolbarDrag.value = {
+			type: 'entry',
+			groupName,
+			itemId: createToolEntryId(item)
+		};
+		evt.dataTransfer.effectAllowed = 'copyMove';
+		evt.dataTransfer.setData('application/x-petristation-toolbar-entry', createToolEntryId(item));
+	}
+
+	function allowCreateToolbarDrop(evt) {
+		if (!createToolbarDrag.value) {
+			return;
+		}
+		evt.preventDefault();
+		evt.dataTransfer.dropEffect = 'move';
+	}
+
+	function dropCreateToolGroup(evt, targetGroupName, groups) {
+		const drag = createToolbarDrag.value;
+		if (drag?.type !== 'group') {
+			return;
+		}
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		const ids = createToolGroups(groups).map((group) => group.name);
+		const nextIds = moveIdBeforeOrAfter(ids, drag.groupName, targetGroupName, dragAfterTarget(evt));
+
+		createToolbarOrder.value = {
+			...normalizeCreateToolbarOrder(createToolbarOrder.value),
+			groups: nextIds
+		};
+		createToolbarDrag.value = null;
+		persistCreateToolbarOrder();
+	}
+
+	function dropCreateToolEntry(evt, targetGroupName, targetItem, groups) {
+		const drag = createToolbarDrag.value;
+		if (drag?.type !== 'entry' || drag.groupName !== targetGroupName) {
+			return;
+		}
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		const group = createToolGroups(groups).find((candidate) => candidate.name === targetGroupName);
+		if (!group) {
+			createToolbarDrag.value = null;
+			return;
+		}
+
+		const targetId = createToolEntryId(targetItem);
+		const ids = (group.entries ?? []).map(createToolEntryId);
+		const nextIds = moveIdBeforeOrAfter(ids, drag.itemId, targetId, dragAfterTarget(evt));
+		const order = normalizeCreateToolbarOrder(createToolbarOrder.value);
+
+		createToolbarOrder.value = {
+			...order,
+			entries: {
+				...(order.entries ?? {}),
+				[targetGroupName]: nextIds
+			}
+		};
+		createToolbarDrag.value = null;
+		persistCreateToolbarOrder();
+	}
+
+	function finishCreateToolbarDrag() {
+		createToolbarDrag.value = null;
 	}
 
 	function moveCreateToolGroup(groupName, direction, groups) {
@@ -14784,7 +14883,7 @@
 					use:editorDropZone={{ dispatch, cast }}
 				>
 					<div
-						class="toolbar vertical"
+						class="toolbar vertical create-toolbar"
 						use:polyfillDragDrop={{
 							dropArea: dropperDomElement,
 							options: { dragThresholdPixels: 0 }
@@ -14806,6 +14905,11 @@
 								title={item.name}
 								data-tooltip={item.name}
 								style="display: grid; justify-content: center; align-content: center;"
+								draggable="true"
+								ondragstart={(evt) => beginCreateToolEntryDrag(evt, groupName, item)}
+								ondragend={finishCreateToolbarDrag}
+								ondragover={allowCreateToolbarDrop}
+								ondrop={(evt) => dropCreateToolEntry(evt, groupName, item, groups)}
 								onclick={(evt) => {
 									if (activateEdgeCreateTool(item, false, cast)) {
 										evt.preventDefault();
@@ -14866,6 +14970,11 @@
 											role="button"
 											tabindex="0"
 											aria-expanded={!groupCollapsed}
+											draggable="true"
+											ondragstart={(evt) => beginCreateToolGroupDrag(evt, g.name)}
+											ondragend={finishCreateToolbarDrag}
+											ondragover={allowCreateToolbarDrop}
+											ondrop={(evt) => dropCreateToolGroup(evt, g.name, groups)}
 											onclick={(evt) => {
 												evt.preventDefault();
 												toggleCreateToolGroupCollapsed(g.name);
@@ -14905,149 +15014,153 @@
 											<span>{g.name}</span>
 										</div>
 										{#if !groupCollapsed}
-											{#each visibleEntries as item (createToolEntryId(item))}
-												{@const linkedCreateTargetId = primitiveCanBeLinkedToSelection(
-													item,
-													singleSelectedLayer.value
-												)}
-												{#if isEdgeCreateToolEntry(item)}
-													{@render edgeCreateToolButton(item, g.name, groups)}
-												{:else}
-													<div
-														class={{
-															'create-primitive-tool': true,
-															'selectable-create': isSelectableCreatePrimitive(item),
-															'disabled-create-tool':
-																isSelectableCreatePrimitive(item) &&
-																!canActivateCreatePrimitive(item, linkedCreateTargetId),
-															'active-create-tool': isActiveCreatePrimitive(item),
-															'persistent-create-tool':
-																isActiveCreatePrimitive(item) && activeCreateTool.value?.persistent
-														}}
-														role="button"
-														tabindex={canActivateCreatePrimitive(item, linkedCreateTargetId)
-															? '0'
-															: '-1'}
-														aria-disabled={!canActivateCreatePrimitive(item, linkedCreateTargetId)}
-														aria-pressed={isSelectableCreatePrimitive(item)
-															? isActiveCreatePrimitive(item)
-															: undefined}
-														title={item.name}
-														data-tooltip={item.name}
-														style="display: grid; justify-content: center; align-content: center;"
-														draggable={isSelectableCreatePrimitive(item)}
-														style:touch-action="none"
-														onclick={(evt) => {
-															if (activateCreatePrimitive(item, false, linkedCreateTargetId, cast)) {
-																evt.preventDefault();
-																evt.stopPropagation();
-															}
-														}}
-														oncontextmenu={(evt) => {
-															openToolOptions(evt, {
-																name: item.name,
-																description: 'Create tool',
-																activate: canActivateCreatePrimitive(item, linkedCreateTargetId)
-																	? () =>
-																			activateCreatePrimitive(
-																				item,
-																				false,
-																				linkedCreateTargetId,
-																				cast
-																			)
-																	: undefined,
-																keepActive: canActivateCreatePrimitive(item, linkedCreateTargetId)
-																	? () =>
-																			activateCreatePrimitive(
-																				item,
-																				true,
-																				linkedCreateTargetId,
-																				cast
-																			)
-																	: undefined,
-																actions: [
-																	{
-																		label: 'Move up',
-																		run: () => moveCreateToolEntry(g.name, item, -1, groups)
-																	},
-																	{
-																		label: 'Move down',
-																		run: () => moveCreateToolEntry(g.name, item, 1, groups)
-																	},
-																	{
-																		label: 'Hide',
-																		run: () => hideCreateToolEntry(item)
-																	}
-																]
-															});
-														}}
-														ondblclick={(evt) => {
-															if (activateCreatePrimitive(item, true, linkedCreateTargetId, cast)) {
-																evt.preventDefault();
-																evt.stopPropagation();
-															}
-														}}
-														onkeydown={(evt) => {
-															if (
-																canActivateCreatePrimitive(item, linkedCreateTargetId) &&
-																(evt.key === 'Enter' || evt.key === ' ')
-															) {
-																evt.preventDefault();
-																activateCreatePrimitive(item, false, linkedCreateTargetId, cast);
-															}
-														}}
-														ondragstart={(evt) => {
-															const d = {
-																...item.data,
-																content: {
-																	...item.data.content,
-																	hyperlink:
-																		item.data.content.hyperlink ||
-																		isVirtualPrimitiveContent(item.data.content)
-																			? true
-																			: undefined
-																}
-															};
-
-															evt.stopPropagation();
-															evt.dataTransfer.effectAllowed = 'copy';
-															evt.currentTarget.setAttribute('aria-grabbed', 'true');
-															const positionInfo = evt.currentTarget.getBoundingClientRect();
-															evt.dataTransfer.setDragImage(
-																evt.currentTarget,
-																positionInfo.width * d.alignX,
-																positionInfo.height * d.alignY
-															);
-															const data = d.dynamicContent
-																? d.dynamicContent(properties.value)
-																: d.content;
-															evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
-
-															// Work-around for
-															// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
-															evt.dataTransfer.setData(
-																'text/plain',
-																JSON.stringify({
-																	mime: d.mimeType,
-																	data: data
-																})
-															);
-														}}
-													>
-														<svg
+											<div class="create-tool-group-body">
+												{#each visibleEntries as item (createToolEntryId(item))}
+													{@const linkedCreateTargetId = primitiveCanBeLinkedToSelection(
+														item,
+														singleSelectedLayer.value
+													)}
+													{#if isEdgeCreateToolEntry(item)}
+														{@render edgeCreateToolButton(item, g.name, groups)}
+													{:else}
+														<div
 															class={{
-																droppable: isSelectableCreatePrimitive(item)
+																'create-primitive-tool': true,
+																'selectable-create': isSelectableCreatePrimitive(item),
+																'disabled-create-tool':
+																	isSelectableCreatePrimitive(item) &&
+																	!canActivateCreatePrimitive(item, linkedCreateTargetId),
+																'active-create-tool': isActiveCreatePrimitive(item),
+																'persistent-create-tool':
+																	isActiveCreatePrimitive(item) && activeCreateTool.value?.persistent
 															}}
-															style:opacity={isSelectableCreatePrimitive(item) ? 1 : 0.5}
-															viewBox="-4 -4 40 40"
-															width="32"
+															role="button"
+															tabindex={canActivateCreatePrimitive(item, linkedCreateTargetId)
+																? '0'
+																: '-1'}
+															aria-disabled={!canActivateCreatePrimitive(item, linkedCreateTargetId)}
+															aria-pressed={isSelectableCreatePrimitive(item)
+																? isActiveCreatePrimitive(item)
+																: undefined}
+															title={item.name}
+															data-tooltip={item.name}
+															style="display: grid; justify-content: center; align-content: center;"
+															draggable={isSelectableCreatePrimitive(item)}
+															style:touch-action="none"
+															ondragover={allowCreateToolbarDrop}
+															ondrop={(evt) => dropCreateToolEntry(evt, g.name, item, groups)}
+															onclick={(evt) => {
+																if (activateCreatePrimitive(item, false, linkedCreateTargetId, cast)) {
+																	evt.preventDefault();
+																	evt.stopPropagation();
+																}
+															}}
+															oncontextmenu={(evt) => {
+																openToolOptions(evt, {
+																	name: item.name,
+																	description: 'Create tool',
+																	activate: canActivateCreatePrimitive(item, linkedCreateTargetId)
+																		? () =>
+																				activateCreatePrimitive(
+																					item,
+																					false,
+																					linkedCreateTargetId,
+																					cast
+																				)
+																		: undefined,
+																	keepActive: canActivateCreatePrimitive(item, linkedCreateTargetId)
+																		? () =>
+																				activateCreatePrimitive(
+																					item,
+																					true,
+																					linkedCreateTargetId,
+																					cast
+																				)
+																		: undefined,
+																	actions: [
+																		{
+																			label: 'Move up',
+																			run: () => moveCreateToolEntry(g.name, item, -1, groups)
+																		},
+																		{
+																			label: 'Move down',
+																			run: () => moveCreateToolEntry(g.name, item, 1, groups)
+																		},
+																		{
+																			label: 'Hide',
+																			run: () => hideCreateToolEntry(item)
+																		}
+																	]
+																});
+															}}
+															ondblclick={(evt) => {
+																if (activateCreatePrimitive(item, true, linkedCreateTargetId, cast)) {
+																	evt.preventDefault();
+																	evt.stopPropagation();
+																}
+															}}
+															onkeydown={(evt) => {
+																if (
+																	canActivateCreatePrimitive(item, linkedCreateTargetId) &&
+																	(evt.key === 'Enter' || evt.key === ' ')
+																) {
+																	evt.preventDefault();
+																	activateCreatePrimitive(item, false, linkedCreateTargetId, cast);
+																}
+															}}
+															ondragstart={(evt) => {
+																beginCreateToolEntryDrag(evt, g.name, item);
+																const d = {
+																	...item.data,
+																	content: {
+																		...item.data.content,
+																		hyperlink:
+																			item.data.content.hyperlink ||
+																			isVirtualPrimitiveContent(item.data.content)
+																				? true
+																				: undefined
+																	}
+																};
+
+																evt.stopPropagation();
+																const positionInfo = evt.currentTarget.getBoundingClientRect();
+																evt.dataTransfer.setDragImage(
+																	evt.currentTarget,
+																	positionInfo.width * d.alignX,
+																	positionInfo.height * d.alignY
+																);
+																const data = d.dynamicContent
+																	? d.dynamicContent(properties.value)
+																	: d.content;
+																evt.dataTransfer.setData(d.mimeType, JSON.stringify(data));
+
+																// Work-around for
+																// https://bugs.chromium.org/p/chromium/issues/detail?id=1293803&no_tracker_redirect=1
+																evt.dataTransfer.setData(
+																	'text/plain',
+																	JSON.stringify({
+																		mime: d.mimeType,
+																		data: data
+																	})
+																);
+															}}
+															ondragend={finishCreateToolbarDrag}
 														>
-															<title>{item.name}</title>
-															{@html item.icon}
-														</svg>
-													</div>
-												{/if}
-											{/each}
+															<svg
+																class={{
+																	droppable: isSelectableCreatePrimitive(item)
+																}}
+																style:opacity={isSelectableCreatePrimitive(item) ? 1 : 0.5}
+																viewBox="-4 -4 40 40"
+																width="32"
+															>
+																<title>{item.name}</title>
+																{@html item.icon}
+															</svg>
+														</div>
+													{/if}
+												{/each}
+											</div>
 										{/if}
 									</div>
 								{/if}
@@ -15636,6 +15749,13 @@
 		grid-auto-rows: auto;
 	}
 
+	.toolbar.vertical.create-toolbar {
+		align-items: stretch;
+		gap: 0.45rem;
+		min-width: 9.25rem;
+		padding: 0.5rem;
+	}
+
 	.statusbar {
 		position: fixed;
 		left: 0;
@@ -15743,8 +15863,8 @@
 		border-radius: 2px;
 		outline: 1px solid transparent;
 		outline-offset: 1px;
-		min-width: 2.5em;
-		min-height: 2.5em;
+		min-width: 2.5rem;
+		min-height: 2.5rem;
 		position: relative;
 	}
 
@@ -15752,8 +15872,19 @@
 		border-top: 1px solid gray;
 		padding-top: 0.5ex;
 		display: grid;
+		gap: 0.25rem;
+	}
+
+	.create-tool-group:first-of-type {
+		border-top: none;
+		padding-top: 0;
+	}
+
+	.create-tool-group-body {
+		display: grid;
+		gap: 0.2rem;
+		grid-template-columns: repeat(3, minmax(2.4rem, 1fr));
 		justify-items: center;
-		gap: 0.15rem;
 	}
 
 	.create-tool-group-title {
@@ -15763,7 +15894,7 @@
 		display: flex;
 		font-size: 0.75rem;
 		gap: 0.35em;
-		justify-content: center;
+		justify-content: start;
 		justify-self: stretch;
 		line-height: 1.2;
 		overflow: hidden;
@@ -16055,6 +16186,12 @@
 		margin-top: 0.35rem;
 		top: 100%;
 		transform: none;
+	}
+
+	.toolbar.vertical.create-toolbar .create-primitive-tool[data-tooltip]:hover::after,
+	.toolbar.vertical.create-toolbar .create-primitive-tool[data-tooltip]:focus-visible::after {
+		content: none;
+		display: none;
 	}
 
 	.tool-selector.active {
