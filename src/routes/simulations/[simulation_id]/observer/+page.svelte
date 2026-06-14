@@ -2988,6 +2988,7 @@
 							tabindex="-1"
 							class={{
 								topbar: true,
+								'simulation-controls': true,
 								'drop-target': simulationDraggingFiles
 							}}
 							ondragenter={onSimulationDragEnter}
@@ -5287,7 +5288,11 @@
 				30vw
 			)
 			[right-end top-end] 1em [body-end];
-		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start] 1fr [bottom-start] auto [bottom-end left-end right-end] 1em [body-end];
+		grid-template-rows:
+			[body-start] 0.5ex [top-start simulation-controls-start] auto
+			[simulation-controls-end simulation-attributes-start] auto
+			[simulation-attributes-end top-end left-start right-start] 1fr [bottom-start] auto
+			[bottom-end left-end right-end] 1em [body-end];
 		gap: 0.5em;
 		overflow: hidden;
 		width: 100vw;
@@ -5299,6 +5304,11 @@
 		grid-area: top;
 		align-self: start;
 		z-index: 1;
+	}
+
+	.simulation-controls {
+		grid-column: top-start / top-end;
+		grid-row: simulation-controls-start / simulation-controls-end;
 	}
 
 	.toolbar {
@@ -5366,6 +5376,8 @@
 	}
 
 	.simulation-attributes {
+		grid-column: top-start / top-end;
+		grid-row: simulation-attributes-start / simulation-attributes-end;
 		margin-top: 0.5ex;
 	}
 
