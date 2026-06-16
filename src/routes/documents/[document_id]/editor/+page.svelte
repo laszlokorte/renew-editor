@@ -189,7 +189,7 @@
 	const CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY =
 		'petristation-create-toolbar-collapsed-groups';
 	const CREATE_TOOLBAR_WIDTH_STORAGE_KEY = 'petristation-create-toolbar-width';
-	const DEFAULT_CREATE_TOOLBAR_WIDTH = 330;
+	const DEFAULT_CREATE_TOOLBAR_WIDTH = 280;
 	const CREATE_TOOLBAR_LAYOUT_VERSION = 'renew-toolset-2026-06-15-renew-palette-v3';
 
 	const showRename = atom(false);
@@ -5242,7 +5242,14 @@
 	}
 
 	function loadCreateToolbarWidth() {
-		return normalizeCreateToolbarWidth(localStorage.getItem(CREATE_TOOLBAR_WIDTH_STORAGE_KEY));
+		const storedWidth = localStorage.getItem(CREATE_TOOLBAR_WIDTH_STORAGE_KEY);
+		const width = Number(storedWidth);
+
+		if (storedWidth === null || storedWidth === '' || !Number.isFinite(width) || width <= 160) {
+			return DEFAULT_CREATE_TOOLBAR_WIDTH;
+		}
+
+		return normalizeCreateToolbarWidth(width);
 	}
 
 	function setCreateToolbarWidth(size) {
@@ -18713,16 +18720,17 @@
 	}
 
 	.attribute-toolbar-body {
+		--attribute-tool-size: 1.55rem;
+		--attribute-tool-icon-size: 1.05rem;
 		display: flex;
 		align-items: center;
-		gap: 0.18rem;
-		flex-wrap: nowrap;
+		align-content: center;
+		gap: 0.12rem 0.16rem;
+		flex-wrap: wrap;
 		padding: 0.12rem 0.3rem;
-		min-height: 2rem;
-		max-height: 2rem;
-		overflow-x: auto;
-		overflow-y: hidden;
-		scrollbar-width: thin;
+		min-height: calc(var(--attribute-tool-size) + 0.28rem);
+		overflow: visible;
+		scrollbar-width: none;
 		background: #fff;
 		border: 1px solid #ddd;
 		box-shadow: 0 0 5px #0002;
@@ -18979,9 +18987,48 @@
 		outline-offset: -2px;
 	}
 
+	.attribute-toolbar-body .pretty-select,
+	.attribute-toolbar-body .pretty-number,
+	.attribute-toolbar-body .pretty-color,
+	.attribute-toolbar-body .pretty-checkbox-group,
+	.attribute-toolbar-body .pretty-select-value,
+	.attribute-toolbar-body .pretty-color-value,
+	.attribute-toolbar-body .pretty-checkbox-label,
+	.attribute-toolbar-body .pretty-color-reset,
+	.attribute-toolbar-body .pretty-color-clear,
+	.attribute-toolbar-body .attribute-symbol-value,
+	.attribute-toolbar-body .attribute-icon-number,
+	.attribute-toolbar-body .attribute-icon-number::before {
+		width: var(--attribute-tool-size);
+		height: var(--attribute-tool-size);
+		min-width: var(--attribute-tool-size);
+		max-width: var(--attribute-tool-size);
+	}
+
+	.attribute-toolbar-body .attribute-symbol-value svg {
+		width: var(--attribute-tool-icon-size);
+		height: var(--attribute-tool-icon-size);
+	}
+
+	.attribute-toolbar-body .attribute-icon-number:focus-within {
+		grid-template-columns: 1.25rem 2.25rem;
+		width: 3.5rem;
+		max-width: 3.5rem;
+	}
+
+	.attribute-toolbar-body .attribute-icon-number:focus-within::before {
+		width: 1.25rem;
+		height: 1.45rem;
+	}
+
+	.attribute-toolbar-body .attribute-icon-number:focus-within .pretty-number-control {
+		width: 2.25rem;
+		height: 1.45rem;
+	}
+
 	.attribute-empty {
 		width: 1px;
-		height: 1.75rem;
+		height: var(--attribute-tool-size);
 	}
 
 	hr {
@@ -19004,7 +19051,7 @@
 	}
 
 	.toolbar.vertical.create-toolbar {
-		--create-toolbar-width: 330px;
+		--create-toolbar-width: 280px;
 		--create-tool-cell: 2.25rem;
 		--create-tool-icon: 1.78rem;
 		--create-tool-gap: 0.12rem;
