@@ -39,7 +39,11 @@
 	import Magnifier from '$lib/components/editor/tools/magnifier/Magnifier.svelte';
 	import Paner from '$lib/components/editor/tools/paner/Paner.svelte';
 	import Zoomer from '$lib/components/editor/tools/zoomer/Zoomer.svelte';
-	import { LOOK_AND_FEEL_OPTIONS, loadLookAndFeel, setLookAndFeel } from '$lib/api/look_and_feel.js';
+	import {
+		LOOK_AND_FEEL_OPTIONS,
+		loadLookAndFeel,
+		setLookAndFeel
+	} from '$lib/api/look_and_feel.js';
 
 	const { data } = $props();
 	const lookAndFeel = atom(loadLookAndFeel());
@@ -54,6 +58,10 @@
 		} catch (_) {
 			return path;
 		}
+	}
+
+	function simulationMenuHref(key, fallbackPath) {
+		return data.simulation?.links?.menu?.[key]?.href ?? backendUrl(fallbackPath);
 	}
 
 	function loadRecentSimulations() {
@@ -138,7 +146,8 @@
 
 		const next = tabs.find((candidate) => candidate.id !== tab.id);
 		removeRecentSimulation(tab.id);
-		location.href = next?.href ?? resolve(`/projects/${data.simulation.links.project.id}/simulations`);
+		location.href =
+			next?.href ?? resolve(`/projects/${data.simulation.links.project.id}/simulations`);
 	}
 
 	function openSimulationNavigator() {
@@ -221,12 +230,13 @@
 	const markingDialog = atom(null);
 	const markingDialogPosition = atom(null);
 	const consoleCommandText = atom('');
+	const consoleResponses = atom([]);
 	const showAbout = atom(false);
 	const showSimulationConfig = atom(false);
 	const activeSimulationTool = atom('select');
 	const netInstanceActions = { value: null };
 	const breakPointEntriesResource = data.simulation.breakpoints;
-	const simulationBackgroundColor = '#cbc8ff';
+	const simulationBackgroundBaseHue = 244;
 	const markedPlaceOverlayColor = '#fff176';
 	const online = $derived(!data.offline && data.connectionState.value !== false);
 	let simulationDraggingFiles = $state(false);
@@ -395,6 +405,31 @@
 		liveErrors.value = [...liveErrors.value, error];
 	}
 
+	function appendConsoleResponse(command, output) {
+		consoleResponses.value = [
+			{
+				id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+				command,
+				output: String(output ?? '').trim()
+			},
+			...consoleResponses.value
+		].slice(0, 20);
+	}
+
+	function hashString(value) {
+		let hash = 0;
+		for (const char of String(value ?? '')) {
+			hash = (hash * 31 + char.charCodeAt(0)) | 0;
+		}
+		return Math.abs(hash);
+	}
+
+	function netInstanceBackgroundColor(netInstance) {
+		const key = netInstance?.id ?? netInstance?.label ?? data.simulation.id;
+		const hue = (simulationBackgroundBaseHue + (hashString(key) % 55) - 20 + 360) % 360;
+		return `hsl(${hue} 72% 88%)`;
+	}
+
 	async function submitConsoleCommand(dispatch, evt) {
 		evt.preventDefault();
 		const command = consoleCommandText.value.trim();
@@ -404,9 +439,10 @@
 		}
 
 		try {
-			await dispatch('console_command', { command });
+			const result = await dispatch('console_command', { command });
 			consoleCommandText.value = '';
 			showLog.value = true;
+			appendConsoleResponse(command, result?.output ?? '');
 		} catch (error) {
 			appendLiveError(error);
 		}
@@ -448,7 +484,11 @@
 				image.onload = () => {
 					const naturalWidth = Number(image.naturalWidth || image.width || 120);
 					const naturalHeight = Number(image.naturalHeight || image.height || 80);
-					const scale = Math.min(1, 240 / Math.max(1, naturalWidth), 180 / Math.max(1, naturalHeight));
+					const scale = Math.min(
+						1,
+						240 / Math.max(1, naturalWidth),
+						180 / Math.max(1, naturalHeight)
+					);
 					const width = naturalWidth * scale;
 					const height = naturalHeight * scale;
 
@@ -1415,7 +1455,11 @@
 		return [
 			nonEmptyAttribute('Fill', style.background_color, style.background_color),
 			nonEmptyAttribute('Fill opacity', style.background_opacity ?? style.opacity),
-			nonEmptyAttribute('Pen', style.border_color ?? edgeStyle.stroke_color, style.border_color ?? edgeStyle.stroke_color),
+			nonEmptyAttribute(
+				'Pen',
+				style.border_color ?? edgeStyle.stroke_color,
+				style.border_color ?? edgeStyle.stroke_color
+			),
 			nonEmptyAttribute('Pen opacity', style.border_opacity ?? edgeStyle.stroke_opacity),
 			nonEmptyAttribute('Pen width', style.border_width ?? edgeStyle.stroke_width),
 			nonEmptyAttribute('Line', edgeStyle.stroke_dash_array),
@@ -1481,25 +1525,39 @@
 		const items =
 			annotation.type === 'text'
 				? [
-						nonEmptyAttribute('Text', annotationTextColor(annotation), annotationTextColor(annotation)),
+						nonEmptyAttribute(
+							'Text',
+							annotationTextColor(annotation),
+							annotationTextColor(annotation)
+						),
 						nonEmptyAttribute('Text opacity', annotationTextOpacity(annotation)),
 						nonEmptyAttribute('Font', annotationFontFamily(annotation)),
 						nonEmptyAttribute('Font size', annotationFontSize(annotation))
 					]
 				: [
 						annotation.type !== 'line'
-							? nonEmptyAttribute('Fill', annotationFillColor(annotation), annotationFillColor(annotation))
+							? nonEmptyAttribute(
+									'Fill',
+									annotationFillColor(annotation),
+									annotationFillColor(annotation)
+								)
 							: null,
 						annotation.type !== 'line'
 							? nonEmptyAttribute('Fill opacity', annotationFillOpacity(annotation))
 							: null,
-						nonEmptyAttribute('Pen', annotationStrokeColor(annotation), annotationStrokeColor(annotation)),
+						nonEmptyAttribute(
+							'Pen',
+							annotationStrokeColor(annotation),
+							annotationStrokeColor(annotation)
+						),
 						nonEmptyAttribute('Pen opacity', annotationStrokeOpacity(annotation)),
 						nonEmptyAttribute('Pen width', annotationStrokeWidth(annotation)),
 						nonEmptyAttribute('Line', annotationStrokeDashArray(annotation))
 					];
 
-		return [...items, nonEmptyAttribute('Style', style.font_weight || style.font_style)].filter(Boolean);
+		return [...items, nonEmptyAttribute('Style', style.font_weight || style.font_style)].filter(
+			Boolean
+		);
 	}
 
 	function updateSelectedSimulationAnnotation(updater) {
@@ -2045,7 +2103,11 @@
 											openSimulationConsole();
 										}}>Command Console...</MenuBarButton
 									>
-									<a class="menu-bar-item-button" href={backendUrl('/health/simulator')} target="_blank">
+									<a
+										class="menu-bar-item-button"
+										href={simulationMenuHref('simulator_health', '/health/simulator')}
+										target="_blank"
+									>
 										Remote Server...
 									</a>
 								</div>
@@ -2361,7 +2423,9 @@
 										<li class="menu-bar-menu-item">
 											<MenuBarButton
 												shortcut={{ ctrlKey: true, shiftKey: true, key: 'i' }}
-												disabled={!online || !simulation.value.running || !current_instance.value?.label}
+												disabled={!online ||
+													!simulation.value.running ||
+													!current_instance.value?.label}
 												onclick={(evt) => {
 													evt.preventDefault();
 													void performNetStep(cast, current_instance.value);
@@ -2371,7 +2435,9 @@
 										<li class="menu-bar-menu-item">
 											<MenuBarButton
 												shortcut={{ ctrlKey: true, key: 'p' }}
-												disabled={!online || !simulation.value.running || simulation.value.is_playing === true}
+												disabled={!online ||
+													!simulation.value.running ||
+													simulation.value.is_playing === true}
 												onclick={(evt) => {
 													evt.preventDefault();
 													cast('play');
@@ -2380,7 +2446,9 @@
 										</li>
 										<li class="menu-bar-menu-item">
 											<MenuBarButton
-												disabled={!online || !simulation.value.running || simulation.value.is_playing !== true}
+												disabled={!online ||
+													!simulation.value.running ||
+													simulation.value.is_playing !== true}
 												shortcut={{ ctrlKey: true, key: 'p' }}
 												onclick={(evt) => {
 													evt.preventDefault();
@@ -2471,8 +2539,10 @@
 											</ul>
 										</li>
 										<li class="menu-bar-menu-item">
-											<a class="menu-bar-item-button" href={backendUrl('/health/simulator')} target="_blank"
-												>Remote Server...</a
+											<a
+												class="menu-bar-item-button"
+												href={simulationMenuHref('simulator_health', '/health/simulator')}
+												target="_blank">Remote Server...</a
 											>
 										</li>
 										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
@@ -2484,7 +2554,9 @@
 											<ul class="menu-bar-menu">
 												<li class="menu-bar-menu-item">
 													<MenuBarButton
-														disabled={!online || !simulation.value.running || !selectedTransitionId.value}
+														disabled={!online ||
+															!simulation.value.running ||
+															!selectedTransitionId.value}
 														onclick={(evt) => {
 															evt.preventDefault();
 															void setBreakpointAtSelection(dispatch);
@@ -2493,7 +2565,9 @@
 												</li>
 												<li class="menu-bar-menu-item">
 													<MenuBarButton
-														disabled={!online || !simulation.value.running || !selectedTransitionId.value}
+														disabled={!online ||
+															!simulation.value.running ||
+															!selectedTransitionId.value}
 														onclick={(evt) => {
 															evt.preventDefault();
 															void clearBreakpointAtSelection(dispatch);
@@ -2502,7 +2576,9 @@
 												</li>
 												<li class="menu-bar-menu-item">
 													<MenuBarButton
-														disabled={!online || !simulation.value.running || activeBreakpoints.length === 0}
+														disabled={!online ||
+															!simulation.value.running ||
+															activeBreakpoints.length === 0}
 														onclick={(evt) => {
 															evt.preventDefault();
 															void clearAllBreakpoints(dispatch);
@@ -2542,22 +2618,34 @@
 									Plugins
 									<ul class="menu-bar-menu">
 										<li class="menu-bar-menu-item">
-											<a class="menu-bar-item-button" href={backendUrl('/primitives')} target="_blank">
+											<a
+												class="menu-bar-item-button"
+												href={simulationMenuHref('primitives', '/primitives')}
+												target="_blank"
+											>
 												Primitives
 											</a>
 										</li>
 										<li class="menu-bar-menu-item">
-											<a class="menu-bar-item-button" href={backendUrl('/icons')} target="_blank">Icons</a>
+											<a
+												class="menu-bar-item-button"
+												href={simulationMenuHref('icons', '/icons')}
+												target="_blank">Icons</a
+											>
 										</li>
 										<li class="menu-bar-menu-item">
 											<a
 												class="menu-bar-item-button"
-												href={backendUrl('/socket_schemas')}
+												href={simulationMenuHref('socket_schemas', '/socket_schemas')}
 												target="_blank">Socket Schemas</a
 											>
 										</li>
 										<li class="menu-bar-menu-item">
-											<a class="menu-bar-item-button" href={backendUrl('/syntax')} target="_blank">
+											<a
+												class="menu-bar-item-button"
+												href={simulationMenuHref('syntax', '/syntax')}
+												target="_blank"
+											>
 												Syntax Rules
 											</a>
 										</li>
@@ -2628,7 +2716,8 @@
 															onclick={(evt) => {
 																evt.preventDefault();
 																lookAndFeel.value = setLookAndFeel(option.id);
-															}}>
+															}}
+														>
 															{lookAndFeel.value === option.id ? '* ' : ''}{option.label}
 														</MenuBarButton>
 													</li>
@@ -2637,12 +2726,20 @@
 										</li>
 										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 										<li class="menu-bar-menu-item">
-											<a class="menu-bar-item-button" href={backendUrl('/health')} target="_blank">
+											<a
+												class="menu-bar-item-button"
+												href={simulationMenuHref('health', '/health')}
+												target="_blank"
+											>
 												Health
 											</a>
 										</li>
 										<li class="menu-bar-menu-item">
-											<a class="menu-bar-item-button" href={backendUrl('/system')} target="_blank">
+											<a
+												class="menu-bar-item-button"
+												href={simulationMenuHref('system', '/system')}
+												target="_blank"
+											>
 												System
 											</a>
 										</li>
@@ -2662,7 +2759,10 @@
 										{#each simulationTabs(simulation.value) as tab (tab.id)}
 											<li class="menu-bar-menu-item simulation-window-menu-entry">
 												<a
-													class={{ 'menu-bar-item-button': true, active: tab.id === data.simulation.id }}
+													class={{
+														'menu-bar-item-button': true,
+														active: tab.id === data.simulation.id
+													}}
 													href={tab.href}
 													data-sveltekit-preload-data="off"
 													title={tab.name}
@@ -3057,7 +3157,9 @@
 											class="tool-button"
 											title="Execute one step in the selected net instance"
 											data-tooltip="Net Step"
-											disabled={!online || simulation.value.is_playing || !current_instance.value?.label}
+											disabled={!online ||
+												simulation.value.is_playing ||
+												!current_instance.value?.label}
 											type="button"
 											onclick={(evt) => {
 												evt.preventDefault();
@@ -3161,7 +3263,10 @@
 									{#if selectedAttributes.length}
 										<span class="simulation-attribute-separator"></span>
 										{#each selectedAttributes as attribute}
-											<span class="simulation-attribute-chip" title={`${attribute.label}: ${attribute.value}`}>
+											<span
+												class="simulation-attribute-chip"
+												title={`${attribute.label}: ${attribute.value}`}
+											>
 												{#if attribute.color}
 													<span
 														class="simulation-attribute-swatch"
@@ -3350,7 +3455,11 @@
 												evt.preventDefault();
 
 												void openBindingSelection(
-													bindingSelectionDispatch(dispatch, bindingSelection.value, simulation.value),
+													bindingSelectionDispatch(
+														dispatch,
+														bindingSelection.value,
+														simulation.value
+													),
 													simulation.value,
 													current_instance.value,
 													selectedLayer
@@ -3393,7 +3502,7 @@
 												{#snippet children(liveLenses, navigationActions)}
 													<rect
 														transform={rotationTransform.value}
-														fill={simulationBackgroundColor}
+														fill={netInstanceBackgroundColor(current_instance.value)}
 														stroke="#eee"
 														stroke-width="5"
 														{...doc.value.viewbox}
@@ -3454,7 +3563,6 @@
 																	doc
 																)}
 																{#if layerVisibleInSimulationDrawing(el.value, hidden)}
-
 																	{#if el.value?.box}
 																		{@const expanded = view(
 																			[id, L.defaults(false)],
@@ -3686,10 +3794,9 @@
 																			/>
 																			{#if selectedLayerId.value === el.value.id}
 																				<path
-																					d={edgePath[el.value?.edge?.style?.smoothness ?? 'linear'](
-																						el.value?.edge,
-																						L.get('waypoints', el.value?.edge)
-																					)}
+																					d={edgePath[
+																						el.value?.edge?.style?.smoothness ?? 'linear'
+																					](el.value?.edge, L.get('waypoints', el.value?.edge))}
 																					fill="none"
 																					stroke="#6aa5ff"
 																					stroke-width={Math.max(
@@ -3889,45 +3996,45 @@
 															{:else if annotation.type === 'image'}
 																<g
 																	class:selected={selectedAnnotationId.value === annotation.id}
-															class="simulation-annotation-image"
-															role="button"
-															tabindex="-1"
-															onpointerdown={(evt) =>
-																beginMoveSimulationAnnotation(evt, annotation, liveLenses)}
-															onpointermove={(evt) =>
-																updateMoveSimulationAnnotation(evt, liveLenses)}
-															onpointerup={finishMoveSimulationAnnotation}
-															onpointercancel={cancelSimulationAnnotation}
-															onlostpointercapture={cancelSimulationAnnotation}
-														>
-															<rect
-																x={annotation.x}
-																y={annotation.y}
-																width={annotation.width}
-																height={annotation.height}
-																fill="transparent"
-															/>
-															<image
-																href={annotation.src}
-																x={annotation.x}
-																y={annotation.y}
-																width={annotation.width}
-																height={annotation.height}
-																preserveAspectRatio="xMidYMid meet"
-															/>
-															{#if selectedAnnotationId.value === annotation.id}
-																<rect
-																	class="simulation-annotation-image-outline"
-																	x={annotation.x}
-																	y={annotation.y}
-																	width={annotation.width}
-																	height={annotation.height}
-																/>
+																	class="simulation-annotation-image"
+																	role="button"
+																	tabindex="-1"
+																	onpointerdown={(evt) =>
+																		beginMoveSimulationAnnotation(evt, annotation, liveLenses)}
+																	onpointermove={(evt) =>
+																		updateMoveSimulationAnnotation(evt, liveLenses)}
+																	onpointerup={finishMoveSimulationAnnotation}
+																	onpointercancel={cancelSimulationAnnotation}
+																	onlostpointercapture={cancelSimulationAnnotation}
+																>
+																	<rect
+																		x={annotation.x}
+																		y={annotation.y}
+																		width={annotation.width}
+																		height={annotation.height}
+																		fill="transparent"
+																	/>
+																	<image
+																		href={annotation.src}
+																		x={annotation.x}
+																		y={annotation.y}
+																		width={annotation.width}
+																		height={annotation.height}
+																		preserveAspectRatio="xMidYMid meet"
+																	/>
+																	{#if selectedAnnotationId.value === annotation.id}
+																		<rect
+																			class="simulation-annotation-image-outline"
+																			x={annotation.x}
+																			y={annotation.y}
+																			width={annotation.width}
+																			height={annotation.height}
+																		/>
+																	{/if}
+																</g>
 															{/if}
-														</g>
-													{/if}
-												{/each}
-											</g>
+														{/each}
+													</g>
 
 													{#if isSimulationAnnotationTool()}
 														<path
@@ -4241,7 +4348,7 @@
 									</CameraScroller>
 								{:else}
 									<div
-										style:background={simulationBackgroundColor}
+										style:background={netInstanceBackgroundColor(current_instance.value)}
 										style="align-self: stretch; justify-self: stretch; display: grid; align-content: stretch; justify-content: stretch; font-size: 1.2em;align-items: center; justify-items: center;"
 									>
 										{#if simulation.value.running}
@@ -4439,6 +4546,18 @@
 											</label>
 											<button type="submit">Send</button>
 										</form>
+										{#if consoleResponses.value.length}
+											<ol class="simulation-console-responses">
+												{#each consoleResponses.value as response (response.id)}
+													<li>
+														<div class="simulation-console-request">
+															Renew &gt; {response.command}
+														</div>
+														<pre>{response.output || '<no output>'}</pre>
+													</li>
+												{/each}
+											</ol>
+										{/if}
 										{#await data.log_entries}
 											Loading log...
 										{:then entries}
@@ -4481,7 +4600,11 @@
 						<span>{currentInstance.value ? 'Instance selected' : 'No instance'}</span>
 						<span>{data.connectionState.value === false ? 'offline' : 'online'}</span>
 						{#if queuedActions.value > 0}
-							<span>{queuedActions.value} queued offline action{queuedActions.value === 1 ? '' : 's'}</span>
+							<span
+								>{queuedActions.value} queued offline action{queuedActions.value === 1
+									? ''
+									: 's'}</span
+							>
 						{/if}
 					</footer>
 				{/snippet}
@@ -4628,6 +4751,34 @@
 		border: 1px solid #777;
 		font: inherit;
 		padding: 0.25rem 0.6rem;
+	}
+
+	.simulation-console-responses {
+		list-style: none;
+		margin: 0 0 0.75rem;
+		padding: 0 0 0.75rem;
+		border-bottom: 1px solid #444;
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.simulation-console-responses li {
+		margin: 0;
+		padding: 0.45rem 0.6rem;
+		background: #000;
+		border: 1px solid #333;
+	}
+
+	.simulation-console-request {
+		color: #d6d6d6;
+		margin-bottom: 0.25rem;
+	}
+
+	.simulation-console-responses pre {
+		margin: 0;
+		white-space: pre-wrap;
+		color: #fff;
+		font: inherit;
 	}
 
 	.full-page {

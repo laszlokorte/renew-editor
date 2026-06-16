@@ -8,6 +8,8 @@ import {
 } from '$lib/api/offline_cache.js';
 import { atom, update } from '$lib/reactivity/atom.svelte.js';
 
+const OFFLINE_IGNORED_ACTIONS = new Set(['cursor', 'move_cursor']);
+
 export default function makeLive(socket, resource, options = {}) {
 	let currentValue = atom(resource.content);
 	let currentPresence = atom([]);
@@ -50,15 +52,13 @@ export default function makeLive(socket, resource, options = {}) {
 					livestate.castAction(item.action, item.payload);
 				}
 			} catch (error) {
-				writeOfflineActionQueue(topic, [
-					...queue.slice(i),
-					...readOfflineActionQueue(topic)
-				]);
+				writeOfflineActionQueue(topic, [...queue.slice(i), ...readOfflineActionQueue(topic)]);
 				queuedActions.value = offlineActionQueueCount(topic);
 				queueError({
 					detail: {
 						type: 'offline-replay-error',
-						message: error?.message ?? error?.error ?? 'Queued offline action could not be replayed.'
+						message:
+							error?.message ?? error?.error ?? 'Queued offline action could not be replayed.'
 					}
 				});
 				return;
@@ -107,6 +107,10 @@ export default function makeLive(socket, resource, options = {}) {
 
 		cast(action, payload) {
 			if (!isLiveConnected()) {
+				if (OFFLINE_IGNORED_ACTIONS.has(action)) {
+					return;
+				}
+
 				enqueueOfflineAction(topic, { mode: 'cast', action, payload });
 				queuedActions.value = offlineActionQueueCount(topic);
 				return;

@@ -198,8 +198,10 @@ export function buildPath(box, path) {
  * counter-clockwise with the SVG y-axis inverted at the point conversion step.
  */
 export function buildPiePath(box, startAngle, endAngle) {
-	const start = startAngle == null || !Number.isFinite(Number(startAngle)) ? 0 : Number(startAngle);
-	const end = endAngle == null || !Number.isFinite(Number(endAngle)) ? 180 : Number(endAngle);
+	// Renew's PieFigure constructor starts at 180 degrees and ends at 90 degrees.
+	const start =
+		startAngle == null || !Number.isFinite(Number(startAngle)) ? 180 : Number(startAngle);
+	const end = endAngle == null || !Number.isFinite(Number(endAngle)) ? 90 : Number(endAngle);
 	const rx = box.width / 2;
 	const ry = box.height / 2;
 	const cx = box.x + rx;

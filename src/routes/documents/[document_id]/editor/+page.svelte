@@ -82,6 +82,10 @@
 		}
 	}
 
+	function documentMenuHref(key, fallbackPath) {
+		return data.document?.links?.menu?.[key]?.href ?? backendUrl(fallbackPath);
+	}
+
 	function attributeTooltips(node) {
 		const tooltipTargets = [
 			'.pretty-select',
@@ -748,10 +752,7 @@
 	}
 
 	function consumeSuppressedEdgeWaypointClick(evt, id = undefined) {
-		if (
-			suppressNextEdgeWaypointClick === true ||
-			(id && suppressNextEdgeWaypointClick === id)
-		) {
+		if (suppressNextEdgeWaypointClick === true || (id && suppressNextEdgeWaypointClick === id)) {
 			suppressNextEdgeWaypointClick = false;
 			evt?.preventDefault?.();
 			evt?.stopPropagation?.();
@@ -1648,10 +1649,15 @@
 		});
 	}
 
-	let deleteShortcutContext = { cast: null, doc: null, layersInOrder: null };
+	let deleteShortcutContext = { dispatch: null, cast: null, doc: null, layersInOrder: null };
 
 	function setDeleteShortcutContext(context) {
-		deleteShortcutContext = context ?? { cast: null, doc: null, layersInOrder: null };
+		deleteShortcutContext = context ?? {
+			dispatch: null,
+			cast: null,
+			doc: null,
+			layersInOrder: null
+		};
 	}
 
 	function deleteShortcutContextAction(_node, context) {
@@ -1662,6 +1668,7 @@
 			destroy() {
 				if (
 					deleteShortcutContext.cast === context?.cast &&
+					deleteShortcutContext.dispatch === context?.dispatch &&
 					deleteShortcutContext.doc === context?.doc &&
 					deleteShortcutContext.layersInOrder === context?.layersInOrder
 				) {
@@ -1699,6 +1706,43 @@
 
 		evt.preventDefault();
 		deleteSelectedLayers(deleteShortcutContext.cast, deleteShortcutContext.layersInOrder.value);
+	}
+
+	function handleDocumentGroupKeydown(evt) {
+		if (
+			evt.defaultPrevented ||
+			!evt.ctrlKey ||
+			!evt.shiftKey ||
+			evt.metaKey ||
+			evt.altKey ||
+			isEditableTarget(evt.target) ||
+			selectedLayers.value.length === 0 ||
+			!deleteShortcutContext.dispatch ||
+			!deleteShortcutContext.cast ||
+			!deleteShortcutContext.layersInOrder
+		) {
+			return false;
+		}
+
+		const key = evt.key?.toLocaleLowerCase();
+
+		if (key === 'g') {
+			evt.preventDefault();
+			wrapSelectedLayersInGroup(
+				deleteShortcutContext.dispatch,
+				deleteShortcutContext.cast,
+				deleteShortcutContext.layersInOrder.value
+			);
+			return true;
+		}
+
+		if (key === 'u') {
+			evt.preventDefault();
+			ungroupSelectedLayers(deleteShortcutContext.cast, deleteShortcutContext.layersInOrder.value);
+			return true;
+		}
+
+		return false;
 	}
 
 	function handleDocumentMovementKeydown(evt) {
@@ -2013,8 +2057,7 @@
 			}
 
 			const distance = Math.hypot(socket.x - point.x, socket.y - point.y);
-			const hitsSocket =
-				distance <= tolerance || pointInsideBox(point, socket.box, tolerance);
+			const hitsSocket = distance <= tolerance || pointInsideBox(point, socket.box, tolerance);
 
 			if (hitsSocket && (!nearest || distance < nearest.distance)) {
 				nearest = { socket, distance };
@@ -2030,11 +2073,7 @@
 		layersInOrderValue,
 		socketSchemas,
 		predicate,
-		{
-			excludeLayerId = undefined,
-			tolerance = 14 * cameraScale.value,
-			allowNearby = true
-		} = {}
+		{ excludeLayerId = undefined, tolerance = 14 * cameraScale.value, allowNearby = true } = {}
 	) {
 		const containing = [];
 		const nearby = [];
@@ -2563,8 +2602,12 @@
 				? { x: socket.x, y: socket.y }
 				: undefined;
 
-		return socketPoint ??
-			(Number.isFinite(socket.x) && Number.isFinite(socket.y) ? { x: socket.x, y: socket.y } : oldPoint);
+		return (
+			socketPoint ??
+			(Number.isFinite(socket.x) && Number.isFinite(socket.y)
+				? { x: socket.x, y: socket.y }
+				: oldPoint)
+		);
 	}
 
 	function edgeEndpointDragPreview({
@@ -2636,7 +2679,10 @@
 			endpoint,
 			originalPosition,
 			currentPosition: originalPosition,
-			pointerOffset: Geo.diff2d(originalPosition, liveLenses.clientToCanvas(evt.clientX, evt.clientY))
+			pointerOffset: Geo.diff2d(
+				originalPosition,
+				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+			)
 		};
 
 		return true;
@@ -3301,11 +3347,7 @@
 	}
 
 	function waypointHandleVisible(waypoint) {
-		return !!(
-			waypoint?.id &&
-			Number.isFinite(waypoint?.x) &&
-			Number.isFinite(waypoint?.y)
-		);
+		return !!(waypoint?.id && Number.isFinite(waypoint?.x) && Number.isFinite(waypoint?.y));
 	}
 
 	function waypointPositionPayload(waypoint) {
@@ -3504,7 +3546,10 @@
 			const previewHasServerId =
 				previewWaypoint?.id && !String(previewWaypoint.id).startsWith('__');
 
-			if (!samePosition(waypoint?.x, previewWaypoint?.x) || !samePosition(waypoint?.y, previewWaypoint?.y)) {
+			if (
+				!samePosition(waypoint?.x, previewWaypoint?.x) ||
+				!samePosition(waypoint?.y, previewWaypoint?.y)
+			) {
 				return false;
 			}
 
@@ -4141,51 +4186,99 @@
 		});
 	}
 
-	function boxRoundRadius(box) {
-		const attributes = symbolShapeAttributes(box);
-		const radius = Number(attributes.rx ?? attributes.ry ?? 0);
-		return Number.isFinite(radius) ? radius : 0;
+	function layerShapeName(layer, symbols) {
+		return symbols?.get(layer?.box?.shape)?.name ?? '';
 	}
 
-	function supportsRoundRadiusHandle(layer) {
-		return !!layer?.box && boxRoundRadius(layer.box) > 0;
+	const ROUND_RECT_SHAPE_NAMES = new Set(['rect-round', 'round-rect']);
+
+	// Stored rx/ry are arc diameters (the renderer draws the SVG corner radius at
+	// stored / 2). Renew keeps the horizontal and vertical arc independent, each up to
+	// the full width/height, so wide boxes can be rounded all the way to an ellipse.
+	function boxRoundRadii(box) {
+		const attributes = symbolShapeAttributes(box);
+		const rx = Number(attributes.rx ?? attributes.ry ?? 0);
+		const ry = Number(attributes.ry ?? attributes.rx ?? 0);
+		return {
+			rx: Number.isFinite(rx) ? rx : 0,
+			ry: Number.isFinite(ry) ? ry : 0
+		};
+	}
+
+	function supportsRoundRadiusHandle(layer, symbols) {
+		if (!layer?.box) {
+			return false;
+		}
+
+		// Match Renew: a round-rectangle figure always offers its radius handle, even
+		// when the radius is 0 — the handle then sits in the corner so it can be dragged
+		// back out. A box is a rounded rectangle whenever it carries rx/ry shape
+		// attributes; dragging the handle down to 0 keeps the rect-round shape with
+		// rx/ry = 0, whereas a plain rectangle has no rx/ry attributes at all.
+		if (ROUND_RECT_SHAPE_NAMES.has(layerShapeName(layer, symbols))) {
+			return true;
+		}
+
+		const attributes = symbolShapeAttributes(layer.box);
+		return attributes.rx !== undefined || attributes.ry !== undefined;
+	}
+
+	// Renew's RadiusHandle nudges the handle a few pixels into the figure
+	// (RadiusHandle.OFFSET), so at radius 0 it sits next to — not exactly on — the
+	// corner resize handle. The offset is a constant screen distance, hence scaled by
+	// the camera scale (canvas units per screen pixel).
+	const ROUND_RADIUS_HANDLE_OFFSET = 3;
+
+	function roundRadiusHandleOffset() {
+		return ROUND_RADIUS_HANDLE_OFFSET * (cameraScale.value ?? 0);
 	}
 
 	function roundRadiusHandlePosition(box) {
-		const radius = boxRoundRadius(box);
+		const { rx, ry } = boxRoundRadii(box);
+		// The handle sits at the visible corner radius (= stored arc / 2) plus Renew's
+		// constant inset offset, matching RadiusHandle.locate().
+		const offset = roundRadiusHandleOffset();
 		return {
-			x: box.position_x + radius,
-			y: box.position_y + radius
+			x: box.position_x + rx / 2 + offset,
+			y: box.position_y + ry / 2 + offset
 		};
 	}
 
 	function roundRadiusFromPointer(box, pointer) {
-		const maxRadius = Math.max(0, Math.min(box.width, box.height) / 2);
-		const dx = Math.max(0, pointer.x - box.position_x);
-		const dy = Math.max(0, pointer.y - box.position_y);
-		return Math.round(Math.min(maxRadius, dx, dy) * 10) / 10;
+		// The handle marks the visible corner radius (plus the inset offset), so the
+		// stored arc is twice the distance from the corner to the pointer, with the
+		// offset subtracted so the handle stays under the pointer and radius 0 remains
+		// reachable. Clamp each axis independently to the full width/height (Renew
+		// parity), allowing elliptical corners.
+		const offset = roundRadiusHandleOffset();
+		const rx = Math.min(Math.max(0, 2 * (pointer.x - box.position_x - offset)), box.width);
+		const ry = Math.min(Math.max(0, 2 * (pointer.y - box.position_y - offset)), box.height);
+		return {
+			rx: Math.round(rx * 10) / 10,
+			ry: Math.round(ry * 10) / 10
+		};
 	}
 
-	function patchBoxRoundRadiusLocally(docAtom, layerId, radius) {
+	function patchBoxRoundRadiusLocally(docAtom, layerId, { rx, ry }) {
 		patchLayerLocally(docAtom, layerId, (current) => ({
 			...current,
 			box: {
 				...current.box,
 				symbol_shape_attributes: {
 					...(current.box?.symbol_shape_attributes ?? {}),
-					rx: radius,
-					ry: radius
+					rx,
+					ry
 				},
 				shape_attributes: {
 					...(current.box?.shape_attributes ?? {}),
-					rx: radius,
-					ry: radius
+					rx,
+					ry
 				}
 			}
 		}));
 	}
 
-	function commitBoxRoundRadius(cast, layer, radius) {
+	function commitBoxRoundRadius(cast, layer, { rx, ry }) {
 		if (!layer?.id || !layer?.box) {
 			return;
 		}
@@ -4193,13 +4286,12 @@
 		cast('change_layer_shape', {
 			layer_id: layer.id,
 			shape_id: layer.box.shape,
-			attributes: { rx: radius, ry: radius }
+			attributes: { rx, ry }
 		});
 	}
 
-	function supportsPieAngleHandles(layer) {
-		const tag = layer?.semantic_tag ?? '';
-		return !!layer?.box && tag.endsWith('.PieFigure');
+	function supportsPieAngleHandles(layer, symbols) {
+		return !!layer?.box && layerShapeName(layer, symbols) === 'pie';
 	}
 
 	function normalizePieAngle(angle) {
@@ -4212,7 +4304,7 @@
 	}
 
 	function pieAngleValue(box, angleKind) {
-		const fallback = angleKind === 'start_angle' ? 0 : 180;
+		const fallback = angleKind === 'start_angle' ? 180 : 90;
 		return normalizePieAngle(symbolShapeAttributes(box)?.[angleKind] ?? fallback);
 	}
 
@@ -4304,10 +4396,7 @@
 	}
 
 	function supportsTriangleRotationHandle(layer, symbols) {
-		const tag = layer?.semantic_tag ?? '';
-		return (
-			!!layer?.box && tag.endsWith('.TriangleFigure') && triangleRotation(layer, symbols) !== null
-		);
+		return !!layer?.box && triangleRotation(layer, symbols) !== null;
 	}
 
 	function triangleApex(box, rotation) {
@@ -4387,23 +4476,19 @@
 	}
 
 	function patchTriangleShapeLocally(docAtom, layerId, shapeId) {
-		docAtom.value = update(
-			['layers', 'items', L.find((layer) => layer.id === layerId)],
-			docAtom,
-			(current) => {
-				if (!current?.box) {
-					return current;
-				}
-
-				return {
-					...current,
-					box: {
-						...current.box,
-						shape: shapeId
-					}
-				};
+		patchLayerLocally(docAtom, layerId, (current) => {
+			if (!current?.box) {
+				return current;
 			}
-		);
+
+			return {
+				...current,
+				box: {
+					...current.box,
+					shape: shapeId
+				}
+			};
+		});
 	}
 
 	function commitTriangleRotation(cast, layer, symbols, rotation) {
@@ -5479,6 +5564,50 @@
 		}
 	}
 
+	async function checkInscriptions(docValue) {
+		const href = data.document?.links?.check_inscriptions?.href;
+
+		if (!href) {
+			validateAllInscriptions(docValue);
+			return;
+		}
+
+		try {
+			const response = await fetch(href, {
+				headers: {
+					accept: 'application/json',
+					...(data.authState?.value?.token
+						? { authorization: `Bearer ${data.authState.value.token}` }
+						: {})
+				}
+			});
+
+			if (!response.ok) {
+				throw new Error(`Unexpected server response (${response.status})`);
+			}
+
+			const result = await response.json();
+			const issues = Array.isArray(result?.issues) ? result.issues : [];
+
+			for (const issue of issues) {
+				queueError({
+					title: issue.title ?? 'Syntax Error',
+					message: issue.message ?? 'Inscription syntax problem.',
+					detail: issue.detail
+				});
+			}
+
+			if (issues.length === 0) {
+				statusMessage.value = 'No inscription syntax problems found.';
+			} else {
+				statusMessage.value = `${issues.length} inscription syntax problem${issues.length === 1 ? '' : 's'} found.`;
+			}
+		} catch (error) {
+			validateAllInscriptions(docValue);
+			queueError(error, 'Server-side inscription syntax check could not be performed.');
+		}
+	}
+
 	function isInscriptionLayer(layer) {
 		return !!layer?.text && matchesTextType(layer, 'inscriptions');
 	}
@@ -6061,7 +6190,12 @@
 		return changed;
 	}
 
-	function clearCommittedEdgePreviewAfterSync(layerId, previewEdge, docAtom, clearWaypoints = false) {
+	function clearCommittedEdgePreviewAfterSync(
+		layerId,
+		previewEdge,
+		docAtom,
+		clearWaypoints = false
+	) {
 		if (!docAtom) {
 			setTimeout(() => {
 				if (clearWaypoints) {
@@ -6952,10 +7086,10 @@
 		}
 
 		return (
-			Math.abs(creation.screenCurrent.x - creation.screenStart.x) >=
-				PRIMITIVE_CREATION_DRAG_THRESHOLD &&
-			Math.abs(creation.screenCurrent.y - creation.screenStart.y) >=
-				PRIMITIVE_CREATION_DRAG_THRESHOLD
+			Math.hypot(
+				creation.screenCurrent.x - creation.screenStart.x,
+				creation.screenCurrent.y - creation.screenStart.y
+			) >= PRIMITIVE_CREATION_DRAG_THRESHOLD
 		);
 	}
 
@@ -7173,7 +7307,14 @@
 		return `M ${cx} ${cy} L ${cx} ${box.y} A ${rx} ${ry} 0 1 1 ${box.x} ${cy} Z`;
 	}
 
-	function primitivePreviewLinePath(box) {
+	function primitivePreviewLinePath(box, creation = undefined) {
+		const start = creation?.start ?? creation?.initial;
+		const current = creation?.current;
+
+		if (start && current) {
+			return `M ${start.x} ${start.y} L ${current.x} ${current.y}`;
+		}
+
 		return `M ${box.x} ${box.y + box.height / 2} L ${box.x + box.width} ${box.y + box.height / 2}`;
 	}
 
@@ -8423,8 +8564,8 @@
 				runSearch(cast, docValue, layersInOrderValue);
 				commandConsoleOutput.value = `Search selected ${searchLayerIds(docValue, layersInOrderValue).length} figure(s).`;
 			} else if (command === 'check syntax') {
-				validateAllInscriptions(docValue);
-				commandConsoleOutput.value = 'Local inscription syntax checks finished.';
+				await checkInscriptions(docValue);
+				commandConsoleOutput.value = 'Inscription syntax checks finished.';
 			} else if (command === 'group') {
 				wrapSelectedLayersInGroup(dispatch, cast, layersInOrderValue);
 				commandConsoleOutput.value = 'Selected figures grouped.';
@@ -8582,6 +8723,9 @@
 		if (handleDocumentMovementKeydown(evt)) {
 			return;
 		}
+		if (handleDocumentGroupKeydown(evt)) {
+			return;
+		}
 		handleDocumentDeleteKeydown(evt);
 	}}
 />
@@ -8632,7 +8776,7 @@
 			<span
 				aria-hidden="true"
 				style="display: none"
-				use:deleteShortcutContextAction={{ cast, doc, layersInOrder }}
+				use:deleteShortcutContextAction={{ dispatch, cast, doc, layersInOrder }}
 			></span>
 			{@const _layerMoveCommitSync = clearCommittedLayerMove(doc.value)}
 			{@const documentDisplayBounds = read(
@@ -9375,6 +9519,7 @@
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
 										disabled={selectedLayers.value.length === 0}
+										shortcut={{ ctrlKey: true, shiftKey: true, key: 'g' }}
 										onclick={(evt) => {
 											evt.preventDefault();
 											wrapSelectedLayersInGroup(dispatch, cast, layersInOrder.value);
@@ -9384,6 +9529,7 @@
 								<li class="menu-bar-menu-item">
 									<MenuBarButton
 										disabled={selectedGroupLayerIds(layersInOrder.value).length === 0}
+										shortcut={{ ctrlKey: true, shiftKey: true, key: 'u' }}
 										onclick={(evt) => {
 											evt.preventDefault();
 											ungroupSelectedLayers(cast, layersInOrder.value);
@@ -10117,7 +10263,7 @@
 									<MenuBarButton
 										onclick={(evt) => {
 											evt.preventDefault();
-											validateAllInscriptions(doc.value);
+											checkInscriptions(doc.value);
 										}}>Check Inscriptions</MenuBarButton
 									>
 								</li>
@@ -10629,26 +10775,38 @@
 							Plugins
 							<ul class="menu-bar-menu">
 								<li class="menu-bar-menu-item">
-									<a class="menu-bar-item-button" href={backendUrl('/primitives')} target="_blank">
+									<a
+										class="menu-bar-item-button"
+										href={documentMenuHref('primitives', '/primitives')}
+										target="_blank"
+									>
 										Primitives
 									</a>
 								</li>
 								<li class="menu-bar-menu-item">
-									<a class="menu-bar-item-button" href={backendUrl('/icons')} target="_blank">
+									<a
+										class="menu-bar-item-button"
+										href={documentMenuHref('icons', '/icons')}
+										target="_blank"
+									>
 										Icons
 									</a>
 								</li>
 								<li class="menu-bar-menu-item">
 									<a
 										class="menu-bar-item-button"
-										href={backendUrl('/socket_schemas')}
+										href={documentMenuHref('socket_schemas', '/socket_schemas')}
 										target="_blank"
 									>
 										Socket Schemas
 									</a>
 								</li>
 								<li class="menu-bar-menu-item">
-									<a class="menu-bar-item-button" href={backendUrl('/syntax')} target="_blank">
+									<a
+										class="menu-bar-item-button"
+										href={documentMenuHref('syntax', '/syntax')}
+										target="_blank"
+									>
 										Syntax Rules
 									</a>
 								</li>
@@ -10676,7 +10834,7 @@
 									<MenuBarButton
 										onclick={(evt) => {
 											evt.preventDefault();
-											validateAllInscriptions(doc.value);
+											checkInscriptions(doc.value);
 										}}>Check Syntax</MenuBarButton
 									>
 								</li>
@@ -10718,12 +10876,20 @@
 								</li>
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
-									<a class="menu-bar-item-button" href={backendUrl('/health')} target="_blank">
+									<a
+										class="menu-bar-item-button"
+										href={documentMenuHref('health', '/health')}
+										target="_blank"
+									>
 										Health
 									</a>
 								</li>
 								<li class="menu-bar-menu-item">
-									<a class="menu-bar-item-button" href={backendUrl('/system')} target="_blank">
+									<a
+										class="menu-bar-item-button"
+										href={documentMenuHref('system', '/system')}
+										target="_blank"
+									>
 										System
 									</a>
 								</li>
@@ -11404,6 +11570,7 @@
 																	fill={previewEdge?.cyclic
 																		? (el.value?.style?.background_color ?? 'none')
 																		: 'none'}
+																	vector-effect="non-scaling-stroke"
 																/>
 
 																{#if previewEdge?.style?.source_tip_symbol_shape_id}
@@ -12115,10 +12282,10 @@
 													</g>
 												{:else if primitivePreviewIsLine(primitiveContent)}
 													<path
-														class="primitive-creation-preview-shape"
+														class="primitive-creation-preview-shape primitive-creation-preview-line"
 														style:stroke={previewStyle.border}
 														fill="none"
-														d={primitivePreviewLinePath(creationBox)}
+														d={primitivePreviewLinePath(creationBox, primitiveCreation.value)}
 													/>
 												{:else if primitivePreviewIsEllipse(primitiveContent)}
 													<ellipse
@@ -12198,10 +12365,10 @@
 													</g>
 												{:else if primitivePreviewIsLine(primitiveContent)}
 													<path
-														class="primitive-creation-preview-shape"
+														class="primitive-creation-preview-shape primitive-creation-preview-line"
 														style:stroke={previewStyle.border}
 														fill="none"
-														d={primitivePreviewLinePath(creationBox)}
+														d={primitivePreviewLinePath(creationBox, creation)}
 													/>
 												{:else if primitivePreviewIsEllipse(primitiveContent)}
 													<ellipse
@@ -12398,7 +12565,10 @@
 												{#each edgeHandleLayerIds(selectedLayers.value) as id (id)}
 													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 													{@const waypoints = view(['edge', localProp('waypoints')], el)}
-													{@const persistentWaypoints = view(L.filter(waypointHandleVisible), waypoints)}
+													{@const persistentWaypoints = view(
+														L.filter(waypointHandleVisible),
+														waypoints
+													)}
 													{#if el.value?.edge}
 														{@const selectedPreviewEdge = renderedEdgePreview(
 															el.value,
@@ -12560,8 +12730,10 @@
 																		(list) => {
 																			const sourceList = Array.isArray(list) ? list : [];
 																			const i =
-																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), sourceList) +
-																				1;
+																				R.findIndex(
+																					R.propEq(wp_proposal.id_before, 'id'),
+																					sourceList
+																				) + 1;
 																			if (
 																				sourceList[i] &&
 																				(!sourceList[i].id || sourceList[i].id === draftWaypointId)
@@ -12574,12 +12746,13 @@
 																		(n, list) => {
 																			const sourceList = Array.isArray(list) ? list : [];
 																			const i =
-																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), sourceList) +
-																				1;
+																				R.findIndex(
+																					R.propEq(wp_proposal.id_before, 'id'),
+																					sourceList
+																				) + 1;
 																			const draftAtIndex =
 																				sourceList[i] &&
-																				(!sourceList[i].id ||
-																					sourceList[i].id === draftWaypointId);
+																				(!sourceList[i].id || sourceList[i].id === draftWaypointId);
 																			if (draftAtIndex) {
 																				if (n === undefined || R.equals(wp_proposal, n)) {
 																					return [
@@ -12997,7 +13170,8 @@
 																}
 															}}
 															onpointercancel={(evt) => cancelEdgeEndpointHandle(evt, source_pos)}
-															onlostpointercapture={(evt) => cancelEdgeEndpointHandle(evt, source_pos)}
+															onlostpointercapture={(evt) =>
+																cancelEdgeEndpointHandle(evt, source_pos)}
 															role="button"
 															tabindex="-1"
 														>
@@ -13146,7 +13320,8 @@
 																}
 															}}
 															onpointercancel={(evt) => cancelEdgeEndpointHandle(evt, target_pos)}
-															onlostpointercapture={(evt) => cancelEdgeEndpointHandle(evt, target_pos)}
+															onlostpointercapture={(evt) =>
+																cancelEdgeEndpointHandle(evt, target_pos)}
 															role="button"
 															tabindex="-1"
 														>
@@ -13747,7 +13922,7 @@
 															/>
 														</g>
 													{/if}
-													{#if supportsRoundRadiusHandle(el.value)}
+													{#if supportsRoundRadiusHandle(el.value, symbols)}
 														{@const radiusHandlePos = roundRadiusHandlePosition(el.value.box)}
 														<g
 															role="button"
@@ -13774,8 +13949,8 @@
 																	attributeHandleDrag.value = {
 																		type: 'round_radius',
 																		layerId: el.value.id,
-																		startRadius: boxRoundRadius(el.value.box),
-																		value: boxRoundRadius(el.value.box)
+																		startRadii: boxRoundRadii(el.value.box),
+																		value: boxRoundRadii(el.value.box)
 																	};
 																}
 															}}
@@ -13827,8 +14002,7 @@
 																	evt.currentTarget.hasPointerCapture(evt.pointerId)
 																) {
 																	const radius =
-																		attributeHandleDrag.value?.value ??
-																		boxRoundRadius(el.value.box);
+																		attributeHandleDrag.value?.value ?? boxRoundRadii(el.value.box);
 																	commitBoxRoundRadius(cast, el.value, radius);
 																	attributeHandleDrag.value = undefined;
 																}
@@ -13847,7 +14021,7 @@
 																	evt.currentTarget.releasePointerCapture(
 																		evt.currentTarget.currentPointerId
 																	);
-																	patchBoxRoundRadiusLocally(doc, el.value.id, drag.startRadius);
+																	patchBoxRoundRadiusLocally(doc, el.value.id, drag.startRadii);
 																	attributeHandleDrag.value = undefined;
 																}
 															}}
@@ -13873,7 +14047,7 @@
 															/>
 														</g>
 													{/if}
-													{#if supportsPieAngleHandles(el.value)}
+													{#if supportsPieAngleHandles(el.value, symbols)}
 														{#each ['start_angle', 'end_angle'] as angleKind (angleKind)}
 															{@const pieHandlePos = pieAngleHandlePosition(
 																el.value.box,
@@ -19130,6 +19304,10 @@
 		stroke-width: 1;
 		vector-effect: non-scaling-stroke;
 		pointer-events: none;
+	}
+
+	.primitive-creation-preview-line {
+		stroke-width: 1.5;
 	}
 
 	.primitive-creation-hitbox {
