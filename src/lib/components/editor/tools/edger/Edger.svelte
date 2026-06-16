@@ -42,6 +42,7 @@
 		),
 		combine({ n: sockets, s: draftSourceId })
 	);
+	const draftSourcePointerPosition = view([L.removable('source'), 'position'], draft);
 	const draftTarget = view([L.removable('target'), 'target'], draft);
 	const draftTargetPosition = view([L.removable('position'), 'position'], draftTarget);
 	const draftTargetIds = view(
@@ -93,12 +94,19 @@
 		combine({ n: sockets, t: draftTarget })
 	);
 	const draftEdgeSourcePosition = view(
-		L.reread(({ source, target }) => edgeEndpoint(source, target)),
-		combine({ source: draftSourcePosition, target: draftTargetSnappedPosition })
+		L.reread(({ source, pointer }) => (!selectionHandles && pointer ? pointer : source)),
+		combine({
+			source: draftSourcePosition,
+			pointer: draftSourcePointerPosition,
+			target: draftTargetSnappedPosition
+		})
 	);
 	const draftEdgeTargetPosition = view(
-		L.reread(({ source, target }) => edgeEndpoint(target, source)),
-		combine({ source: draftSourcePosition, target: draftTargetSnappedPosition })
+		L.reread(({ target }) => target),
+		combine({
+			source: draftSourcePosition,
+			target: draftTargetSnappedPosition
+		})
 	);
 
 	export const canCancel = read(R.identity, isActive);
@@ -114,75 +122,8 @@
 	let pointerStart = $state(undefined);
 	const defaultTipSize = 1;
 
-	function socketStencil(socket) {
-		return (
-			socket?.socket_schema?.stencil ??
-			socket?.socketSchema?.stencil ??
-			socket?.stencil ??
-			socket?.id?.stencil ??
-			null
-		);
-	}
-
 	function isCenterSocket(socket, centerX, centerY) {
 		return Math.abs(socket.x - centerX) < 0.001 && Math.abs(socket.y - centerY) < 0.001;
-	}
-
-	function edgeEndpoint(socket, toward) {
-		const box = socket?.box;
-
-		if (!socket || !toward || !box) {
-			return socket;
-		}
-
-		const centerX = box.x + box.width / 2;
-		const centerY = box.y + box.height / 2;
-		const dx = toward.x - centerX;
-		const dy = toward.y - centerY;
-		const stencil = socketStencil(socket);
-
-		if (!['ellipse', 'rect'].includes(stencil) || !isCenterSocket(socket, centerX, centerY)) {
-			return socket;
-		}
-
-		if (dx === 0 && dy === 0) {
-			return { ...socket, x: centerX, y: centerY };
-		}
-
-		if (stencil === 'ellipse') {
-			const radiusX = box.width / 2;
-			const radiusY = box.height / 2;
-			const scale =
-				1 / Math.sqrt((dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY));
-
-			return {
-				...socket,
-				x: centerX + dx * scale,
-				y: centerY + dy * scale
-			};
-		}
-
-		let scale = Infinity;
-
-		if (dx !== 0) {
-			const sideX = dx > 0 ? box.x + box.width : box.x;
-			scale = Math.min(scale, (sideX - centerX) / dx);
-		}
-
-		if (dy !== 0) {
-			const sideY = dy > 0 ? box.y + box.height : box.y;
-			scale = Math.min(scale, (sideY - centerY) / dy);
-		}
-
-		if (!Number.isFinite(scale)) {
-			return { ...socket, x: centerX, y: centerY };
-		}
-
-		return {
-			...socket,
-			x: centerX + dx * scale,
-			y: centerY + dy * scale
-		};
 	}
 
 	function edgeArrowPoint(source, target, reverse = false) {
@@ -252,6 +193,10 @@
 	}
 
 	function socketVisible(socket) {
+		if (selectionHandles && sourceLayerIds) {
+			return sourceLayerIds.includes(socket?.id?.layer);
+		}
+
 		if (isActive.value || !sourceLayerIds) {
 			return true;
 		}
@@ -301,7 +246,15 @@
 			: socketBoxContainsPoint(socket, point);
 	}
 
+	function socketTargetContainsPoint(socket, point) {
+		return selectionHandles
+			? socketBoxContainsPoint(socket, point) || socketHandleContainsPoint(socket, point)
+			: socketBoxContainsPoint(socket, point);
+	}
+
 	function socketAtPosition(position) {
+		const candidates = [];
+
 		for (const socket of [...(sockets.value ?? [])].reverse()) {
 			if (
 				!socketVisible(socket) ||
@@ -311,10 +264,13 @@
 				continue;
 			}
 
-			return socket.id;
+			candidates.push({
+				socket,
+				distance: Math.hypot(socket.x - position.x, socket.y - position.y)
+			});
 		}
 
-		return null;
+		return candidates.sort((a, b) => a.distance - b.distance)[0]?.socket.id ?? null;
 	}
 
 	function sourceIdFromEvent(evt) {
@@ -409,6 +365,7 @@
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		if (nodeId !== null) {
 			draftSourceId.value = nodeId;
+			draftSourcePointerPosition.value = clientToCanvas(evt.clientX, evt.clientY);
 			if (loop) {
 				draftTargetIds.value = [nodeId];
 			}
@@ -436,19 +393,18 @@
 			return;
 		}
 
-		const closeTargets = R.reject(R.isNil)(
-			R.map((node) => {
-				if (
+		const closeTargets = [...(sockets.value ?? [])]
+			.filter((node) => {
+				const distance = Math.hypot(node.x - worldPos.x, node.y - worldPos.y);
+
+				return (
 					!R.equals(node.id, draftSourceId.value) &&
 					validEdge(draftSourceId.value, node.id) &&
-					Math.hypot(node.x - worldPos.x, node.y - worldPos.y) < snapRadiusScaled.value
-				) {
-					return node.id;
-				} else {
-					return null;
-				}
-			}, sockets.value)
-		);
+					(socketTargetContainsPoint(node, worldPos) || distance < snapRadiusScaled.value)
+				);
+			})
+			.sort((a, b) => Math.hypot(a.x - worldPos.x, a.y - worldPos.y) - Math.hypot(b.x - worldPos.x, b.y - worldPos.y))
+			.map((node) => node.id);
 
 		if (closeTargets.length > 0) {
 			draftTargetIds.value = closeTargets;
@@ -521,7 +477,7 @@
 >
 	<path
 		d={frameBoxPath.value}
-		pointer-events={isActive.value ? 'all' : 'none'}
+		pointer-events={isActive.value || !selectionHandles ? 'all' : 'none'}
 		fill="none"
 		class={{
 			'edge-surface': true,
@@ -530,33 +486,35 @@
 	/>
 
 	<g transform={rotationTransform.value} pointer-events="none">
-		{#each sockets.value as v, i (i)}
-			{#if socketVisible(v) && socketIsSelectionHandle(v) && (!draftSourceId.value || validEdge(draftSourceId.value, v.id))}
-				<circle
-					data-idx={JSON.stringify(v.id)}
-					cx={v.x}
-					cy={v.y}
-					pointer-events="all"
-					r={socketHitRadius()}
-					class={{
-						'socket-outer': true,
-						'active-source': draftSourceId.value === v.id,
-						'active-target': draftTargetId.value === v.id
-					}}
-				></circle>
-				<circle
-					data-idx={JSON.stringify(v.id)}
-					class={{
-						'socket-center': true,
-						'active-source': draftSourceId.value === v.id,
-						'active-target': draftTargetId.value === v.id
-					}}
-					cx={v.x}
-					cy={v.y}
-					r={socketCenterRadius()}
-				></circle>
-			{/if}
-		{/each}
+		{#if selectionHandles}
+			{#each sockets.value as v, i (i)}
+				{#if socketVisible(v) && socketIsSelectionHandle(v) && (!draftSourceId.value || validEdge(draftSourceId.value, v.id))}
+					<circle
+						data-idx={JSON.stringify(v.id)}
+						cx={v.x}
+						cy={v.y}
+						pointer-events="all"
+						r={socketHitRadius()}
+						class={{
+							'socket-outer': true,
+							'active-source': draftSourceId.value === v.id,
+							'active-target': draftTargetId.value === v.id
+						}}
+					></circle>
+					<circle
+						data-idx={JSON.stringify(v.id)}
+						class={{
+							'socket-center': true,
+							'active-source': draftSourceId.value === v.id,
+							'active-target': draftTargetId.value === v.id
+						}}
+						cx={v.x}
+						cy={v.y}
+						r={socketCenterRadius()}
+					></circle>
+				{/if}
+			{/each}
+		{/if}
 
 		{#if draftEdgeSourcePosition.value && draftEdgeTargetPosition.value}
 			<path
