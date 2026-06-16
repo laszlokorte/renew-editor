@@ -304,6 +304,7 @@
 								<a
 									class="document-list-link"
 									data-sveltekit-preload-data="off"
+									data-sveltekit-preload-code="eager"
 									href={resolve(`/documents/${d.id}/editor`)}
 									title="Document #{d.id}">{d.name}</a
 								>

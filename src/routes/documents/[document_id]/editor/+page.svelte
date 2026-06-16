@@ -63,7 +63,11 @@
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
 	import { describeError } from '$lib/errors';
 	import { downloadFile } from '$lib/io/download';
-	import { LOOK_AND_FEEL_OPTIONS, loadLookAndFeel, setLookAndFeel } from '$lib/api/look_and_feel.js';
+	import {
+		LOOK_AND_FEEL_OPTIONS,
+		loadLookAndFeel,
+		setLookAndFeel
+	} from '$lib/api/look_and_feel.js';
 
 	const { data } = $props();
 	const lookAndFeel = atom(loadLookAndFeel());
@@ -76,6 +80,63 @@
 		} catch (_) {
 			return path;
 		}
+	}
+
+	function attributeTooltips(node) {
+		const tooltipTargets = [
+			'.pretty-select',
+			'.pretty-number',
+			'.pretty-color',
+			'.pretty-color-reset',
+			'.pretty-color-clear',
+			'.pretty-checkbox',
+			'.pretty-checkbox-label',
+			'.pretty-checkbox-group'
+		].join(',');
+		const labelTargets = [
+			'.pretty-select-label',
+			'.pretty-number-label',
+			'.pretty-color-label',
+			'.pretty-checkbox-group-head',
+			'title'
+		].join(',');
+
+		const tooltipText = (element) => {
+			return (
+				element.getAttribute('title') ||
+				element.getAttribute('aria-label') ||
+				element.querySelector(labelTargets)?.textContent?.trim() ||
+				''
+			);
+		};
+
+		const sync = () => {
+			node.querySelectorAll(tooltipTargets).forEach((element) => {
+				const text = tooltipText(element);
+
+				if (!text) {
+					return;
+				}
+
+				element.setAttribute('title', text);
+				element.dataset.tooltip = text;
+
+				element.querySelectorAll('input, select, button').forEach((control) => {
+					control.setAttribute('title', text);
+					control.dataset.tooltip = text;
+				});
+			});
+		};
+
+		const observer = new MutationObserver(sync);
+		observer.observe(node, { childList: true, subtree: true });
+		requestAnimationFrame(sync);
+
+		return {
+			destroy() {
+				observer.disconnect();
+			}
+		};
 	}
 
 	export const forceHex = L.reread((v) => {
@@ -114,7 +175,6 @@
 	const showOtherSelections = view(['remoteSelections', L.valueOr(true)], viewOptions);
 	const showSequentialOnlyArcs = view(['sequentialOnlyArcs', L.valueOr(false)], viewOptions);
 	const toolbarView = view(['toolbars', L.valueOr({})], viewOptions);
-	const showHorizontalToolbar = view(['horizontal', L.valueOr(true)], toolbarView);
 	const showCreateToolbar = view(['create', L.valueOr(true)], toolbarView);
 	const lockRotation = view(['rotationLock', L.valueOr(false)], viewOptions);
 	const gridDistance = view(['distance', L.valueOr(32)], gridView);
@@ -124,7 +184,9 @@
 	const CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY = 'petristation-create-toolbar-layout-version';
 	const CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY =
 		'petristation-create-toolbar-collapsed-groups';
-	const CREATE_TOOLBAR_LAYOUT_VERSION = 'renew-toolset-2026-06-12-f181-v5';
+	const CREATE_TOOLBAR_WIDTH_STORAGE_KEY = 'petristation-create-toolbar-width';
+	const DEFAULT_CREATE_TOOLBAR_WIDTH = 330;
+	const CREATE_TOOLBAR_LAYOUT_VERSION = 'renew-toolset-2026-06-15-renew-palette-v3';
 
 	const showRename = atom(false);
 	const showNewDrawing = atom(false);
@@ -138,6 +200,7 @@
 	const toolbarLayouts = atom(loadToolbarLayouts());
 	const createToolbarOrder = atom(loadCreateToolbarOrder());
 	const collapsedCreateToolGroups = atom(loadCollapsedCreateToolGroups());
+	const createToolbarWidth = atom(loadCreateToolbarWidth());
 	const createToolbarDrag = atom(null);
 	const inspectedLayer = atom(null);
 	const searchReplaceMode = atom(false);
@@ -151,6 +214,8 @@
 	const pointerOffset = atom({ x: 0, y: 0 });
 	const resizeHandleDrag = atom(undefined);
 	const attributeHandleDrag = atom(undefined);
+	const polygonScaleDrag = atom(undefined);
+	const polygonScalePreviewEdges = atom(new Map());
 	const gridDistanceExp = view(logLens(2), gridDistance);
 
 	const dropperDomElement = atom(undefined);
@@ -209,8 +274,7 @@
 
 		return points.filter(
 			(point, index, all) =>
-				index === 0 ||
-				Math.hypot(point.x - all[index - 1].x, point.y - all[index - 1].y) > 0.01
+				index === 0 || Math.hypot(point.x - all[index - 1].x, point.y - all[index - 1].y) > 0.01
 		);
 	}
 
@@ -424,18 +488,27 @@
 		}
 	}
 
-	const tools = [
-		{ name: 'Select', id: 'select' },
+	const editorTools = [
 		{
-			name: 'Magnifier',
+			name: 'Selection Tool',
+			label: 'Select',
+			id: 'select',
+			icon: '<path d="M8 5 L8 27 L16 20 L22 30 L25 28 L19 18 L28 18 Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="miter" />'
+		},
+		{
+			name: 'Magnifier Tool',
+			label: 'Magnifier',
 			id: 'magnifier',
+			icon: '<circle cx="13" cy="13" r="7" fill="none" stroke="currentColor" stroke-width="2" /><path d="M18 18 L27 27" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="butt" />',
 			reset: (cameraScroller, cameraFocus) => {
 				cameraScroller.resetCamera();
 			}
 		},
 		{
-			name: 'Pan',
+			name: 'Pan Tool',
+			label: 'Pan',
 			id: 'paner',
+			icon: '<path d="M10 18 L7 15 L7 23 L15 23 L12 20 C17 19 21 16 24 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" />',
 			reset: (cameraScroller, cameraFocus, extension) => {
 				update(
 					() => ({
@@ -447,15 +520,19 @@
 			}
 		},
 		{
-			name: 'Zoom',
+			name: 'Zoom Tool',
+			label: 'Zoom',
 			id: 'zoomer',
+			icon: '<circle cx="13" cy="13" r="7" fill="none" stroke="currentColor" stroke-width="2" /><path d="M10 13 H16 M13 10 V16 M18 18 L27 27" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="butt" />',
 			reset: (cameraScroller, cameraFocus) => {
 				cameraScroller.resetCamera();
 			}
 		},
 		{
-			name: 'Rotate',
+			name: 'Rotation Tool',
+			label: 'Rotate',
 			id: 'rotator',
+			icon: '<path d="M23 10 A9 9 0 1 0 25 18" fill="none" stroke="currentColor" stroke-width="2" /><path d="M23 4 V11 H30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />',
 			reset: (cameraScroller, cameraFocus, extension) => {
 				update(
 					() => ({
@@ -467,11 +544,48 @@
 				);
 			}
 		},
-		{ name: 'Pen', id: 'pen' },
-		{ name: 'Polygon', id: 'polygon' },
-		{ name: 'Spline', id: 'spline' },
-		{ name: 'Spacer', id: 'spacer' }
+		{
+			name: 'Scribble Tool',
+			label: 'Pen',
+			id: 'pen',
+			icon: '<path d="M5 24 C8 10 13 28 17 12 C20 2 25 18 28 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />'
+		},
+		{
+			name: 'Polygon Tool',
+			label: 'Polygon',
+			id: 'polygon',
+			icon: '<path d="M6 24 L13 7 L25 10 L28 23 L16 28 Z" fill="#f2df60" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />'
+		},
+		{
+			name: 'Spline Tool',
+			label: 'Spline',
+			id: 'spline',
+			icon: '<path d="M5 24 C10 6 20 28 27 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />'
+		},
+		{
+			name: 'Spacer Tool',
+			label: 'Spacer',
+			id: 'spacer',
+			icon: '<path d="M8 8 H24 M8 24 H24 M12 10 V22 M20 10 V22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" />'
+		}
 	];
+	const editorToolGroupDefinitions = [
+		{
+			name: 'Standard Tools',
+			items: editorTools.filter(({ id }) =>
+				['select', 'pen', 'polygon', 'spline', 'spacer'].includes(id)
+			)
+		},
+		{
+			name: 'Zoom Tools',
+			items: editorTools.filter(({ id }) =>
+				['magnifier', 'paner', 'zoomer', 'rotator'].includes(id)
+			)
+		}
+	].map((group) => ({
+		...group,
+		items: group.items.map((tool) => ({ ...tool, kind: 'editor-tool' }))
+	}));
 	const activeTool = atom('select');
 	let edgeToolPersistent = $state(false);
 	const CREATE_TOOL_ID = 'create';
@@ -578,8 +692,13 @@
 		groupDrag
 	);
 	let connectedEdgePreviewOverrides = atom(new Map());
+	let committedEdgePreviewOverrides = atom(new Map());
 	let edgeWaypointDrag = atom(undefined);
+	let committedEdgeWaypointPreviews = atom(new Map());
+	let edgeEndpointDrag = atom(undefined);
+	let suppressNextEdgeWaypointClick = $state(false);
 	const EDGE_WAYPOINT_DRAG_THRESHOLD = 3;
+	const COMMITTED_EDGE_PREVIEW_HOLD_MS = 2500;
 	const PETRISTATION_CLIPBOARD_FORMAT = 'petristation/layer-clipboard';
 	const PETRISTATION_CLIPBOARD_STORAGE_KEY = 'petristation:layer-clipboard';
 	const PETRISTATION_CLIPBOARD_RNW_STORAGE_KEY = 'petristation:layer-clipboard-rnw';
@@ -628,8 +747,26 @@
 		return publishSelection(cast, [...selected]);
 	}
 
+	function consumeSuppressedEdgeWaypointClick(evt, id = undefined) {
+		if (
+			suppressNextEdgeWaypointClick === true ||
+			(id && suppressNextEdgeWaypointClick === id)
+		) {
+			suppressNextEdgeWaypointClick = false;
+			evt?.preventDefault?.();
+			evt?.stopPropagation?.();
+			return true;
+		}
+
+		return false;
+	}
+
 	function selectLayer(cast, id, evt) {
 		if (!id) {
+			return selectedLayers.value;
+		}
+
+		if (consumeSuppressedEdgeWaypointClick(evt, id)) {
 			return selectedLayers.value;
 		}
 
@@ -790,6 +927,11 @@
 		return layersInOrderValue.filter(({ hidden }) => !hidden).map(({ id }) => id);
 	}
 
+	function edgeHandleLayerIds(selectedIds) {
+		const selected = new Set(selectedIds ?? []);
+		return [...selected];
+	}
+
 	function isTransitionLayer(layer) {
 		const tag = layer?.semantic_tag ?? '';
 		return (
@@ -907,10 +1049,11 @@
 	function edgeToolIgnoresNetSyntax(edgeSemanticTag) {
 		return (
 			edgeSemanticTag === 'CH.ifa.draw.figures.LineConnection' ||
-			edgeSemanticTag === 'CH.ifa.draw.figures.ElbowConnection'
+			edgeSemanticTag === 'CH.ifa.draw.figures.ElbowConnection' ||
+			edgeSemanticTag === 'CH.ifa.draw.figures.LineFigure' ||
+			edgeSemanticTag === 'CH.ifa.draw.figures.PolyLineFigure'
 		);
 	}
-
 
 	function isSyntaxEdgeSourceLayer(layer, syntax) {
 		if (!layer?.semantic_tag) {
@@ -960,7 +1103,9 @@
 				return false;
 			}
 
-			return !edgeSemanticTag || !rule?.edge_semantic_tag || rule.edge_semantic_tag === edgeSemanticTag;
+			return (
+				!edgeSemanticTag || !rule?.edge_semantic_tag || rule.edge_semantic_tag === edgeSemanticTag
+			);
 		});
 	}
 
@@ -1868,12 +2013,52 @@
 			}
 
 			const distance = Math.hypot(socket.x - point.x, socket.y - point.y);
-			if (distance <= tolerance && (!nearest || distance < nearest.distance)) {
+			const hitsSocket =
+				distance <= tolerance || pointInsideBox(point, socket.box, tolerance);
+
+			if (hitsSocket && (!nearest || distance < nearest.distance)) {
 				nearest = { socket, distance };
 			}
 		}
 
 		return nearest?.socket;
+	}
+
+	function compatibleSocketAt(
+		point,
+		docValue,
+		layersInOrderValue,
+		socketSchemas,
+		predicate,
+		{
+			excludeLayerId = undefined,
+			tolerance = 14 * cameraScale.value,
+			allowNearby = true
+		} = {}
+	) {
+		const containing = [];
+		const nearby = [];
+
+		for (const socket of documentSocketEntries(
+			docValue,
+			layersInOrderValue,
+			socketSchemas,
+			groupDrag.value,
+			groupDragDelta.value
+		)) {
+			if (socket?.id?.layer === excludeLayerId || !predicate(socket)) {
+				continue;
+			}
+
+			const distance = Math.hypot(socket.x - point.x, socket.y - point.y);
+			if (pointInsideSocket(point, socket, 0)) {
+				containing.push({ socket, distance });
+			} else if (allowNearby && pointInsideSocket(point, socket, tolerance)) {
+				nearby.push({ socket, distance });
+			}
+		}
+
+		return [...containing, ...nearby].sort((a, b) => a.distance - b.distance)[0]?.socket;
 	}
 
 	function endpointBond(edge, endpoint) {
@@ -1895,6 +2080,290 @@
 		);
 	}
 
+	function isPolygonLayer(layer) {
+		const tag = layer?.semantic_tag ?? '';
+		return !!layer?.edge && (tag.includes('PolygonFigure') || layer.edge.cyclic === true);
+	}
+
+	function polygonEditablePoints(edge) {
+		const waypoints = L.get(localProp('waypoints'), edge) ?? edge?.waypoints ?? [];
+		return [
+			{ key: 'source', kind: 'source', x: edge?.source_x, y: edge?.source_y },
+			...waypoints.map((waypoint, index) => ({
+				...waypoint,
+				key: `waypoint:${index}`,
+				kind: 'waypoint',
+				index,
+				x: waypoint?.x,
+				y: waypoint?.y
+			})),
+			{ key: 'target', kind: 'target', x: edge?.target_x, y: edge?.target_y }
+		].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+	}
+
+	function polygonPointCenter(points) {
+		const center = points.reduce(
+			(acc, point) => ({
+				x: acc.x + point.x / points.length,
+				y: acc.y + point.y / points.length
+			}),
+			{ x: 0, y: 0 }
+		);
+
+		return {
+			x: Math.trunc(center.x),
+			y: Math.trunc(center.y)
+		};
+	}
+
+	function polygonIntegerPoint(point) {
+		return {
+			x: Math.trunc(point.x + 0.5),
+			y: Math.trunc(point.y + 0.5)
+		};
+	}
+
+	function polygonScaleHandlePosition(edge, handleSize) {
+		const points = polygonEditablePoints(edge);
+		if (points.length < 3) {
+			return undefined;
+		}
+
+		const center = polygonPointCenter(points);
+		const outer = points.reduce((current, point) => {
+			if (!current) {
+				return point;
+			}
+			const currentDistance = Math.hypot(current.x - center.x, current.y - center.y);
+			const pointDistance = Math.hypot(point.x - center.x, point.y - center.y);
+			return pointDistance > currentDistance ? point : current;
+		}, undefined);
+
+		if (!outer) {
+			return undefined;
+		}
+
+		const distance = Math.hypot(outer.x - center.x, outer.y - center.y);
+		if (!distance) {
+			return {
+				x: Math.trunc(outer.x - handleSize / 2),
+				y: Math.trunc(outer.y + handleSize / 2)
+			};
+		}
+
+		const inset = handleSize / distance;
+		if (inset > 1) {
+			return {
+				x: Math.trunc((outer.x * 3 + center.x) / 4),
+				y: Math.trunc((outer.y * 3 + center.y) / 4)
+			};
+		}
+
+		return {
+			x: Math.trunc(outer.x * (1 - inset) + center.x * inset),
+			y: Math.trunc(outer.y * (1 - inset) + center.y * inset)
+		};
+	}
+
+	function polygonScaledPoints(drag, pointer, evt) {
+		const anchorLength = Math.hypot(drag.anchor.x - drag.center.x, drag.anchor.y - drag.center.y);
+		if (!anchorLength) {
+			return drag.points;
+		}
+
+		let scale = Math.hypot(pointer.x - drag.center.x, pointer.y - drag.center.y) / anchorLength;
+		let rotation =
+			Math.atan2(pointer.y - drag.center.y, pointer.x - drag.center.x) -
+			Math.atan2(drag.anchor.y - drag.center.y, drag.anchor.x - drag.center.x);
+
+		if (evt?.ctrlKey) {
+			rotation = 0;
+		} else if (evt?.shiftKey) {
+			scale = 1;
+		}
+
+		return drag.points.map((point) => {
+			const length = Math.hypot(point.x - drag.center.x, point.y - drag.center.y) * scale;
+			const angle = Math.atan2(point.y - drag.center.y, point.x - drag.center.x) + rotation;
+			return {
+				...point,
+				x: Math.trunc(drag.center.x + length * Math.cos(angle) + 0.5),
+				y: Math.trunc(drag.center.y + length * Math.sin(angle) + 0.5)
+			};
+		});
+	}
+
+	function polygonScaleHandleDisplayPosition(layerId, fallback) {
+		const drag = polygonScaleDrag.value;
+		return drag?.layerId === layerId && drag.currentHandle ? drag.currentHandle : fallback;
+	}
+
+	function polygonEdgeWithPoints(edge, points, startWaypoints) {
+		const byKey = new Map(points.map((point) => [point.key, point]));
+		const source = byKey.get('source');
+		const target = byKey.get('target');
+
+		return {
+			...edge,
+			source_x: source?.x ?? edge.source_x,
+			source_y: source?.y ?? edge.source_y,
+			target_x: target?.x ?? edge.target_x,
+			target_y: target?.y ?? edge.target_y,
+			waypoints: startWaypoints.map((waypoint, index) => {
+				const point = byKey.get(`waypoint:${index}`);
+				return point ? { ...waypoint, x: point.x, y: point.y } : waypoint;
+			})
+		};
+	}
+
+	function setPolygonScalePreview(layerId, edge) {
+		polygonScalePreviewEdges.value = new Map(polygonScalePreviewEdges.value).set(layerId, edge);
+	}
+
+	function clearPolygonScalePreview(layerId) {
+		const previews = new Map(polygonScalePreviewEdges.value);
+		previews.delete(layerId);
+		polygonScalePreviewEdges.value = previews;
+	}
+
+	function applyPolygonScalePreview(drag, points) {
+		setPolygonScalePreview(
+			drag.layerId,
+			polygonEdgeWithPoints(drag.startEdge, points, drag.startWaypoints)
+		);
+	}
+
+	function resetPolygonScalePreview(drag) {
+		clearPolygonScalePreview(drag.layerId);
+	}
+
+	function beginPolygonScaleHandle(
+		evt,
+		liveLenses,
+		layer,
+		edge,
+		handlePos,
+		layersInOrderValue,
+		docValue
+	) {
+		if (beginSelectionMoveFromHandle(evt, liveLenses, layer.id, layersInOrderValue, docValue)) {
+			return true;
+		}
+
+		if (!evt.isPrimary || !E.isLeftButton(evt) || !handlePos) {
+			return false;
+		}
+
+		const startWaypoints = copyEdgeWaypoints(edge?.waypoints);
+		const startEdge = { ...edge, waypoints: startWaypoints };
+		const points = polygonEditablePoints(startEdge);
+		if (points.length < 3) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		evt.currentTarget.focus({ preventScroll: true });
+		evt.currentTarget.setPointerCapture(evt.pointerId);
+		evt.currentTarget.currentPointerId = evt.pointerId;
+
+		polygonScaleDrag.value = {
+			pointerId: evt.pointerId,
+			layerId: layer.id,
+			anchor: handlePos,
+			currentHandle: handlePos,
+			center: polygonPointCenter(points),
+			points,
+			startEdge,
+			startWaypoints,
+			pointerOffset: Geo.diff2d(handlePos, liveLenses.clientToCanvas(evt.clientX, evt.clientY))
+		};
+
+		return true;
+	}
+
+	function updatePolygonScaleHandle(evt, liveLenses) {
+		const drag = polygonScaleDrag.value;
+		if (!drag || drag.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		const pointer = polygonIntegerPoint(
+			Geo.translate(drag.pointerOffset, liveLenses.clientToCanvas(evt.clientX, evt.clientY))
+		);
+		polygonScaleDrag.value = { ...drag, currentHandle: pointer };
+		applyPolygonScalePreview(drag, polygonScaledPoints(drag, pointer, evt));
+		return true;
+	}
+
+	function finishPolygonScaleHandle(evt, dispatch, liveLenses) {
+		const drag = polygonScaleDrag.value;
+		if (!drag || drag.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		const pointer = polygonIntegerPoint(
+			Geo.translate(drag.pointerOffset, liveLenses.clientToCanvas(evt.clientX, evt.clientY))
+		);
+		polygonScaleDrag.value = { ...drag, currentHandle: pointer };
+		const points = polygonScaledPoints(drag, pointer, evt);
+		applyPolygonScalePreview(drag, points);
+
+		const byKey = new Map(points.map((point) => [point.key, point]));
+		const source = byKey.get('source');
+		const target = byKey.get('target');
+		const waypointUpdates = drag.startWaypoints
+			.map((waypoint, index) => {
+				const point = byKey.get(`waypoint:${index}`);
+				return waypoint?.id && point ? { waypoint, point } : undefined;
+			})
+			.filter(Boolean);
+
+		Promise.resolve(
+			dispatch('update_edge_points', {
+				layer_id: drag.layerId,
+				value: {
+					source_x: source.x,
+					source_y: source.y,
+					target_x: target.x,
+					target_y: target.y
+				},
+				waypoints: waypointUpdates.map(({ waypoint, point }) => ({
+					id: waypoint.id,
+					x: point.x,
+					y: point.y
+				}))
+			})
+		)
+			.then(() => {
+				setTimeout(() => {
+					clearPolygonScalePreview(drag.layerId);
+				}, 100);
+			})
+			.catch((error) => {
+				clearPolygonScalePreview(drag.layerId);
+				queueError(error, 'Polygon could not be scaled');
+			});
+
+		polygonScaleDrag.value = undefined;
+		return true;
+	}
+
+	function cancelPolygonScaleHandle(evt) {
+		const drag = polygonScaleDrag.value;
+		if (!drag || (evt.pointerId !== undefined && drag.pointerId !== evt.pointerId)) {
+			return false;
+		}
+
+		resetPolygonScalePreview(drag);
+		polygonScaleDrag.value = undefined;
+		return true;
+	}
+
 	function edgeEndpointCanReconnect(edgeLayer, endpoint, socket, docValue, syntax) {
 		if (!edgeLayer?.edge || !socket?.id?.layer || !socket?.id?.socket) {
 			return false;
@@ -1902,7 +2371,7 @@
 
 		const byId = layerMap(docValue);
 		const candidateLayer = byId.get(socket.id.layer);
-		const oppositeLayer = byId.get(oppositeEndpointBond(edgeLayer.edge, endpoint)?.layer_id);
+		const oppositeLayer = byId.get(edgeBondLayerId(oppositeEndpointBond(edgeLayer.edge, endpoint)));
 
 		if (!candidateLayer) {
 			return false;
@@ -1922,23 +2391,49 @@
 		layer,
 		endpoint,
 		position,
+		originalPosition,
 		socketSchemas,
 		syntax,
 		dispatch,
 		cast,
 		docValue,
-		layersInOrderValue
+		layersInOrderValue,
+		socketPosition = position
 	}) {
 		const edge = layer?.edge;
-		const edgeId = edge?.id;
+		const edgeId = edge?.id ?? layer?.id;
 		const oldBond = endpointBond(edge, endpoint);
-		const socket = nearestSocketAt(position, docValue, layersInOrderValue, socketSchemas, {
-			excludeLayerId: layer?.id
-		});
-		const positionValue =
-			endpoint === 'source'
-				? { source_x: position.x, source_y: position.y }
-				: { target_x: position.x, target_y: position.y };
+		const oldPoint = originalPosition ?? edgeEndpointPoint(edge, endpoint);
+		const socket = compatibleSocketAt(
+			socketPosition,
+			docValue,
+			layersInOrderValue,
+			socketSchemas,
+			(candidate) => edgeEndpointCanReconnect(layer, endpoint, candidate, docValue, syntax),
+			{ excludeLayerId: layer?.id, allowNearby: false }
+		);
+		const positionValue = edgeEndpointPositionValue(endpoint, position);
+
+		if (socket && edgeId) {
+			const sameBond =
+				edgeBondLayerId(oldBond) === socket.id.layer &&
+				edgeBondSocketId(oldBond) === socket.id.socket;
+
+			if (sameBond) {
+				return Promise.resolve(edgeEndpointPositionValue(endpoint, oldPoint));
+			}
+
+			return dispatch('create_bond', {
+				edge_id: edgeId,
+				kind: endpoint,
+				layer_id: socket.id.layer,
+				socket_id: socket.id.socket
+			});
+		}
+
+		if (hasEndpointBond(oldBond)) {
+			return Promise.resolve(edgeEndpointPositionValue(endpoint, oldPoint));
+		}
 
 		if (isFreePointEdge(layer)) {
 			return dispatch('update_edge_position', {
@@ -1947,31 +2442,12 @@
 			});
 		}
 
-		if (socket && edgeEndpointCanReconnect(layer, endpoint, socket, docValue, syntax) && edgeId) {
-			const sameBond = oldBond?.layer_id === socket.id.layer && oldBond?.socket_id === socket.id.socket;
-
-			return Promise.resolve()
-				.then(() => (!sameBond && oldBond?.id ? cast('delete_bond', { bond_id: oldBond.id }) : undefined))
-				.then(() =>
-					sameBond
-						? undefined
-						: cast('create_bond', {
-								edge_id: edgeId,
-								kind: endpoint,
-								layer_id: socket.id.layer,
-								socket_id: socket.id.socket
-							})
-				);
-		}
-
-		return Promise.resolve()
-			.then(() => (oldBond?.id ? cast('delete_bond', { bond_id: oldBond.id }) : undefined))
-			.then(() =>
-				dispatch('update_edge_position', {
-					layer_id: layer.id,
-					value: positionValue
-				})
-			);
+		return Promise.resolve().then(() =>
+			dispatch('update_edge_position', {
+				layer_id: layer.id,
+				value: positionValue
+			})
+		);
 	}
 
 	function hasMoveDelta(delta) {
@@ -2000,10 +2476,350 @@
 		);
 	}
 
+	function edgeBondSocketId(bond) {
+		return bond?.socket_id ?? bond?.socketId ?? bond?.socket?.id ?? undefined;
+	}
+
+	function hasEndpointBond(bond) {
+		return !!(bond?.id ?? edgeBondLayerId(bond) ?? edgeBondSocketId(bond));
+	}
+
 	function edgeEndpointPoint(edge, endpoint) {
 		return endpoint === 'source'
 			? { x: edge?.source_x, y: edge?.source_y }
 			: { x: edge?.target_x, y: edge?.target_y };
+	}
+
+	function edgeEndpointPositionValue(endpoint, point) {
+		return endpoint === 'source'
+			? { source_x: point?.x, source_y: point?.y }
+			: { target_x: point?.x, target_y: point?.y };
+	}
+
+	function edgeEndpointPreviewPoint(edge, endpoint) {
+		if (!edge) {
+			return undefined;
+		}
+
+		const x = endpoint === 'source' ? edge.source_x : edge.target_x;
+		const y = endpoint === 'source' ? edge.source_y : edge.target_y;
+
+		return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined;
+	}
+
+	function edgeEndpointHandlePoint(layerId, endpoint, lensPoint, previewEdge) {
+		const previewPoint = edgeEndpointPreviewPoint(previewEdge, endpoint);
+		const drag = edgeEndpointDrag.value;
+
+		if (drag?.layerId === layerId && drag?.endpoint === endpoint) {
+			return lensPoint ?? previewPoint;
+		}
+
+		if (committedEdgePreviewOverrides.value.has(layerId)) {
+			return previewPoint ?? lensPoint;
+		}
+
+		return lensPoint ?? previewPoint;
+	}
+
+	function previewEdgeEndpointDrag({
+		layer,
+		endpoint,
+		currentPosition,
+		pointerPosition = currentPosition,
+		originalPosition = undefined,
+		socketSchemas,
+		syntax,
+		docValue,
+		layersInOrderValue
+	}) {
+		const edge = layer?.edge;
+		const oldPoint = originalPosition ?? edgeEndpointPoint(edge, endpoint) ?? currentPosition;
+
+		if (!hasEndpointBond(endpointBond(edge, endpoint))) {
+			return currentPosition;
+		}
+
+		if (!socketSchemas || !syntax || !docValue || !layersInOrderValue) {
+			return currentPosition;
+		}
+
+		const socket = compatibleSocketAt(
+			pointerPosition,
+			docValue,
+			layersInOrderValue,
+			socketSchemas,
+			(candidate) => edgeEndpointCanReconnect(layer, endpoint, candidate, docValue, syntax),
+			{ excludeLayerId: layer?.id, allowNearby: false }
+		);
+
+		if (!socket) {
+			return currentPosition;
+		}
+
+		const socketPoint = socket.box
+			? edgeBoxCenter(socket.box)
+			: Number.isFinite(socket.x) && Number.isFinite(socket.y)
+				? { x: socket.x, y: socket.y }
+				: undefined;
+
+		return socketPoint ??
+			(Number.isFinite(socket.x) && Number.isFinite(socket.y) ? { x: socket.x, y: socket.y } : oldPoint);
+	}
+
+	function edgeEndpointDragPreview({
+		layer,
+		endpoint,
+		dragPosition,
+		pointerPosition,
+		originalPosition,
+		socketSchemas,
+		syntax,
+		docValue,
+		layersInOrderValue
+	}) {
+		const edge = layer?.edge;
+		const oldPoint = originalPosition ?? edgeEndpointPoint(edge, endpoint) ?? dragPosition;
+
+		if (!hasEndpointBond(endpointBond(edge, endpoint))) {
+			return { position: dragPosition, socket: undefined };
+		}
+
+		if (!socketSchemas || !syntax || !docValue || !layersInOrderValue) {
+			return { position: dragPosition, socket: undefined };
+		}
+
+		const socket = compatibleSocketAt(
+			pointerPosition,
+			docValue,
+			layersInOrderValue,
+			socketSchemas,
+			(candidate) => edgeEndpointCanReconnect(layer, endpoint, candidate, docValue, syntax),
+			{
+				excludeLayerId: layer?.id,
+				allowNearby: false
+			}
+		);
+
+		if (!socket) {
+			return { position: dragPosition, socket: undefined };
+		}
+
+		const position =
+			(socket.box ? edgeBoxCenter(socket.box) : undefined) ??
+			(Number.isFinite(socket.x) && Number.isFinite(socket.y)
+				? { x: socket.x, y: socket.y }
+				: oldPoint);
+
+		return { position, socket };
+	}
+
+	function beginEdgeEndpointHandle(evt, liveLenses, positionLens, layer, endpoint) {
+		if (!evt.isPrimary || !E.isLeftButton(evt) || !layer?.edge) {
+			return false;
+		}
+
+		const originalPosition = positionLens.value ?? edgeEndpointPoint(layer.edge, endpoint);
+		if (!Number.isFinite(originalPosition?.x) || !Number.isFinite(originalPosition?.y)) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		evt.currentTarget.focus({ preventScroll: true });
+		evt.currentTarget.setPointerCapture(evt.pointerId);
+		evt.currentTarget.currentPointerId = evt.pointerId;
+
+		edgeEndpointDrag.value = {
+			pointerId: evt.pointerId,
+			layerId: layer.id,
+			endpoint,
+			originalPosition,
+			currentPosition: originalPosition,
+			pointerOffset: Geo.diff2d(originalPosition, liveLenses.clientToCanvas(evt.clientX, evt.clientY))
+		};
+
+		return true;
+	}
+
+	function updateEdgeEndpointHandle(
+		evt,
+		liveLenses,
+		positionLens,
+		layer,
+		endpoint,
+		socketSchemas,
+		syntax,
+		docValue,
+		layersInOrderValue
+	) {
+		const drag = edgeEndpointDrag.value;
+		if (
+			!drag ||
+			drag.pointerId !== evt.pointerId ||
+			drag.layerId !== layer?.id ||
+			drag.endpoint !== endpoint
+		) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		const pointerPosition = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		const dragPosition = Geo.translate(drag.pointerOffset, pointerPosition);
+		const preview = edgeEndpointDragPreview({
+			layer,
+			endpoint,
+			dragPosition,
+			pointerPosition,
+			originalPosition: drag.originalPosition,
+			socketSchemas,
+			syntax,
+			docValue,
+			layersInOrderValue
+		});
+
+		positionLens.value = preview.position;
+		edgeEndpointDrag.value = {
+			...drag,
+			currentPosition: preview.position,
+			pointerPosition,
+			dragPosition,
+			candidateSocket: preview.socket
+		};
+
+		return true;
+	}
+
+	function prepareEdgeEndpointFinish(evt) {
+		const drag = edgeEndpointDrag.value;
+		if (!drag || drag.pointerId !== evt.pointerId) {
+			return false;
+		}
+
+		edgeEndpointDrag.value = { ...drag, finishing: true };
+		return true;
+	}
+
+	function finishEdgeEndpointHandle(
+		evt,
+		liveLenses,
+		positionLens,
+		layer,
+		endpoint,
+		socketSchemas,
+		syntax,
+		docValue,
+		layersInOrderValue,
+		docAtom,
+		dispatch,
+		cast
+	) {
+		const drag = edgeEndpointDrag.value;
+		if (
+			!drag ||
+			drag.pointerId !== evt.pointerId ||
+			drag.layerId !== layer?.id ||
+			drag.endpoint !== endpoint
+		) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		const pointerPosition = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		const dragPosition = Geo.translate(drag.pointerOffset, pointerPosition);
+		const preview = edgeEndpointDragPreview({
+			layer,
+			endpoint,
+			dragPosition,
+			pointerPosition,
+			originalPosition: drag.originalPosition,
+			socketSchemas,
+			syntax,
+			docValue,
+			layersInOrderValue
+		});
+
+		positionLens.value = preview.position;
+		const initialPreviewEdge = {
+			...layer.edge,
+			...edgeEndpointPositionValue(endpoint, preview.position)
+		};
+		const previousEdge = documentEdgeByLayerId(docAtom?.value, layer.id);
+		setCommittedEdgePreview(layer.id, initialPreviewEdge);
+		patchDocumentEdge(docAtom, layer.id, initialPreviewEdge);
+
+		Promise.resolve(
+			reconnectOrMoveEdgeEndpoint({
+				layer,
+				endpoint,
+				position: dragPosition,
+				socketPosition: pointerPosition,
+				originalPosition: drag.originalPosition,
+				socketSchemas,
+				syntax,
+				dispatch,
+				cast,
+				docValue,
+				layersInOrderValue
+			})
+		)
+			.then((result) => {
+				const xKey = endpoint === 'source' ? 'source_x' : 'target_x';
+				const yKey = endpoint === 'source' ? 'source_y' : 'target_y';
+				let committedPreviewEdge = initialPreviewEdge;
+				if (result?.[xKey] !== undefined) {
+					const resultPoint = { x: result[xKey], y: result[yKey] };
+					positionLens.value = resultPoint;
+					committedPreviewEdge = {
+						...layer.edge,
+						...edgeEndpointPositionValue(endpoint, resultPoint)
+					};
+					setCommittedEdgePreview(layer.id, committedPreviewEdge);
+					patchDocumentEdge(docAtom, layer.id, committedPreviewEdge);
+				}
+				clearCommittedEdgePreviewAfterSync(layer.id, committedPreviewEdge, docAtom);
+			})
+			.catch((error) => {
+				positionLens.value = drag.originalPosition;
+				patchDocumentEdge(docAtom, layer.id, previousEdge);
+				clearCommittedEdgePreview(layer.id);
+				queueError(error, 'Edge endpoint could not be changed');
+			})
+			.finally(() => {
+				edgeEndpointDrag.value = undefined;
+				backoffValue.value = undefined;
+				if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
+					evt.currentTarget.releasePointerCapture(evt.pointerId);
+				}
+				evt.currentTarget.blur?.();
+			});
+
+		return true;
+	}
+
+	function cancelEdgeEndpointHandle(evt, positionLens) {
+		const pointerId = eventPointerId(evt);
+		const drag = edgeEndpointDrag.value;
+		if (!drag || (pointerId !== undefined && drag.pointerId !== pointerId)) {
+			return false;
+		}
+		if (drag.finishing) {
+			return false;
+		}
+
+		evt?.stopPropagation?.();
+		evt?.preventDefault?.();
+		positionLens.value = drag.originalPosition;
+		edgeEndpointDrag.value = undefined;
+		backoffValue.value = undefined;
+		if (evt?.currentTarget?.hasPointerCapture?.(drag.pointerId)) {
+			evt.currentTarget.releasePointerCapture(drag.pointerId);
+		}
+		return true;
 	}
 
 	function pointInsideBox(point, box, tolerance = 0) {
@@ -2017,6 +2833,36 @@
 			point.y >= box.y - tolerance &&
 			point.y <= box.y + box.height + tolerance
 		);
+	}
+
+	function pointInsideSocket(point, socket, tolerance = 0) {
+		if (!point || !socket) {
+			return false;
+		}
+
+		const box = socket.box;
+		if (!box) {
+			return (
+				Number.isFinite(socket.x) &&
+				Number.isFinite(socket.y) &&
+				Math.hypot(socket.x - point.x, socket.y - point.y) <= tolerance
+			);
+		}
+
+		if (edgeBoxStencil(box) !== 'ellipse') {
+			return pointInsideBox(point, box, tolerance);
+		}
+
+		const rx = box.width / 2 + tolerance;
+		const ry = box.height / 2 + tolerance;
+		if (rx <= 0 || ry <= 0) {
+			return pointInsideBox(point, box, tolerance);
+		}
+
+		const center = edgeBoxCenter(box);
+		const nx = (point.x - center.x) / rx;
+		const ny = (point.y - center.y) / ry;
+		return nx * nx + ny * ny <= 1;
 	}
 
 	function layerEndpointBox(layer) {
@@ -2302,15 +3148,43 @@
 		}
 
 		const ownDelta = layerMoveDelta(layer?.id, layersInOrderValue, dragState, delta);
-		const sourceDelta = edgeEndpointMoveDelta(edge, 'source', docValue, layersInOrderValue, dragState, delta);
-		const targetDelta = edgeEndpointMoveDelta(edge, 'target', docValue, layersInOrderValue, dragState, delta);
+		const sourceDelta = edgeEndpointMoveDelta(
+			edge,
+			'source',
+			docValue,
+			layersInOrderValue,
+			dragState,
+			delta
+		);
+		const targetDelta = edgeEndpointMoveDelta(
+			edge,
+			'target',
+			docValue,
+			layersInOrderValue,
+			dragState,
+			delta
+		);
 
 		if (!hasMoveDelta(sourceDelta) && !hasMoveDelta(targetDelta)) {
 			return edge;
 		}
 
-		const sourceBox = edgeBondLayerBox(edge, 'source', docValue, layersInOrderValue, dragState, delta);
-		const targetBox = edgeBondLayerBox(edge, 'target', docValue, layersInOrderValue, dragState, delta);
+		const sourceBox = edgeBondLayerBox(
+			edge,
+			'source',
+			docValue,
+			layersInOrderValue,
+			dragState,
+			delta
+		);
+		const targetBox = edgeBondLayerBox(
+			edge,
+			'target',
+			docValue,
+			layersInOrderValue,
+			dragState,
+			delta
+		);
 		const sourceRelativeDelta = hasMoveDelta(sourceDelta)
 			? subtractDelta(sourceDelta, ownDelta)
 			: { x: 0, y: 0 };
@@ -2394,12 +3268,18 @@
 		delta = groupDragDelta.value
 	) {
 		return (
+			polygonScalePreviewEdges.value.get(layer?.id) ??
+			committedEdgePreviewOverrides.value.get(layer?.id) ??
 			connectedEdgePreviewOverrides.value.get(layer?.id) ??
 			previewMovedEdge(layer, docValue, layersInOrderValue, dragState, delta)
 		);
 	}
 
 	function edgePreviewTransform(layerId, layersInOrderValue, edge, previewEdge) {
+		if (hasEndpointBond(edge?.source_bond) || hasEndpointBond(edge?.target_bond)) {
+			return undefined;
+		}
+
 		return edgePositionChanged(edge, previewEdge)
 			? undefined
 			: layerMoveTransform(layerId, layersInOrderValue);
@@ -2410,6 +3290,55 @@
 			previewWaypoints?.find?.((previewWaypoint) => previewWaypoint?.id === waypoint?.id) ??
 			waypoint
 		);
+	}
+
+	function localWaypointIdForProposal(proposal) {
+		return `__local_waypoint:${proposal?.id_before ?? 'start'}`;
+	}
+
+	function waypointServerId(id) {
+		return typeof id === 'string' && !id.startsWith('__') ? id : null;
+	}
+
+	function waypointHandleVisible(waypoint) {
+		return !!(
+			waypoint?.id &&
+			Number.isFinite(waypoint?.x) &&
+			Number.isFinite(waypoint?.y)
+		);
+	}
+
+	function waypointPositionPayload(waypoint) {
+		return {
+			x: waypoint?.x,
+			y: waypoint?.y
+		};
+	}
+
+	function edgeWaypointProposals(edge) {
+		const waypoints = L.get(localProp('waypoints'), edge) ?? edge?.waypoints ?? [];
+		const points = [
+			{ x: edge?.source_x, y: edge?.source_y, id: '__source' },
+			...waypoints,
+			{ x: edge?.target_x, y: edge?.target_y, id: '__target' }
+		].filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+
+		const proposals = [];
+		for (let i = 0; i < points.length - 1; i += 1) {
+			const before = points[i];
+			const after = points[i + 1];
+			if (!before?.id || !after?.id) {
+				continue;
+			}
+
+			proposals.push({
+				id_before: before.id,
+				x: (before.x + after.x) / 2,
+				y: (before.y + after.y) / 2
+			});
+		}
+
+		return proposals;
 	}
 
 	function expandedMoveLayerIds(layerIds, layersInOrderValue, docValue) {
@@ -2499,14 +3428,17 @@
 		}
 
 		if (layer.edge) {
+			const sourceDelta = hasEndpointBond(layer.edge.source_bond) ? { x: 0, y: 0 } : delta;
+			const targetDelta = hasEndpointBond(layer.edge.target_bond) ? { x: 0, y: 0 } : delta;
+
 			return {
 				...layer,
 				edge: {
 					...layer.edge,
-					source_x: layer.edge.source_x + delta.x,
-					source_y: layer.edge.source_y + delta.y,
-					target_x: layer.edge.target_x + delta.x,
-					target_y: layer.edge.target_y + delta.y,
+					source_x: layer.edge.source_x + sourceDelta.x,
+					source_y: layer.edge.source_y + sourceDelta.y,
+					target_x: layer.edge.target_x + targetDelta.x,
+					target_y: layer.edge.target_y + targetDelta.y,
 					waypoints: moveWaypointList(layer.edge.waypoints, delta)
 				}
 			};
@@ -2543,6 +3475,54 @@
 				!samePosition(waypoint?.x, previewWaypoint?.x) ||
 				!samePosition(waypoint?.y, previewWaypoint?.y)
 			);
+		});
+	}
+
+	function edgeGeometryMatches(edge, previewEdge) {
+		if (!edge || !previewEdge) {
+			return false;
+		}
+
+		if (
+			!samePosition(edge.source_x, previewEdge.source_x) ||
+			!samePosition(edge.source_y, previewEdge.source_y) ||
+			!samePosition(edge.target_x, previewEdge.target_x) ||
+			!samePosition(edge.target_y, previewEdge.target_y)
+		) {
+			return false;
+		}
+
+		const edgeWaypoints = edge.waypoints ?? [];
+		const previewWaypoints = previewEdge.waypoints ?? [];
+
+		if (edgeWaypoints.length !== previewWaypoints.length) {
+			return false;
+		}
+
+		return previewWaypoints.every((previewWaypoint, index) => {
+			const waypoint = edgeWaypoints[index];
+			const previewHasServerId =
+				previewWaypoint?.id && !String(previewWaypoint.id).startsWith('__');
+
+			if (!samePosition(waypoint?.x, previewWaypoint?.x) || !samePosition(waypoint?.y, previewWaypoint?.y)) {
+				return false;
+			}
+
+			if (previewHasServerId) {
+				return waypoint?.id === previewWaypoint.id;
+			}
+
+			// The preview waypoint is still optimistic (e.g. a freshly created
+			// waypoint that has not been assigned a server id yet). We optimistically
+			// patch the local document with that same pending waypoint, so matching on
+			// position alone would treat our own patch as "synced" and release the
+			// committed preview after a single poll — before the server roundtrip
+			// completes. Once the preview clears, a server state push that does not yet
+			// contain the new waypoint briefly reverts the edge to its old shape (the
+			// flicker). Require the matching document waypoint to carry a real server
+			// id so the preview is only released once the server has truly applied the
+			// change.
+			return waypoint?.id && !String(waypoint.id).startsWith('__');
 		});
 	}
 
@@ -2677,7 +3657,12 @@
 		}
 	}
 
-	function updateSelectionMoveFromHandle(evt, liveLenses, docAtom = undefined, layersInOrderValue = undefined) {
+	function updateSelectionMoveFromHandle(
+		evt,
+		liveLenses,
+		docAtom = undefined,
+		layersInOrderValue = undefined
+	) {
 		if (groupDrag.value?.pointerId !== evt.pointerId) {
 			return false;
 		}
@@ -2776,6 +3761,10 @@
 	}
 
 	function clickSelectedLayer(evt, cast, id) {
+		if (consumeSuppressedEdgeWaypointClick(evt, id)) {
+			return;
+		}
+
 		evt.preventDefault();
 		evt.stopPropagation();
 		if (evt.shiftKey) {
@@ -3316,7 +4305,9 @@
 
 	function supportsTriangleRotationHandle(layer, symbols) {
 		const tag = layer?.semantic_tag ?? '';
-		return !!layer?.box && tag.endsWith('.TriangleFigure') && triangleRotation(layer, symbols) !== null;
+		return (
+			!!layer?.box && tag.endsWith('.TriangleFigure') && triangleRotation(layer, symbols) !== null
+		);
 	}
 
 	function triangleApex(box, rotation) {
@@ -3396,19 +4387,23 @@
 	}
 
 	function patchTriangleShapeLocally(docAtom, layerId, shapeId) {
-		docAtom.value = update(['layers', 'items', L.find((layer) => layer.id === layerId)], docAtom, (current) => {
-			if (!current?.box) {
-				return current;
-			}
-
-			return {
-				...current,
-				box: {
-					...current.box,
-					shape: shapeId
+		docAtom.value = update(
+			['layers', 'items', L.find((layer) => layer.id === layerId)],
+			docAtom,
+			(current) => {
+				if (!current?.box) {
+					return current;
 				}
-			};
-		});
+
+				return {
+					...current,
+					box: {
+						...current.box,
+						shape: shapeId
+					}
+				};
+			}
+		);
 	}
 
 	function commitTriangleRotation(cast, layer, symbols, rotation) {
@@ -3861,6 +4856,41 @@
 		}
 	}
 
+	function changeSelectedLayerShape(cast, docValue, layersInOrderValue, shapeId) {
+		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, (layer) => !!layer?.box);
+		for (const layerId of layerIds) {
+			cast('change_layer_shape', { layer_id: layerId, shape_id: shapeId });
+		}
+	}
+
+	function changeSelectedEdgeCyclic(cast, docValue, layersInOrderValue, cyclic) {
+		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, (layer) => !!layer?.edge);
+		for (const layerId of layerIds) {
+			cast('change_edge_attributes', { layer_id: layerId, attrs: { cyclic } });
+		}
+	}
+
+	function selectedLayerKindCounts(docValue, layersInOrderValue) {
+		const byId = layerMap(docValue);
+		return selectedTopLevelLayerIds(layersInOrderValue).reduce(
+			(counts, id) => {
+				const layer = byId.get(id);
+				counts.total += 1;
+				if (layer?.text) {
+					counts.text += 1;
+				} else if (layer?.edge) {
+					counts.edge += 1;
+				} else if (layer?.box) {
+					counts.box += 1;
+				} else {
+					counts.group += 1;
+				}
+				return counts;
+			},
+			{ total: 0, box: 0, edge: 0, text: 0, group: 0 }
+		);
+	}
+
 	function promptSelectedStyle(cast, docValue, layersInOrderValue, type, attr, label, predicate) {
 		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, predicate);
 		if (!layerIds.length) {
@@ -3923,10 +4953,10 @@
 		return {
 			showMinimap: showMinimap.value,
 			showHierarchy: showHierarchy.value,
-			showHorizontalToolbar: showHorizontalToolbar.value,
 			showCreateToolbar: showCreateToolbar.value,
 			showDebug: showDebug.value,
 			createToolbarOrder: createToolbarOrder.value,
+			createToolbarWidth: createToolbarWidth.value,
 			collapsedCreateToolGroups: collapsedCreateToolGroups.value
 		};
 	}
@@ -3937,9 +4967,11 @@
 		}
 		showMinimap.value = layout.showMinimap ?? showMinimap.value;
 		showHierarchy.value = layout.showHierarchy ?? showHierarchy.value;
-		showHorizontalToolbar.value = layout.showHorizontalToolbar ?? showHorizontalToolbar.value;
 		showCreateToolbar.value = layout.showCreateToolbar ?? showCreateToolbar.value;
 		showDebug.value = layout.showDebug ?? showDebug.value;
+		if (layout.createToolbarWidth !== undefined) {
+			setCreateToolbarWidth(layout.createToolbarWidth);
+		}
 		if (layout.createToolbarOrder) {
 			createToolbarOrder.value = normalizeCreateToolbarOrder(layout.createToolbarOrder);
 			persistCreateToolbarOrder();
@@ -3970,7 +5002,10 @@
 	}
 
 	function persistToolbarLayouts(layouts = toolbarLayouts.value) {
-		localStorage.setItem(TOOLBAR_LAYOUTS_STORAGE_KEY, JSON.stringify(normalizeToolbarLayouts(layouts)));
+		localStorage.setItem(
+			TOOLBAR_LAYOUTS_STORAGE_KEY,
+			JSON.stringify(normalizeToolbarLayouts(layouts))
+		);
 		toolbarLayouts.value = normalizeToolbarLayouts(layouts);
 	}
 
@@ -4008,7 +5043,6 @@
 		localStorage.removeItem(TOOLBAR_LAYOUT_STORAGE_KEY);
 		showMinimap.value = true;
 		showHierarchy.value = true;
-		showHorizontalToolbar.value = true;
 		showCreateToolbar.value = true;
 		showDebug.value = false;
 		createToolbarOrder.value = {};
@@ -4016,6 +5050,7 @@
 		localStorage.setItem(CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY, CREATE_TOOLBAR_LAYOUT_VERSION);
 		collapsedCreateToolGroups.value = [];
 		localStorage.removeItem(CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY);
+		setCreateToolbarWidth(DEFAULT_CREATE_TOOLBAR_WIDTH);
 	}
 
 	function normalizeCollapsedCreateToolGroups(groups) {
@@ -4033,6 +5068,50 @@
 			CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY,
 			JSON.stringify(normalizeCollapsedCreateToolGroups(collapsedCreateToolGroups.value))
 		);
+	}
+
+	function normalizeCreateToolbarWidth(size) {
+		const value = Number(size);
+		return Number.isFinite(value)
+			? R.clamp(120, 480, Math.round(value))
+			: DEFAULT_CREATE_TOOLBAR_WIDTH;
+	}
+
+	function loadCreateToolbarWidth() {
+		return normalizeCreateToolbarWidth(localStorage.getItem(CREATE_TOOLBAR_WIDTH_STORAGE_KEY));
+	}
+
+	function setCreateToolbarWidth(size) {
+		createToolbarWidth.value = normalizeCreateToolbarWidth(size);
+		localStorage.setItem(CREATE_TOOLBAR_WIDTH_STORAGE_KEY, String(createToolbarWidth.value));
+	}
+
+	function startCreateToolbarResize(evt) {
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		const originX = evt.clientX;
+		const initialWidth = createToolbarWidth.value;
+		const previousCursor = document.body.style.cursor;
+		const previousUserSelect = document.body.style.userSelect;
+		document.body.style.cursor = 'ew-resize';
+		document.body.style.userSelect = 'none';
+
+		const move = (moveEvt) => {
+			setCreateToolbarWidth(initialWidth + (moveEvt.clientX - originX));
+		};
+
+		const stop = () => {
+			window.removeEventListener('pointermove', move);
+			window.removeEventListener('pointerup', stop);
+			window.removeEventListener('pointercancel', stop);
+			document.body.style.cursor = previousCursor;
+			document.body.style.userSelect = previousUserSelect;
+		};
+
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', stop, { once: true });
+		window.addEventListener('pointercancel', stop, { once: true });
 	}
 
 	function createToolGroupCollapsed(groupName) {
@@ -4085,10 +5164,16 @@
 	}
 
 	function loadCreateToolbarOrder() {
-		if (localStorage.getItem(CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY) !== CREATE_TOOLBAR_LAYOUT_VERSION) {
+		if (
+			localStorage.getItem(CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY) !==
+			CREATE_TOOLBAR_LAYOUT_VERSION
+		) {
 			localStorage.removeItem(CREATE_TOOLBAR_ORDER_STORAGE_KEY);
 			localStorage.removeItem(CREATE_TOOLBAR_COLLAPSED_GROUPS_STORAGE_KEY);
-			localStorage.setItem(CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY, CREATE_TOOLBAR_LAYOUT_VERSION);
+			localStorage.setItem(
+				CREATE_TOOLBAR_LAYOUT_VERSION_STORAGE_KEY,
+				CREATE_TOOLBAR_LAYOUT_VERSION
+			);
 			return {};
 		}
 
@@ -4165,7 +5250,9 @@
 	function dragAfterTarget(evt) {
 		const rect = evt.currentTarget.getBoundingClientRect();
 		const horizontal = rect.width >= rect.height * 1.2;
-		return horizontal ? evt.clientX > rect.left + rect.width / 2 : evt.clientY > rect.top + rect.height / 2;
+		return horizontal
+			? evt.clientX > rect.left + rect.width / 2
+			: evt.clientY > rect.top + rect.height / 2;
 	}
 
 	function beginCreateToolGroupDrag(evt, groupName) {
@@ -4680,6 +5767,26 @@
 		return closest && closest.distance <= tolerance ? closest : undefined;
 	}
 
+	function localPointerPosition(evt, liveLenses) {
+		const target = evt.currentTarget;
+		const svg = target?.ownerSVGElement;
+		const screenMatrix = target?.getScreenCTM?.();
+
+		if (svg && screenMatrix) {
+			try {
+				const point = svg.createSVGPoint();
+				point.x = evt.clientX;
+				point.y = evt.clientY;
+				const local = point.matrixTransform(screenMatrix.inverse());
+				return { x: local.x, y: local.y };
+			} catch {
+				// Fall through to the canvas transform when the browser cannot invert the SVG matrix.
+			}
+		}
+
+		return liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+	}
+
 	function beginUnselectedEdgeWaypointDrag(evt, layer, edge, liveLenses) {
 		if (
 			!['select', 'edge'].includes(activeTool.value) ||
@@ -4691,7 +5798,7 @@
 			return false;
 		}
 
-		const start = liveLenses.clientToCanvas(evt.clientX, evt.clientY);
+		const start = localPointerPosition(evt, liveLenses);
 		const tolerance = 10 * cameraScale.value;
 		const existing =
 			activeTool.value === 'edge' ? edgeWaypointNear(edge, start, tolerance) : undefined;
@@ -4701,12 +5808,19 @@
 			return false;
 		}
 
+		const startWaypoints = Array.isArray(edge?.waypoints)
+			? edge.waypoints.map((waypoint) => ({ ...waypoint }))
+			: [];
+		const startEdge = { ...edge, waypoints: startWaypoints };
+
 		edgeWaypointDrag.value = {
 			pointerId: evt.pointerId,
 			layerId: layer.id,
 			afterWaypointId: insertion?.after_waypoint_id,
 			deleteWaypointId: existing?.id,
 			createOnClick: activeTool.value === 'edge',
+			startEdge,
+			startWaypoints,
 			start,
 			current: insertion?.position ?? start,
 			screenStart: { x: evt.clientX, y: evt.clientY },
@@ -4730,7 +5844,7 @@
 		const dy = evt.clientY - drag.screenStart.y;
 		edgeWaypointDrag.value = {
 			...drag,
-			current: liveLenses.clientToCanvas(evt.clientX, evt.clientY),
+			current: localPointerPosition(evt, liveLenses),
 			moved: drag.moved || Math.hypot(dx, dy) >= EDGE_WAYPOINT_DRAG_THRESHOLD
 		};
 		evt.preventDefault();
@@ -4738,7 +5852,7 @@
 		return true;
 	}
 
-	function finishUnselectedEdgeWaypointDrag(evt, cast) {
+	function finishUnselectedEdgeWaypointDrag(evt, cast, docAtom = undefined) {
 		const drag = edgeWaypointDrag.value;
 		if (!drag || drag.pointerId !== evt.pointerId) {
 			return false;
@@ -4747,26 +5861,54 @@
 		evt.preventDefault();
 		evt.stopPropagation();
 
-		if (drag.deleteWaypointId && drag.moved) {
-			cast('update_waypoint_position', {
+		let action;
+		let dispatched = false;
+		if (drag.deleteWaypointId) {
+			if (!drag.moved) {
+				edgeWaypointDrag.value = undefined;
+				return true;
+			}
+			action = cast('update_waypoint_position', {
 				layer_id: drag.layerId,
 				waypoint_id: drag.deleteWaypointId,
 				value: drag.current
 			});
-		} else if (drag.deleteWaypointId) {
-			cast('delete_waypoint', {
-				layer_id: drag.layerId,
-				waypoint_id: drag.deleteWaypointId
-			});
+			dispatched = true;
 		} else if (drag.moved || drag.createOnClick) {
-			cast('create_waypoint', {
+			action = cast('create_waypoint', {
 				layer_id: drag.layerId,
 				after_waypoint_id: drag.afterWaypointId,
 				position: drag.current
 			});
+			dispatched = true;
 		}
 
-		publishSelection(cast, [drag.layerId]);
+		// `cast` is fire-and-forget and always resolves to `undefined`, so we must not
+		// gate the optimistic preview on the action's truthiness (that check was always
+		// false, which is why the edge-tool path snapped back to the server value on
+		// release while the selected-handle path — which holds unconditionally — did
+		// not).
+		if (dispatched) {
+			const committedWaypoints = pendingWaypointPreview(
+				drag.startWaypoints ?? [],
+				{ ...drag, moved: true },
+				drag.layerId
+			);
+			holdCommittedEdgeWaypointPreview(
+				drag.layerId,
+				drag.startEdge,
+				committedWaypoints,
+				action,
+				docAtom
+			);
+		}
+
+		if (activeTool.value !== 'edge') {
+			publishSelection(cast, [drag.layerId]);
+		} else {
+			suppressNextEdgeWaypointClick = drag.layerId;
+			resetTransientEdgeTool();
+		}
 		edgeWaypointDrag.value = undefined;
 		return true;
 	}
@@ -4778,6 +5920,208 @@
 
 		edgeWaypointDrag.value = undefined;
 		return true;
+	}
+
+	function setCommittedEdgeWaypointPreview(layerId, waypoints) {
+		committedEdgeWaypointPreviews.value = new Map(committedEdgeWaypointPreviews.value).set(
+			layerId,
+			waypoints
+		);
+	}
+
+	function clearCommittedEdgeWaypointPreview(layerId) {
+		const previews = new Map(committedEdgeWaypointPreviews.value);
+		previews.delete(layerId);
+		committedEdgeWaypointPreviews.value = previews;
+	}
+
+	function setCommittedEdgePreview(layerId, edge) {
+		committedEdgePreviewOverrides.value = new Map(committedEdgePreviewOverrides.value).set(
+			layerId,
+			edge
+		);
+	}
+
+	function clearCommittedEdgePreview(layerId) {
+		const previews = new Map(committedEdgePreviewOverrides.value);
+		previews.delete(layerId);
+		committedEdgePreviewOverrides.value = previews;
+	}
+
+	function documentEdgeByLayerId(docValue, layerId) {
+		return docValue?.layers?.items?.find((layer) => layer.id === layerId)?.edge;
+	}
+
+	function patchDocumentEdge(docAtom, layerId, edge) {
+		const items = docAtom?.value?.layers?.items;
+		if (!Array.isArray(items) || !edge) {
+			return false;
+		}
+
+		let changed = false;
+		const patchedItems = items.map((layer) => {
+			if (layer?.id !== layerId || !layer?.edge) {
+				return layer;
+			}
+
+			changed = true;
+			return {
+				...layer,
+				edge: {
+					...layer.edge,
+					...edge,
+					waypoints: copyEdgeWaypoints(edge.waypoints)
+				}
+			};
+		});
+
+		if (changed) {
+			docAtom.value = {
+				...docAtom.value,
+				layers: {
+					...docAtom.value.layers,
+					items: patchedItems
+				}
+			};
+		}
+
+		return changed;
+	}
+
+	// Store an optimistic waypoint update as a localProp draft on the document edge
+	// instead of overwriting `edge.waypoints`. The draft lives in `edge.__draft` and
+	// is read back through the `localProp('waypoints')` lens while rendering, so the
+	// new shape is shown immediately, but `edge.waypoints` keeps holding the last
+	// server value. That separation matters for the committed-preview hold: the sync
+	// check (edgeGeometryMatches) inspects `edge.waypoints` directly, so it only
+	// reports "synced" once the server has actually applied the change rather than
+	// being fooled by our own optimistic patch. It also makes the draft self-clear —
+	// once the server value differs from the recorded base, the lens falls back to it.
+	function setDocumentEdgeWaypointDraft(docAtom, layerId, waypoints) {
+		const items = docAtom?.value?.layers?.items;
+		if (!Array.isArray(items)) {
+			return false;
+		}
+
+		let changed = false;
+		const patchedItems = items.map((layer) => {
+			if (layer?.id !== layerId || !layer?.edge) {
+				return layer;
+			}
+
+			changed = true;
+			return {
+				...layer,
+				edge: L.set(localProp('waypoints'), copyEdgeWaypoints(waypoints), layer.edge)
+			};
+		});
+
+		if (changed) {
+			docAtom.value = {
+				...docAtom.value,
+				layers: {
+					...docAtom.value.layers,
+					items: patchedItems
+				}
+			};
+		}
+
+		return changed;
+	}
+
+	function resetDocumentEdgeWaypointDraft(docAtom, layerId) {
+		const items = docAtom?.value?.layers?.items;
+		if (!Array.isArray(items)) {
+			return false;
+		}
+
+		let changed = false;
+		const patchedItems = items.map((layer) => {
+			if (layer?.id !== layerId || !layer?.edge?.__draft?.waypoints) {
+				return layer;
+			}
+
+			changed = true;
+			return {
+				...layer,
+				edge: L.set(localProp('waypoints'), localProp.reset, layer.edge)
+			};
+		});
+
+		if (changed) {
+			docAtom.value = {
+				...docAtom.value,
+				layers: {
+					...docAtom.value.layers,
+					items: patchedItems
+				}
+			};
+		}
+
+		return changed;
+	}
+
+	function clearCommittedEdgePreviewAfterSync(layerId, previewEdge, docAtom, clearWaypoints = false) {
+		if (!docAtom) {
+			setTimeout(() => {
+				if (clearWaypoints) {
+					clearCommittedEdgeWaypointPreview(layerId);
+				}
+				clearCommittedEdgePreview(layerId);
+			}, COMMITTED_EDGE_PREVIEW_HOLD_MS);
+			return;
+		}
+
+		const startedAt = performance.now();
+		const check = () => {
+			const edge = documentEdgeByLayerId(docAtom.value, layerId);
+			const synced = edgeGeometryMatches(edge, previewEdge);
+			const expired = performance.now() - startedAt >= COMMITTED_EDGE_PREVIEW_HOLD_MS;
+
+			if (synced || expired) {
+				if (clearWaypoints) {
+					clearCommittedEdgeWaypointPreview(layerId);
+					resetDocumentEdgeWaypointDraft(docAtom, layerId);
+				}
+				clearCommittedEdgePreview(layerId);
+				return;
+			}
+
+			setTimeout(check, 40);
+		};
+
+		setTimeout(check, 40);
+	}
+
+	function copyEdgeWaypoints(waypoints) {
+		return Array.isArray(waypoints) ? waypoints.map((waypoint) => ({ ...waypoint })) : [];
+	}
+
+	function holdCommittedEdgeWaypointPreview(layerId, edge, waypoints, action, docAtom = undefined) {
+		const committedWaypoints = copyEdgeWaypoints(waypoints);
+		const previewEdge = {
+			...(edge ?? {}),
+			waypoints: committedWaypoints
+		};
+		setCommittedEdgeWaypointPreview(layerId, committedWaypoints);
+		setCommittedEdgePreview(layerId, previewEdge);
+		// Apply the optimistic waypoints as a self-clearing localProp draft rather than
+		// overwriting the document edge. This keeps `edge.waypoints` at the server value
+		// so the committed-preview hold is only released once the server truly confirms
+		// the change (see setDocumentEdgeWaypointDraft) — otherwise a server state push
+		// arriving after an early release would briefly snap the edge back to its old
+		// shape.
+		setDocumentEdgeWaypointDraft(docAtom, layerId, committedWaypoints);
+
+		Promise.resolve(action)
+			.then(() => {
+				clearCommittedEdgePreviewAfterSync(layerId, previewEdge, docAtom, true);
+			})
+			.catch(() => {
+				resetDocumentEdgeWaypointDraft(docAtom, layerId);
+				clearCommittedEdgeWaypointPreview(layerId);
+				clearCommittedEdgePreview(layerId);
+			});
 	}
 
 	function pendingWaypointPreview(waypoints, drag, layerId) {
@@ -4995,9 +6339,341 @@
 		return primitiveCreatesVirtualPlace(tool) || primitiveCreatesVirtualTransition(tool);
 	}
 
+	const renewStandardToolNames = [
+		'Rectangle Tool',
+		'Round Rectangle Tool',
+		'Ellipse Tool',
+		'Elliptical Arc/Pie Tool',
+		'Diamond Tool',
+		'Triangle Tool',
+		'Line Tool',
+		'Connection Tool',
+		'Elbow Connection Tool',
+		'Target Tool',
+		'Image Tool'
+	];
+	const renewPetriNetToolNames = [
+		'Transition Tool',
+		'Virtual Transition Tool',
+		'Place Tool',
+		'Virtual Place Tool',
+		'Arc Tool',
+		'Test Arc Tool',
+		'Reserve Arc Tool',
+		'Flexible Arc Tool',
+		'Inhibitor Arc Tool',
+		'Clear Arc Tool',
+		'Inscription Tool',
+		'Name Tool',
+		'Declaration Tool',
+		'Comment Tool'
+	];
+	const renewTextToolNames = ['Text Tool', 'Connected Text Tool'];
+	const renewFaToolNames = [
+		'FA Start State Tool',
+		'FA State Tool',
+		'FA End State Tool',
+		'FA Start End State Tool',
+		'FA Name Tool',
+		'FA Inscription Tool',
+		'FA Word Placement Tool',
+		'FA ArcConnection Tool',
+		'FA Loop ArcConnection Tool'
+	];
+	const defaultFormalismId = 'P/T Net Compiler';
+	const formalismSpecificToolGroups = {
+		'FA Automaton Compiler': ['FA Tools'],
+		'FA Net Compiler': ['FA Tools']
+	};
+	const toolbarIconOverrides = {
+		select:
+			'<path d="M7 5 L7 27 L14 20 L18 29 L21 28 L17 19 L26 19 Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="miter" />',
+		magnifier:
+			'<circle cx="13" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2" /><path d="M19 19 L28 28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="butt" />',
+		zoomer:
+			'<circle cx="13" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2" /><path d="M9 13 H17 M13 9 V17 M19 19 L28 28" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="butt" />',
+		paner:
+			'<path d="M10 19 L7 16 L7 24 L15 24 L12 21 C18 20 22 16 25 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="miter" />',
+		rotator:
+			'<path d="M23 10 A9 9 0 1 0 25 19" fill="none" stroke="currentColor" stroke-width="2" /><path d="M23 4 V11 H30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />',
+		pen: '<path d="M5 24 C9 9 13 27 17 12 C21 2 25 18 29 8" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />',
+		polygon:
+			'<path d="M6 24 L13 7 L25 10 L28 23 L16 29 Z" fill="#f2df60" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />',
+		spline:
+			'<path d="M5 24 C10 5 20 29 28 8" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />',
+		spacer:
+			'<path d="M8 8 H24 M8 24 H24 M12 10 V22 M20 10 V22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" />',
+		'Rectangle Tool':
+			'<rect fill="#f2df60" x="4" y="7" width="24" height="18" stroke="#111" stroke-width="2" />',
+		'Round Rectangle Tool':
+			'<rect fill="#f2df60" x="4" y="7" width="24" height="18" rx="6" ry="6" stroke="#111" stroke-width="2" />',
+		'Ellipse Tool':
+			'<circle fill="#f2df60" cx="16" cy="16" r="12.5" stroke="#111" stroke-width="2" />',
+		'Elliptical Arc/Pie Tool':
+			'<path d="M16 16 L16 3 A13 13 0 1 1 3 16 Z" fill="#f2df60" stroke="#111" stroke-width="2" />',
+		'Diamond Tool':
+			'<path d="M16 3 L29 16 L16 29 L3 16 Z" fill="#f2df60" stroke="#111" stroke-width="2" />',
+		'Triangle Tool':
+			'<path d="M16 4 L29 28 L3 28 Z" fill="#f2df60" stroke="#111" stroke-width="2" />',
+		'Line Tool':
+			'<path d="M5 25 L27 7" fill="none" stroke="#111" stroke-width="2" stroke-linecap="butt" />',
+		'Target Tool':
+			'<circle cx="16" cy="16" r="10" fill="none" stroke="#111" stroke-width="1.8" /><path d="M16 5 V27 M5 16 H27" fill="none" stroke="#111" stroke-width="1.4" stroke-linecap="butt" />',
+		'Image Tool':
+			'<rect fill="#eee" x="5" y="5" width="22" height="22" stroke="#999" stroke-width="2" /><path d="M8 24 L14 17 L18 21 L22 14 L26 24 Z" fill="#ccc" stroke="none" />',
+		'Text Tool':
+			'<text text-anchor="middle" font-size="27" font-weight="bold" x="16" y="26" font-family="serif" fill="#111">A</text>',
+		'Connected Text Tool':
+			'<text x="4" y="12" font-size="12" font-family="serif" fill="#111">*</text><text text-anchor="middle" font-size="26" font-weight="bold" x="18" y="27" font-family="serif" fill="#111">A</text>',
+		'Transition Tool':
+			'<rect fill="#f2df60" x="6" y="9" width="20" height="14" stroke="#111" stroke-width="1.8" /><text x="16" y="20" text-anchor="middle" font-family="serif" font-size="10.5" font-weight="bold" fill="#111">T</text>',
+		'Virtual Transition Tool':
+			'<rect fill="#f2df60" x="6" y="9" width="20" height="14" stroke="#111" stroke-width="1.8" /><rect fill="none" x="9" y="12" width="14" height="8" stroke="#111" stroke-width="1.2" /><text x="16" y="20" text-anchor="middle" font-family="serif" font-size="8.5" font-weight="bold" fill="#111">T</text>',
+		'Place Tool':
+			'<circle fill="#f2df60" cx="16" cy="16" r="11.5" stroke="#111" stroke-width="1.8" /><text x="16" y="20" text-anchor="middle" font-family="serif" font-size="10.5" font-weight="bold" fill="#111">P</text>',
+		'Virtual Place Tool':
+			'<circle fill="#f2df60" cx="16" cy="16" r="11.5" stroke="#111" stroke-width="1.8" /><circle fill="none" cx="16" cy="16" r="8.2" stroke="#111" stroke-width="1.2" /><text x="16" y="20" text-anchor="middle" font-family="serif" font-size="8.5" font-weight="bold" fill="#111">P</text>',
+		'Arc Tool':
+			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+		'Connection Tool':
+			'<path d="M5 25 L27 7" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" />',
+		'Elbow Connection Tool':
+			'<path d="M7 8 L7 24 L24 24" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" stroke-linejoin="miter" />',
+		'Test Arc Tool':
+			'<path d="M5 25 L27 7" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" />',
+		'Reserve Arc Tool':
+			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M5 25 L10.6 22.5 L7.5 19.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+		'Flexible Arc Tool':
+			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M21 9 L15.4 11.5 L18.5 14.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+		'Inhibitor Arc Tool':
+			'<path d="M6 24 L21 9" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><circle cx="24" cy="6" r="3.8" fill="white" stroke="#111" stroke-width="1.7" />',
+		'Clear Arc Tool':
+			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M21 9 L15.4 11.5 L18.5 14.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+		'Inscription Tool':
+			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">i</text>',
+		'Name Tool':
+			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">n</text>',
+		'Declaration Tool':
+			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">d</text>',
+		'Comment Tool':
+			'<text text-anchor="middle" font-size="22" font-weight="bold" x="16" y="24" font-family="serif" fill="#111">@</text>',
+		'FA Start State Tool':
+			'<circle fill="#fff" cx="16" cy="16" r="13.5" stroke="#111" stroke-width="2" /><path d="M3 3 L9 9" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" /><path d="M9 9 L4.5 8.2 M9 9 L8.2 4.5" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" />',
+		'FA State Tool':
+			'<circle fill="#fff" cx="16" cy="16" r="13.5" stroke="#111" stroke-width="2" />',
+		'FA End State Tool':
+			'<circle fill="#fff" cx="16" cy="16" r="13.5" stroke="#111" stroke-width="2" /><circle fill="none" cx="16" cy="16" r="10.2" stroke="#111" stroke-width="1.4" />',
+		'FA Start End State Tool':
+			'<circle fill="#fff" cx="16" cy="16" r="13.5" stroke="#111" stroke-width="2" /><circle fill="none" cx="16" cy="16" r="10.2" stroke="#111" stroke-width="1.4" /><path d="M3 3 L9 9" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" /><path d="M9 9 L4.5 8.2 M9 9 L8.2 4.5" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" />',
+		'FA Name Tool':
+			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">n</text>',
+		'FA Inscription Tool':
+			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">i</text>',
+		'FA Word Placement Tool':
+			'<text text-anchor="middle" font-size="20" font-weight="bold" font-style="italic" x="16" y="23" font-family="serif" fill="#025bff">w</text>',
+		'FA ArcConnection Tool':
+			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+		'FA Loop ArcConnection Tool':
+			'<path d="M9 20 C3 12 7 5 15 5 C23 5 27 12 22 19" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M22 19 L18 16.5 L18.8 21 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />'
+	};
+
+	function createToolEntryIcon(item) {
+		if (isEditorToolEntry(item)) {
+			return toolbarIconOverrides[item.id] ?? item.icon;
+		}
+
+		return toolbarIconOverrides[item?.name] ?? item?.icon ?? '';
+	}
+
+	function editorToolsById() {
+		return new Map(
+			editorToolGroupDefinitions.flatMap((group) => group.items).map((tool) => [tool.id, tool])
+		);
+	}
+
+	function primitiveToolsByName(groups) {
+		const map = new Map();
+		for (const group of groups ?? []) {
+			for (const item of group?.items ?? []) {
+				if (!map.has(item?.name)) {
+					map.set(item?.name, item);
+				}
+			}
+		}
+		return map;
+	}
+
+	function appendToolbarEntry(entries, item, usedIds) {
+		if (!item) {
+			return;
+		}
+
+		const id = createToolEntryId(item);
+		if (usedIds.has(id)) {
+			return;
+		}
+
+		usedIds.add(id);
+		entries.push(item);
+	}
+
+	function takeEditorTools(toolById, ids, usedIds) {
+		const entries = [];
+		for (const id of ids) {
+			appendToolbarEntry(entries, toolById.get(id), usedIds);
+		}
+		return entries;
+	}
+
+	function takeNamedTools(toolByName, names, usedIds) {
+		const entries = [];
+		for (const name of names) {
+			appendToolbarEntry(entries, toolByName.get(name), usedIds);
+		}
+		return entries;
+	}
+
+	function selectedFormalismId(formalisms = []) {
+		return (
+			currentFormalism.value ??
+			formalisms.find((formalism) => formalism?.default)?.id ??
+			defaultFormalismId
+		);
+	}
+
+	function selectedFormalismLabel(formalisms = []) {
+		const selectedId = selectedFormalismId(formalisms);
+		return formalisms.find((formalism) => formalism?.id === selectedId)?.label ?? selectedId;
+	}
+
+	function selectedFormalismEntry(formalisms = [], formalismId = selectedFormalismId(formalisms)) {
+		return formalisms.find((formalism) => formalism?.id === formalismId);
+	}
+
+	function toolGroupsForFormalism(formalismId = selectedFormalismId()) {
+		return formalismSpecificToolGroups[formalismId] ?? [];
+	}
+
+	function syntaxNameForFormalism(formalismId, formalisms = []) {
+		return (
+			selectedFormalismEntry(formalisms, formalismId)?.syntax_name ??
+			(`${formalismId ?? ''}`.startsWith('FA ') ? 'FSM' : 'Reference Net')
+		);
+	}
+
+	function shouldUpdateSyntaxForFormalism(docValue) {
+		const currentSyntaxName = docValue?.syntax?.name;
+		return (
+			!currentSyntaxName || currentSyntaxName === 'Reference Net' || currentSyntaxName === 'FSM'
+		);
+	}
+
+	function updateDocumentSyntaxForFormalism(
+		formalismId,
+		formalisms,
+		syntaxesPromise,
+		dispatch,
+		docValue
+	) {
+		if (!dispatch || !shouldUpdateSyntaxForFormalism(docValue)) {
+			return;
+		}
+
+		const syntaxName = syntaxNameForFormalism(formalismId, formalisms);
+
+		Promise.resolve(syntaxesPromise)
+			.then((syntaxes) => {
+				const syntax = syntaxes?.items?.find((candidate) => candidate?.name === syntaxName);
+				if (syntax?.id && syntax.id !== docValue?.syntax?.id) {
+					return dispatch('set_meta', { syntax_id: syntax.id });
+				}
+
+				return undefined;
+			})
+			.catch((error) => queueError(error, 'Syntax could not be changed for formalism'));
+	}
+
+	function formalismAllowsToolGroup(groupName, formalismId = selectedFormalismId()) {
+		if (groupName === 'FA' || groupName === 'FA Tools') {
+			return toolGroupsForFormalism(formalismId).includes('FA Tools');
+		}
+
+		return true;
+	}
+
+	function handleFormalismChange(
+		formalismId,
+		cast = undefined,
+		dispatch = undefined,
+		syntaxesPromise = undefined,
+		docValue = undefined,
+		formalisms = []
+	) {
+		currentFormalism.value = formalismId || defaultFormalismId;
+		updateDocumentSyntaxForFormalism(
+			currentFormalism.value,
+			formalisms,
+			syntaxesPromise,
+			dispatch,
+			docValue
+		);
+
+		if (formalismAllowsToolGroup('FA Tools', currentFormalism.value)) {
+			setCreateToolGroupCollapsed('FA Tools', false);
+		} else if (renewFaToolNames.includes(activeCreateTool.value?.item?.name)) {
+			selectEditorTool('select', cast);
+		}
+	}
+
+	function renewToolPaletteGroups(groups) {
+		const usedIds = new Set();
+		const toolById = editorToolsById();
+		const toolByName = primitiveToolsByName(groups);
+		const standardTools = [
+			...takeEditorTools(toolById, ['select'], usedIds),
+			...takeNamedTools(toolByName, renewStandardToolNames, usedIds),
+			...takeNamedTools(toolByName, renewTextToolNames, usedIds),
+			...takeEditorTools(toolById, ['pen', 'polygon', 'spline', 'spacer'], usedIds)
+		];
+		const petriNetTools = takeNamedTools(toolByName, renewPetriNetToolNames, usedIds);
+		const zoomTools = takeEditorTools(
+			toolById,
+			['magnifier', 'zoomer', 'paner', 'rotator'],
+			usedIds
+		);
+		const visibleGroups = [
+			{ name: 'Standard Tools', items: standardTools },
+			{ name: 'Petri Net Tools', items: petriNetTools },
+			{ name: 'Zoom Tools', items: zoomTools }
+		].filter((group) => group.items.length);
+
+		if (formalismAllowsToolGroup('FA Tools')) {
+			const faTools = takeNamedTools(toolByName, renewFaToolNames, usedIds);
+			if (faTools.length) {
+				visibleGroups.push({ name: 'FA Tools', items: faTools });
+			}
+		}
+
+		for (const group of [...editorToolGroupDefinitions, ...(groups ?? [])]) {
+			if (!formalismAllowsToolGroup(group?.name)) {
+				continue;
+			}
+
+			const remaining = [];
+			for (const item of group?.items ?? []) {
+				appendToolbarEntry(remaining, item, usedIds);
+			}
+			if (remaining.length) {
+				visibleGroups.push({ name: group.name, items: remaining });
+			}
+		}
+
+		return visibleGroups;
+	}
+
 	function createToolGroups(groups) {
 		const order = normalizeCreateToolbarOrder(createToolbarOrder.value);
-		const groupList = [...(groups ?? [])].map((group) => ({
+		const groupList = renewToolPaletteGroups(groups).map((group) => ({
 			...group,
 			entries: orderedByPreference(
 				group?.items ?? [],
@@ -5013,11 +6689,23 @@
 		return entry?.kind === 'edge-tool';
 	}
 
+	function isEditorToolEntry(entry) {
+		return entry?.kind === 'editor-tool';
+	}
+
 	function edgeToolId(entry) {
 		return `edge:${entry?.name ?? ''}`;
 	}
 
+	function editorToolId(entry) {
+		return `editor:${entry?.id ?? entry?.name ?? ''}`;
+	}
+
 	function createToolEntryId(entry) {
+		if (isEditorToolEntry(entry)) {
+			return editorToolId(entry);
+		}
+
 		return isEdgeCreateToolEntry(entry) ? edgeToolId(entry) : primitiveToolId(entry);
 	}
 
@@ -5082,6 +6770,69 @@
 
 		const { id, ...payload } = activeEdgeTool.value;
 		return payload;
+	}
+
+	function normalizeEdgeSmoothness(value) {
+		if (value === 'bspline') {
+			return 'autobezier';
+		}
+
+		return value;
+	}
+
+	function activeEdgeStylePayload() {
+		const style = {};
+		const smoothness = normalizeEdgeSmoothness(activeEdgeValue('smoothness'));
+
+		if (smoothness) {
+			style.smoothness = smoothness;
+		}
+
+		return style;
+	}
+
+	function activeEdgeCreatesLoop() {
+		return activeEdgeValue('loop', false) === true;
+	}
+
+	function edgeLoopWaypoints(docValue, layerId, loopPosition = undefined, loopClick = true) {
+		const layer = layerMap(docValue).get(layerId);
+		const box = layer?.box;
+
+		if (!box) {
+			return [];
+		}
+
+		const x = Number(box.position_x ?? 0);
+		const y = Number(box.position_y ?? 0);
+		const width = Number(box.width ?? 0);
+		const height = Number(box.height ?? 0);
+		const centerX = x + width / 2;
+		const centerY = y + height / 2;
+		const defaultMid = {
+			x: centerX,
+			y: y - 20
+		};
+		const mid = loopPosition && !loopClick ? loopPosition : defaultMid;
+		const dx = mid.x - centerX;
+		const dy = mid.y - centerY;
+		const distance = Math.hypot(dx, dy);
+
+		if (distance < 8) {
+			return [
+				{ x: centerX - 20, y: defaultMid.y },
+				{ x: centerX + 20, y: defaultMid.y }
+			];
+		}
+
+		const normalX = dy / distance;
+		const normalY = -dx / distance;
+		const spread = loopClick ? 20 : Math.max(20, Math.min(80, distance * 0.35));
+
+		return [
+			{ x: mid.x + normalX * spread, y: mid.y + normalY * spread },
+			{ x: mid.x - normalX * spread, y: mid.y - normalY * spread }
+		];
 	}
 
 	function clearSelectionForNonSelectTool(toolId, cast) {
@@ -5372,8 +7123,14 @@
 		return (
 			content?.shape_id === CIRCLE_SHAPE_ID ||
 			tag.endsWith('.PlaceFigure') ||
-			tag.endsWith('.VirtualPlaceFigure')
+			tag.endsWith('.VirtualPlaceFigure') ||
+			tag.endsWith('.FAStateFigure')
 		);
+	}
+
+	function primitivePreviewUsesSymbol(content) {
+		const tag = content?.semantic_tag ?? '';
+		return tag.endsWith('.FAStateFigure');
 	}
 
 	function primitivePreviewIsTriangle(content) {
@@ -5974,10 +7731,16 @@
 
 	function handleDroppedFile(file, pos, dispatch, cast) {
 		if (file?.type?.startsWith('image/') && file.type !== 'image/svg+xml') {
-			createImageLayerFromFile(file, pos, undefined, dispatch, cast, L.get('id', singleSelectedLayer.value))
-				.catch((e) => {
-					queueError(e, 'Image could not be inserted');
-				});
+			createImageLayerFromFile(
+				file,
+				pos,
+				undefined,
+				dispatch,
+				cast,
+				L.get('id', singleSelectedLayer.value)
+			).catch((e) => {
+				queueError(e, 'Image could not be inserted');
+			});
 			return;
 		}
 
@@ -6716,13 +8479,11 @@
 				showMinimap.value = false;
 				commandConsoleOutput.value = 'Minimap hidden.';
 			} else if (command === 'show toolbars') {
-				showHorizontalToolbar.value = true;
 				showCreateToolbar.value = true;
-				commandConsoleOutput.value = 'Toolbars shown.';
+				commandConsoleOutput.value = 'Tool palette shown.';
 			} else if (command === 'hide toolbars') {
-				showHorizontalToolbar.value = false;
 				showCreateToolbar.value = false;
-				commandConsoleOutput.value = 'Toolbars hidden.';
+				commandConsoleOutput.value = 'Tool palette hidden.';
 			} else if (command === 'navigator') {
 				openNavigatorPane();
 				commandConsoleOutput.value = 'Navigator panels opened.';
@@ -6752,7 +8513,9 @@
 			}
 		} catch (error) {
 			const described = describeError(error);
-			commandConsoleOutput.value = [described.message, described.detail].filter(Boolean).join('\n\n');
+			commandConsoleOutput.value = [described.message, described.detail]
+				.filter(Boolean)
+				.join('\n\n');
 			queueError(error, 'Command could not be executed');
 		}
 	}
@@ -6801,6 +8564,17 @@
 	}
 
 	const currentFormalism = atom();
+	data.formalisms
+		.then((formalisms) => {
+			if (!currentFormalism.value) {
+				currentFormalism.value = selectedFormalismId(formalisms);
+			}
+		})
+		.catch(() => {
+			if (!currentFormalism.value) {
+				currentFormalism.value = defaultFormalismId;
+			}
+		});
 </script>
 
 <svelte:document
@@ -7432,6 +9206,7 @@
 													class:active={tab.id === data.document.id}
 													href={tab.href}
 													data-sveltekit-preload-data="off"
+													data-sveltekit-preload-code="eager"
 													title={tab.name}>{tab.name}</a
 												>
 											</li>
@@ -8120,8 +9895,8 @@
 														'Font size',
 														(layer) => !!layer?.text
 													);
-											}}>Font Size...</MenuBarButton
-										>
+												}}>Font Size...</MenuBarButton
+											>
 										</li>
 										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 										{#each [{ label: 'Bold', attr: 'bold' }, { label: 'Italic', attr: 'italic' }, { label: 'Underline', attr: 'underline' }] as { label, attr }}
@@ -8638,14 +10413,8 @@
 									<ul class="menu-bar-menu submenu-menu">
 										<li class="menu-bar-menu-item">
 											<label>
-												<input type="checkbox" bind:checked={showHorizontalToolbar.value} />
-												Horizontal Tools</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
 												<input type="checkbox" bind:checked={showCreateToolbar.value} />
-												Create Tools</label
+												Tool Palette</label
 											>
 										</li>
 										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
@@ -8704,7 +10473,7 @@
 										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 										<li class="menu-bar-menu-item submenu">
 											<button type="button" class="menu-bar-item-button submenu-trigger">
-												<span>Hidden Create Tools</span>
+												<span>Hidden Tools</span>
 												<span class="submenu-arrow">&gt;</span>
 											</button>
 											<ul class="menu-bar-menu submenu-menu">
@@ -8732,7 +10501,7 @@
 												onclick={(evt) => {
 													evt.preventDefault();
 													showAllCreateTools();
-												}}>Show All Create Tools</MenuBarButton
+												}}>Show All Tools</MenuBarButton
 											>
 										</li>
 									</ul>
@@ -8764,21 +10533,29 @@
 							</ul>
 						</li>
 						<li class="menu-bar-item" tabindex="-1">
-							Simulate
+							Simulation
 							<ul class={{ 'menu-bar-menu': true, open: startingSimulation }}>
 								{#await data.formalisms then formalisms}
 									<li class="menu-bar-menu-item">
 										<label class="pretty-select" style="width: 100%; max-width: none">
 											<span class="pretty-select-label">Formalism</span>
-											<span class="pretty-select-value"
-												>{L.get(
-													[L.find(R.propEq(currentFormalism.value, 'id')), 'label'],
-													formalisms
-												)}</span
+											<span class="pretty-select-value">{selectedFormalismLabel(formalisms)}</span>
+											<select
+												class="pretty-select-control"
+												onchange={(evt) =>
+													handleFormalismChange(
+														evt.currentTarget.value,
+														cast,
+														dispatch,
+														data.syntaxes,
+														doc.value,
+														formalisms
+													)}
 											>
-											<select class="pretty-select-control" bind:value={currentFormalism.value}>
 												{#each formalisms as { id, label } (id)}
-													<option value={id}>{label}</option>
+													<option value={id} selected={id === selectedFormalismId(formalisms)}>
+														{label}
+													</option>
 												{/each}
 											</select>
 										</label>
@@ -8931,7 +10708,8 @@
 													onclick={(evt) => {
 														evt.preventDefault();
 														lookAndFeel.value = setLookAndFeel(option.id);
-													}}>
+													}}
+												>
 													{lookAndFeel.value === option.id ? '* ' : ''}{option.label}
 												</MenuBarButton>
 											</li>
@@ -8968,6 +10746,7 @@
 											class={{ 'menu-bar-item-button': true, active: tab.id === data.document.id }}
 											href={tab.href}
 											data-sveltekit-preload-data="off"
+											data-sveltekit-preload-code="eager"
 											title={tab.name}
 										>
 											<span>{tab.id === data.document.id ? '* ' : ''}{tab.name}</span>
@@ -8988,14 +10767,8 @@
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<label>
-										<input type="checkbox" bind:checked={showHorizontalToolbar.value} />
-										Horizontal Tools</label
-									>
-								</li>
-								<li class="menu-bar-menu-item">
-									<label>
 										<input type="checkbox" bind:checked={showCreateToolbar.value} />
-										Create Tools</label
+										Tool Palette</label
 									>
 								</li>
 								<li class="menu-bar-menu-item">
@@ -9009,7 +10782,6 @@
 									<MenuBarButton
 										onclick={(evt) => {
 											evt.preventDefault();
-											showHorizontalToolbar.value = true;
 											showCreateToolbar.value = true;
 											showHierarchy.value = true;
 										}}>Show All Panels</MenuBarButton
@@ -9065,6 +10837,7 @@
 							class={{ 'document-tab': true, active: tab.id === data.document.id }}
 							href={tab.href}
 							data-sveltekit-preload-data="off"
+							data-sveltekit-preload-code="eager"
 							title={tab.name}
 						>
 							<span class="document-tab-label">{tab.name}</span>
@@ -9220,12 +10993,8 @@
 										<g transform={rotationTransform.value}>
 											<g id="full-document-{data.document.id}">
 												{#each layersInOrder.value as { index, id, depth, hidden } (id)}
-													{@const el = view(
-														['layers', 'items', L.find((el) => el.id == id)],
-														doc
-													)}
+													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 													{#if layerVisibleInDrawing(el.value, hidden)}
-
 														{#if el.value?.box}
 															<g
 																role="button"
@@ -9301,6 +11070,9 @@
 																	cancelLinkedPrimitiveCreation(evt);
 																}}
 																onclick={(evt) => {
+																	if (consumeSuppressedEdgeWaypointClick(evt, el.value?.id)) {
+																		return;
+																	}
 																	if (
 																		createLinkedPrimitiveOnLayer(
 																			evt,
@@ -9457,6 +11229,7 @@
 																groupDragDelta.value
 															)}
 															{@const basePreviewWaypoints =
+																committedEdgeWaypointPreviews.value.get(el.value?.id) ??
 																L.get(localProp('waypoints'), previewEdge) ??
 																previewEdge?.waypoints ??
 																[]}
@@ -9493,21 +11266,21 @@
 																ondblclick={(evt) => inspectLayer(evt, el.value)}
 																onpointerdown={(evt) => {
 																	if (
-																		beginLinkedPrimitiveCreation(
-																			evt,
-																			liveLenses,
-																			doc.value,
-																			el.value
-																		)
-																	) {
-																		return;
-																	}
-																	if (
 																		beginUnselectedEdgeWaypointDrag(
 																			evt,
 																			el.value,
 																			previewEdge,
 																			liveLenses
+																		)
+																	) {
+																		return;
+																	}
+																	if (
+																		beginLinkedPrimitiveCreation(
+																			evt,
+																			liveLenses,
+																			doc.value,
+																			el.value
 																		)
 																	) {
 																		return;
@@ -9536,7 +11309,7 @@
 																	updateLinkedPrimitiveCreation(evt, liveLenses);
 																}}
 																onpointerup={(evt) => {
-																	if (finishUnselectedEdgeWaypointDrag(evt, cast)) {
+																	if (finishUnselectedEdgeWaypointDrag(evt, cast, doc)) {
 																		return;
 																	}
 																	if (groupDrag.value?.pointerId === evt.pointerId) {
@@ -9556,6 +11329,9 @@
 																	cancelLinkedPrimitiveCreation(evt);
 																}}
 																onclick={(evt) => {
+																	if (consumeSuppressedEdgeWaypointClick(evt, el.value?.id)) {
+																		return;
+																	}
 																	if (
 																		createLinkedPrimitiveOnLayer(
 																			evt,
@@ -9615,7 +11391,7 @@
 																	fill={previewEdge?.cyclic
 																		? (el.value?.style?.background_color ?? 'none')
 																		: 'none'}
-																	stroke="none"
+																	stroke="transparent"
 																	stroke-width={(previewEdge?.style?.stroke_width ?? 1) * 1 +
 																		10 * cameraScale.value}
 																/>
@@ -10324,7 +12100,20 @@
 											{@const previewStyle = primitivePreviewStyle(primitiveContent)}
 											{@const roundRadius = primitivePreviewRoundRadius(primitiveContent)}
 											<g transform={rotationTransform.value}>
-												{#if primitivePreviewIsLine(primitiveContent)}
+												{#if primitivePreviewUsesSymbol(primitiveContent)}
+													<g
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+													>
+														<Symbol
+															symbols={data.symbols}
+															symbolId={primitiveContent.shape_id}
+															box={creationBox}
+															shapeAttributes={primitiveContent.shape_attributes}
+														/>
+													</g>
+												{:else if primitivePreviewIsLine(primitiveContent)}
 													<path
 														class="primitive-creation-preview-shape"
 														style:stroke={previewStyle.border}
@@ -10394,7 +12183,20 @@
 											}}
 											{@const roundRadius = primitivePreviewRoundRadius(primitiveContent)}
 											<g transform={rotationTransform.value}>
-												{#if primitivePreviewIsLine(primitiveContent)}
+												{#if primitivePreviewUsesSymbol(primitiveContent)}
+													<g
+														class="primitive-creation-preview-shape"
+														style:fill={previewStyle.background}
+														style:stroke={previewStyle.border}
+													>
+														<Symbol
+															symbols={data.symbols}
+															symbolId={primitiveContent.shape_id}
+															box={creationBox}
+															shapeAttributes={primitiveContent.shape_attributes}
+														/>
+													</g>
+												{:else if primitivePreviewIsLine(primitiveContent)}
 													<path
 														class="primitive-creation-preview-shape"
 														style:stroke={previewStyle.border}
@@ -10590,38 +12392,13 @@
 												{/each}
 											</g>
 										{/if}
-										{#if activeTool.value === 'select' || activeTool.value === 'edge'}
+										{#if activeTool.value === 'select'}
 											<g transform={rotationTransform.value}>
 												<!-- svelte-ignore a11y_no_static_element_interactions -->
-												{#each selectedLayers.value as id (id)}
+												{#each edgeHandleLayerIds(selectedLayers.value) as id (id)}
 													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
 													{@const waypoints = view(['edge', localProp('waypoints')], el)}
-													{@const persistentWaypoints = view(L.filter(R.prop('id')), waypoints)}
-
-													{@const waypointProposals = view(
-														[
-															'edge',
-															L.choose((e) => {
-																return [
-																	localProp('waypoints'),
-																	L.reread(
-																		R.pipe(
-																			R.prepend({ x: e.source_x, y: e.source_y, id: '__source' }),
-																			R.append({ x: e.target_x, y: e.target_y, id: '__target' }),
-																			R.aperture(2),
-																			R.map(([a, b]) => ({
-																				id_before: a.id,
-																				x: b.id ? (a.x + b.x) / 2 : b.x,
-																				y: b.id ? (a.y + b.y) / 2 : b.y
-																			})),
-																			R.filter(R.prop('id_before'))
-																		)
-																	)
-																];
-															})
-														],
-														el
-													)}
+													{@const persistentWaypoints = view(L.filter(waypointHandleVisible), waypoints)}
 													{#if el.value?.edge}
 														{@const selectedPreviewEdge = renderedEdgePreview(
 															el.value,
@@ -10634,85 +12411,201 @@
 															L.get(localProp('waypoints'), selectedPreviewEdge) ??
 															selectedPreviewEdge?.waypoints ??
 															[]}
-														<path
-															d={edgePath[selectedPreviewEdge?.style?.smoothness ?? 'linear'](
-																selectedPreviewEdge,
-																selectedPreviewWaypoints
-															)}
-															transform={edgePreviewTransform(
-																id,
-																layersInOrder.value,
-																el.value.edge,
-																selectedPreviewEdge
-															)}
-															tabindex="-1"
-															onkeydown={(evt) => {
-																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	cancelLayerMove(evt);
-																}
-															}}
-															stroke={'transparent'}
-															fill={selectedPreviewEdge?.cyclic
-																? (el.value?.style?.background_color ?? 'none')
-																: 'none'}
-															fill-opacity="0"
-															stroke-width={(selectedPreviewEdge?.style?.stroke_width ?? 1) * 1 +
-																10 * cameraScale.value}
-															stroke-linejoin={selectedPreviewEdge?.style?.stroke_join ?? 'miter'}
-															stroke-linecap={selectedPreviewEdge?.style?.stroke_cap ?? 'butt'}
-															style:pointer-events="painted"
-															cursor="default"
-															onpointerdown={(evt) =>
-																beginLayerMove(
-																	evt,
-																	liveLenses,
-																	el.value.id,
-																	layersInOrder.value,
-																	doc.value
+														{@const selectedPreviewWaypointProposals =
+															edgeWaypointProposals(selectedPreviewEdge)}
+														{#if activeTool.value === 'select'}
+															<path
+																d={edgePath[selectedPreviewEdge?.style?.smoothness ?? 'linear'](
+																	selectedPreviewEdge,
+																	selectedPreviewWaypoints
 																)}
-															onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
-															onpointermove={(evt) =>
-																updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
-															onpointerup={(evt) =>
-																finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
-															onpointercancel={cancelLayerMove}
-															onlostpointercapture={cancelLayerMove}
-														/>
-														{#each waypointProposals.value as wp_proposal, wi (wp_proposal.id_before)}
+																transform={edgePreviewTransform(
+																	id,
+																	layersInOrder.value,
+																	el.value.edge,
+																	selectedPreviewEdge
+																)}
+																tabindex="-1"
+																onkeydown={(evt) => {
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		cancelLayerMove(evt);
+																	}
+																}}
+																stroke={'transparent'}
+																fill={selectedPreviewEdge?.cyclic
+																	? (el.value?.style?.background_color ?? 'none')
+																	: 'none'}
+																fill-opacity="0"
+																stroke-width={(selectedPreviewEdge?.style?.stroke_width ?? 1) * 1 +
+																	10 * cameraScale.value}
+																stroke-linejoin={selectedPreviewEdge?.style?.stroke_join ?? 'miter'}
+																stroke-linecap={selectedPreviewEdge?.style?.stroke_cap ?? 'butt'}
+																style:pointer-events="painted"
+																cursor="default"
+																onpointerdown={(evt) =>
+																	beginLayerMove(
+																		evt,
+																		liveLenses,
+																		el.value.id,
+																		layersInOrder.value,
+																		doc.value
+																	)}
+																onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
+																onpointermove={(evt) =>
+																	updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
+																onpointerup={(evt) =>
+																	finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
+																onpointercancel={cancelLayerMove}
+																onlostpointercapture={cancelLayerMove}
+															/>
+														{/if}
+														{#if activeTool.value === 'select' && isPolygonLayer(el.value)}
+															{@const polygonHandlePos = polygonScaleHandlePosition(
+																selectedPreviewEdge,
+																8 * cameraScale.value
+															)}
+															{#if polygonHandlePos}
+																{@const polygonHandleDisplayPos = polygonScaleHandleDisplayPosition(
+																	id,
+																	polygonHandlePos
+																)}
+																<g
+																	transform={edgePreviewTransform(
+																		id,
+																		layersInOrder.value,
+																		el.value.edge,
+																		selectedPreviewEdge
+																	)}
+																	role="button"
+																	tabindex="-1"
+																	onpointerdown={(evt) =>
+																		beginPolygonScaleHandle(
+																			evt,
+																			liveLenses,
+																			el.value,
+																			selectedPreviewEdge,
+																			polygonHandlePos,
+																			layersInOrder.value,
+																			doc.value
+																		)}
+																	onpointermove={(evt) => {
+																		if (
+																			updateSelectionMoveFromHandle(
+																				evt,
+																				liveLenses,
+																				doc,
+																				layersInOrder.value
+																			)
+																		) {
+																			return;
+																		}
+																		updatePolygonScaleHandle(evt, liveLenses);
+																	}}
+																	onpointerup={(evt) => {
+																		if (
+																			finishSelectionMoveFromHandle(
+																				evt,
+																				dispatch,
+																				doc,
+																				layersInOrder.value
+																			)
+																		) {
+																			return;
+																		}
+																		finishPolygonScaleHandle(evt, dispatch, liveLenses);
+																	}}
+																	onpointercancel={(evt) => cancelPolygonScaleHandle(evt)}
+																	onlostpointercapture={(evt) => cancelPolygonScaleHandle(evt)}
+																	onclick={(evt) => {
+																		evt.stopPropagation();
+																	}}
+																	onkeydown={(evt) => {
+																		if (cancelSelectionMoveFromHandle(evt)) {
+																			return;
+																		}
+
+																		if (evt.key === 'Escape' || evt.key === 'Esc') {
+																			evt.stopPropagation();
+																			cancelPolygonScaleHandle(evt);
+																		}
+																	}}
+																>
+																	<circle
+																		fill="none"
+																		stroke="none"
+																		pointer-events="all"
+																		cursor="default"
+																		r={4 * cameraScale.value}
+																		cx={polygonHandleDisplayPos.x}
+																		cy={polygonHandleDisplayPos.y}
+																	/>
+																	<circle
+																		fill="#ffeb3b"
+																		stroke="#111"
+																		stroke-width="1.5"
+																		vector-effect="non-scaling-stroke"
+																		pointer-events="none"
+																		r={4 * cameraScale.value}
+																		cx={polygonHandleDisplayPos.x}
+																		cy={polygonHandleDisplayPos.y}
+																	/>
+																</g>
+															{/if}
+														{/if}
+														{#each selectedPreviewWaypointProposals as wp_proposal, wi (wp_proposal.id_before)}
+															{@const draftWaypointId = localWaypointIdForProposal(wp_proposal)}
 															{@const pos = view(
 																[
 																	L.lens(
 																		(list) => {
+																			const sourceList = Array.isArray(list) ? list : [];
 																			const i =
-																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) +
+																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), sourceList) +
 																				1;
-																			if (list[i] && !list[i].id) {
-																				return list[i];
+																			if (
+																				sourceList[i] &&
+																				(!sourceList[i].id || sourceList[i].id === draftWaypointId)
+																			) {
+																				return sourceList[i];
 																			} else {
 																				return undefined;
 																			}
 																		},
 																		(n, list) => {
+																			const sourceList = Array.isArray(list) ? list : [];
 																			const i =
-																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), list) +
+																				R.findIndex(R.propEq(wp_proposal.id_before, 'id'), sourceList) +
 																				1;
-																			if (list[i] && !list[i].id) {
+																			const draftAtIndex =
+																				sourceList[i] &&
+																				(!sourceList[i].id ||
+																					sourceList[i].id === draftWaypointId);
+																			if (draftAtIndex) {
 																				if (n === undefined || R.equals(wp_proposal, n)) {
-																					return [...list.slice(0, i), ...list.slice(i + 1)];
+																					return [
+																						...sourceList.slice(0, i),
+																						...sourceList.slice(i + 1)
+																					];
 																				} else {
-																					return [...list.slice(0, i), n, ...list.slice(i + 1)];
+																					return [
+																						...sourceList.slice(0, i),
+																						{ ...n, id: draftWaypointId },
+																						...sourceList.slice(i + 1)
+																					];
 																				}
 																			} else {
 																				if (n === undefined) {
-																					return list;
+																					return sourceList;
 																				} else {
-																					return [...list.slice(0, i), n, ...list.slice(i)];
+																					return [
+																						...sourceList.slice(0, i),
+																						{ ...n, id: draftWaypointId },
+																						...sourceList.slice(i)
+																					];
 																				}
 																			}
 																		}
-																	),
-																	L.removable('x', 'y'),
-																	L.props('x', 'y')
+																	)
 																],
 																waypoints
 															)}
@@ -10746,18 +12639,6 @@
 																role="button"
 																tabindex="-1"
 																onpointerdown={(evt) => {
-																	if (
-																		beginSelectionMoveFromHandle(
-																			evt,
-																			liveLenses,
-																			el.value.id,
-																			layersInOrder.value,
-																			doc.value
-																		)
-																	) {
-																		return;
-																	}
-
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		evt.currentTarget.focus({
@@ -10772,58 +12653,60 @@
 																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																		);
 
-																		pos.value = Geo.translate(
-																			pointerOffset.value,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
+																		pos.value = {
+																			...Geo.translate(
+																				pointerOffset.value,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			),
+																			id: draftWaypointId
+																		};
 																	}
 																}}
 																onpointermove={(evt) => {
 																	if (
-																		updateSelectionMoveFromHandle(
-																			evt,
-																			liveLenses,
-																			doc,
-																			layersInOrder.value
-																		)
-																	) {
-																		return;
-																	}
-
-																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
 																	) {
-																		pos.value = Geo.translate(
-																			pointerOffset.value,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
+																		pos.value = {
+																			...Geo.translate(
+																				pointerOffset.value,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			),
+																			id: draftWaypointId
+																		};
 																	}
 																}}
 																onpointerup={(evt) => {
 																	if (
-																		finishSelectionMoveFromHandle(
-																			evt,
-																			dispatch,
-																			doc,
-																			layersInOrder.value
-																		)
-																	) {
-																		return;
-																	}
-
-																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
 																	) {
-																		cast('create_waypoint', {
+																		const finalPosition = waypointPositionPayload(pos.value);
+																		const committedWaypoints = pendingWaypointPreview(
+																			selectedPreviewWaypoints,
+																			{
+																				layerId: el.value.id,
+																				afterWaypointId: waypointServerId(wp_proposal.id_before),
+																				current: finalPosition,
+																				moved: true
+																			},
+																			el.value.id
+																		);
+																		const action = cast('create_waypoint', {
 																			layer_id: el.value.id,
-																			after_waypoint_id:
-																				wp_proposal.id_before.substr(0, 2) == '__'
-																					? null
-																					: wp_proposal.id_before,
-																			position: pos.value
+																			after_waypoint_id: waypointServerId(wp_proposal.id_before),
+																			position: finalPosition
 																		});
+																		holdCommittedEdgeWaypointPreview(
+																			el.value.id,
+																			selectedPreviewEdge,
+																			committedWaypoints,
+																			action,
+																			doc
+																		);
+																		evt.currentTarget.releasePointerCapture(evt.pointerId);
+																		evt.currentTarget.blur();
+																		backoffValue.value = undefined;
 																	}
 																}}
 															>
@@ -10848,9 +12731,11 @@
 																	cy={wp_proposal.y}
 																/>
 																<path
-																	d="M {wp_proposal.x - 3 * cameraScale.value} {wp_proposal.y} H {wp_proposal.x +
+																	d="M {wp_proposal.x -
+																		3 * cameraScale.value} {wp_proposal.y} H {wp_proposal.x +
 																		3 * cameraScale.value} M {wp_proposal.x} {wp_proposal.y -
-																		3 * cameraScale.value} V {wp_proposal.y + 3 * cameraScale.value}"
+																		3 * cameraScale.value} V {wp_proposal.y +
+																		3 * cameraScale.value}"
 																	stroke="#7af"
 																	stroke-width="1.5"
 																	vector-effect="non-scaling-stroke"
@@ -10894,18 +12779,6 @@
 																	}
 																}}
 																onpointerdown={(evt) => {
-																	if (
-																		beginSelectionMoveFromHandle(
-																			evt,
-																			liveLenses,
-																			el.value.id,
-																			layersInOrder.value,
-																			doc.value
-																		)
-																	) {
-																		return;
-																	}
-
 																	if (evt.isPrimary && E.isLeftButton(evt)) {
 																		evt.preventDefault();
 																		evt.currentTarget.focus({
@@ -10913,26 +12786,16 @@
 																		});
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		evt.currentTarget.currentPointerId = evt.pointerId;
-																		backoffValue.value = pos.value;
 																		waypoints.value = localProp.reset;
+																		pos.value = previewWp;
+																		backoffValue.value = previewWp;
 																		pointerOffset.value = Geo.diff2d(
-																			wp,
+																			previewWp,
 																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																		);
 																	}
 																}}
 																onpointermove={(evt) => {
-																	if (
-																		updateSelectionMoveFromHandle(
-																			evt,
-																			liveLenses,
-																			doc,
-																			layersInOrder.value
-																		)
-																	) {
-																		return;
-																	}
-
 																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -10944,17 +12807,6 @@
 																	}
 																}}
 																onpointerup={(evt) => {
-																	if (
-																		finishSelectionMoveFromHandle(
-																			evt,
-																			dispatch,
-																			doc,
-																			layersInOrder.value
-																		)
-																	) {
-																		return;
-																	}
-
 																	if (
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
@@ -10968,13 +12820,28 @@
 																			backoffValue.value.y != newPos.y
 																		) {
 																			evt.preventDefault();
-																			cast('update_waypoint_position', {
+																			const committedWaypoints = selectedPreviewWaypoints.map(
+																				(waypoint) =>
+																					waypoint?.id === wp.id
+																						? { ...waypoint, x: newPos.x, y: newPos.y }
+																						: waypoint
+																			);
+																			const action = cast('update_waypoint_position', {
 																				layer_id: el.value.id,
 																				waypoint_id: wp.id,
 																				value: newPos
 																			});
+																			holdCommittedEdgeWaypointPreview(
+																				el.value.id,
+																				selectedPreviewEdge,
+																				committedWaypoints,
+																				action,
+																				doc
+																			);
 																			evt.currentTarget.blur();
 																		}
+																		evt.currentTarget.releasePointerCapture(evt.pointerId);
+																		backoffValue.value = undefined;
 																	}
 																}}
 																onkeydown={(evt) => {
@@ -11005,15 +12872,16 @@
 																	cy={previewWp.y}
 																	pointer-events="all"
 																/>
-																<circle
+																<rect
 																	fill="white"
 																	cursor="default"
 																	stroke="#7af"
 																	stroke-width="2"
 																	vector-effect="non-scaling-stroke"
-																	r={6 * cameraScale.value}
-																	cx={previewWp.x}
-																	cy={previewWp.y}
+																	x={previewWp.x - 5 * cameraScale.value}
+																	y={previewWp.y - 5 * cameraScale.value}
+																	width={10 * cameraScale.value}
+																	height={10 * cameraScale.value}
 																	pointer-events="none"
 																/></g
 															>
@@ -11049,99 +12917,74 @@
 																);
 															}}
 															onpointerdown={(evt) => {
-																if (
-																	beginSelectionMoveFromHandle(
-																		evt,
-																		liveLenses,
-																		el.value.id,
-																		layersInOrder.value,
-																		doc.value
-																	)
-																) {
-																	return;
-																}
-
-																if (evt.isPrimary && E.isLeftButton(evt)) {
-																	evt.preventDefault();
-																	evt.currentTarget.focus({
-																		preventScroll: true
-																	});
-																	evt.currentTarget.setPointerCapture(evt.pointerId);
-																	evt.currentTarget.currentPointerId = evt.pointerId;
-																	backoffValue.value = source_pos.value;
-																	pointerOffset.value = Geo.diff2d(
-																		source_pos.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-																}
+																beginEdgeEndpointHandle(
+																	evt,
+																	liveLenses,
+																	source_pos,
+																	el.value,
+																	'source'
+																);
 															}}
 															onpointermove={(evt) => {
-																if (
-																	updateSelectionMoveFromHandle(
-																		evt,
-																		liveLenses,
-																		doc,
-																		layersInOrder.value
-																	)
-																) {
-																	return;
-																}
-
 																if (
 																	evt.isPrimary &&
 																	evt.currentTarget.hasPointerCapture(evt.pointerId)
 																) {
-																	source_pos.value = Geo.translate(
-																		pointerOffset.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	const handle = evt.currentTarget;
+																	updateEdgeEndpointHandle(
+																		evt,
+																		liveLenses,
+																		source_pos,
+																		el.value,
+																		'source'
 																	);
+																	Promise.all([data.socket_schemas, currentSyntaxValue])
+																		.then(([socketSchemas, syntax]) => {
+																			if (!handle.hasPointerCapture(evt.pointerId)) {
+																				return;
+																			}
+																			updateEdgeEndpointHandle(
+																				evt,
+																				liveLenses,
+																				source_pos,
+																				el.value,
+																				'source',
+																				socketSchemas,
+																				syntax,
+																				doc.value,
+																				layersInOrder.value
+																			);
+																		})
+																		.catch(() => {});
 																}
 															}}
 															onpointerup={(evt) => {
 																if (
-																	finishSelectionMoveFromHandle(
-																		evt,
-																		dispatch,
-																		doc,
-																		layersInOrder.value
-																	)
-																) {
-																	return;
-																}
-
-																if (
 																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	evt.currentTarget.hasPointerCapture(evt.pointerId) &&
+																	prepareEdgeEndpointFinish(evt)
 																) {
-																	const newPos = Geo.translate(
-																		pointerOffset.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
 																	Promise.all([data.socket_schemas, currentSyntaxValue])
-																		.then(([socketSchemas, syntax]) =>
-																			reconnectOrMoveEdgeEndpoint({
-																				layer: el.value,
-																				endpoint: 'source',
-																				position: newPos,
+																		.then(([socketSchemas, syntax]) => {
+																			finishEdgeEndpointHandle(
+																				evt,
+																				liveLenses,
+																				source_pos,
+																				el.value,
+																				'source',
 																				socketSchemas,
 																				syntax,
+																				doc.value,
+																				layersInOrder.value,
+																				doc,
 																				dispatch,
-																				cast,
-																				docValue: doc.value,
-																				layersInOrderValue: layersInOrder.value
-																			})
-																		)
-																		.then((result) => {
-																			if (result?.source_x !== undefined) {
-																				source_pos.value = {
-																					x: result.source_x,
-																					y: result.source_y
-																				};
-																			}
+																				cast
+																			);
 																		})
-																		.catch((error) =>
-																			queueError(error, 'Edge endpoint could not be changed')
-																		);
+																		.catch((error) => {
+																			cancelEdgeEndpointHandle(evt, source_pos);
+																			queueError(error, 'Edge endpoint could not be changed');
+																		});
 																}
 															}}
 															onkeydown={(evt) => {
@@ -11150,16 +12993,11 @@
 																}
 
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	if (!backoffValue.value) {
-																		return;
-																	}
-																	evt.stopPropagation();
-																	evt.currentTarget.releasePointerCapture(
-																		evt.currentTarget.currentPointerId
-																	);
-																	source_pos.value = backoffValue.value;
+																	cancelEdgeEndpointHandle(evt, source_pos);
 																}
 															}}
+															onpointercancel={(evt) => cancelEdgeEndpointHandle(evt, source_pos)}
+															onlostpointercapture={(evt) => cancelEdgeEndpointHandle(evt, source_pos)}
 															role="button"
 															tabindex="-1"
 														>
@@ -11169,8 +13007,18 @@
 																stroke="none"
 																pointer-events="all"
 																r={7 * cameraScale.value}
-																cx={selectedPreviewEdge?.source_x}
-																cy={selectedPreviewEdge?.source_y}
+																cx={edgeEndpointHandlePoint(
+																	id,
+																	'source',
+																	source_pos.value,
+																	selectedPreviewEdge
+																)?.x}
+																cy={edgeEndpointHandlePoint(
+																	id,
+																	'source',
+																	source_pos.value,
+																	selectedPreviewEdge
+																)?.y}
 															/><rect
 																fill={isFreePointEdge(el.value) ? 'white' : '#35a66a'}
 																cursor="default"
@@ -11178,8 +13026,20 @@
 																stroke={isFreePointEdge(el.value) ? '#111' : '#1f7048'}
 																stroke-width="1.5"
 																vector-effect="non-scaling-stroke"
-																x={selectedPreviewEdge?.source_x - 4 * cameraScale.value}
-																y={selectedPreviewEdge?.source_y - 4 * cameraScale.value}
+																x={edgeEndpointHandlePoint(
+																	id,
+																	'source',
+																	source_pos.value,
+																	selectedPreviewEdge
+																)?.x -
+																	4 * cameraScale.value}
+																y={edgeEndpointHandlePoint(
+																	id,
+																	'source',
+																	source_pos.value,
+																	selectedPreviewEdge
+																)?.y -
+																	4 * cameraScale.value}
 																width={8 * cameraScale.value}
 																height={8 * cameraScale.value}
 															/></g
@@ -11206,99 +13066,74 @@
 																);
 															}}
 															onpointerdown={(evt) => {
-																if (
-																	beginSelectionMoveFromHandle(
-																		evt,
-																		liveLenses,
-																		el.value.id,
-																		layersInOrder.value,
-																		doc.value
-																	)
-																) {
-																	return;
-																}
-
-																if (evt.isPrimary && E.isLeftButton(evt)) {
-																	evt.preventDefault();
-																	evt.currentTarget.focus({
-																		preventScroll: true
-																	});
-																	evt.currentTarget.setPointerCapture(evt.pointerId);
-																	evt.currentTarget.currentPointerId = evt.pointerId;
-																	backoffValue.value = target_pos.value;
-																	pointerOffset.value = Geo.diff2d(
-																		target_pos.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-																}
+																beginEdgeEndpointHandle(
+																	evt,
+																	liveLenses,
+																	target_pos,
+																	el.value,
+																	'target'
+																);
 															}}
 															onpointermove={(evt) => {
-																if (
-																	updateSelectionMoveFromHandle(
-																		evt,
-																		liveLenses,
-																		doc,
-																		layersInOrder.value
-																	)
-																) {
-																	return;
-																}
-
 																if (
 																	evt.isPrimary &&
 																	evt.currentTarget.hasPointerCapture(evt.pointerId)
 																) {
-																	target_pos.value = Geo.translate(
-																		pointerOffset.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																	const handle = evt.currentTarget;
+																	updateEdgeEndpointHandle(
+																		evt,
+																		liveLenses,
+																		target_pos,
+																		el.value,
+																		'target'
 																	);
+																	Promise.all([data.socket_schemas, currentSyntaxValue])
+																		.then(([socketSchemas, syntax]) => {
+																			if (!handle.hasPointerCapture(evt.pointerId)) {
+																				return;
+																			}
+																			updateEdgeEndpointHandle(
+																				evt,
+																				liveLenses,
+																				target_pos,
+																				el.value,
+																				'target',
+																				socketSchemas,
+																				syntax,
+																				doc.value,
+																				layersInOrder.value
+																			);
+																		})
+																		.catch(() => {});
 																}
 															}}
 															onpointerup={(evt) => {
 																if (
-																	finishSelectionMoveFromHandle(
-																		evt,
-																		dispatch,
-																		doc,
-																		layersInOrder.value
-																	)
-																) {
-																	return;
-																}
-
-																if (
 																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	evt.currentTarget.hasPointerCapture(evt.pointerId) &&
+																	prepareEdgeEndpointFinish(evt)
 																) {
-																	const newPos = Geo.translate(
-																		pointerOffset.value,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
 																	Promise.all([data.socket_schemas, currentSyntaxValue])
-																		.then(([socketSchemas, syntax]) =>
-																			reconnectOrMoveEdgeEndpoint({
-																				layer: el.value,
-																				endpoint: 'target',
-																				position: newPos,
+																		.then(([socketSchemas, syntax]) => {
+																			finishEdgeEndpointHandle(
+																				evt,
+																				liveLenses,
+																				target_pos,
+																				el.value,
+																				'target',
 																				socketSchemas,
 																				syntax,
+																				doc.value,
+																				layersInOrder.value,
+																				doc,
 																				dispatch,
-																				cast,
-																				docValue: doc.value,
-																				layersInOrderValue: layersInOrder.value
-																			})
-																		)
-																		.then((result) => {
-																			if (result?.target_x !== undefined) {
-																				target_pos.value = {
-																					x: result.target_x,
-																					y: result.target_y
-																				};
-																			}
+																				cast
+																			);
 																		})
-																		.catch((error) =>
-																			queueError(error, 'Edge endpoint could not be changed')
-																		);
+																		.catch((error) => {
+																			cancelEdgeEndpointHandle(evt, target_pos);
+																			queueError(error, 'Edge endpoint could not be changed');
+																		});
 																}
 															}}
 															onkeydown={(evt) => {
@@ -11307,16 +13142,11 @@
 																}
 
 																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	if (!backoffValue.value) {
-																		return;
-																	}
-																	evt.stopPropagation();
-																	evt.currentTarget.releasePointerCapture(
-																		evt.currentTarget.currentPointerId
-																	);
-																	target_pos.value = backoffValue.value;
+																	cancelEdgeEndpointHandle(evt, target_pos);
 																}
 															}}
+															onpointercancel={(evt) => cancelEdgeEndpointHandle(evt, target_pos)}
+															onlostpointercapture={(evt) => cancelEdgeEndpointHandle(evt, target_pos)}
 															role="button"
 															tabindex="-1"
 														>
@@ -11326,8 +13156,18 @@
 																cursor="default"
 																pointer-events="all"
 																r={7 * cameraScale.value}
-																cx={selectedPreviewEdge?.target_x}
-																cy={selectedPreviewEdge?.target_y}
+																cx={edgeEndpointHandlePoint(
+																	id,
+																	'target',
+																	target_pos.value,
+																	selectedPreviewEdge
+																)?.x}
+																cy={edgeEndpointHandlePoint(
+																	id,
+																	'target',
+																	target_pos.value,
+																	selectedPreviewEdge
+																)?.y}
 															/><rect
 																fill={isFreePointEdge(el.value) ? 'white' : '#35a66a'}
 																stroke={isFreePointEdge(el.value) ? '#111' : '#1f7048'}
@@ -11335,8 +13175,20 @@
 																stroke-width="1.5"
 																pointer-events="none"
 																vector-effect="non-scaling-stroke"
-																x={selectedPreviewEdge?.target_x - 4 * cameraScale.value}
-																y={selectedPreviewEdge?.target_y - 4 * cameraScale.value}
+																x={edgeEndpointHandlePoint(
+																	id,
+																	'target',
+																	target_pos.value,
+																	selectedPreviewEdge
+																)?.x -
+																	4 * cameraScale.value}
+																y={edgeEndpointHandlePoint(
+																	id,
+																	'target',
+																	target_pos.value,
+																	selectedPreviewEdge
+																)?.y -
+																	4 * cameraScale.value}
 																width={8 * cameraScale.value}
 																height={8 * cameraScale.value}
 															/></g
@@ -12132,7 +13984,12 @@
 																		evt.currentTarget.releasePointerCapture(
 																			evt.currentTarget.currentPointerId
 																		);
-																		patchPieAngleLocally(doc, el.value.id, angleKind, drag.startAngle);
+																		patchPieAngleLocally(
+																			doc,
+																			el.value.id,
+																			angleKind,
+																			drag.startAngle
+																		);
 																		attributeHandleDrag.value = undefined;
 																	}
 																}}
@@ -12225,7 +14082,10 @@
 																			el.value.box,
 																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																		);
-																		const shapeId = symbolIdByName(symbols, TRIANGLE_SHAPES[rotation]);
+																		const shapeId = symbolIdByName(
+																			symbols,
+																			TRIANGLE_SHAPES[rotation]
+																		);
 																		if (!shapeId) {
 																			return;
 																		}
@@ -12330,6 +14190,7 @@
 																? selectedEdgeSourceLayerIds.value
 																: visibleEdgeSourceLayerIds.value}
 															selectionHandles={activeTool.value === 'select'}
+															loop={activeEdgeCreatesLoop()}
 															sockets={viewCombined(
 																[
 																	L.reread(({ inOrder, flatLayers, dragState, moveDelta }) =>
@@ -12434,6 +14295,7 @@
 															newEdge={(e, evt) => {
 																if (evt.shiftKey) {
 																	e = {
+																		...e,
 																		source: e.target,
 																		target: e.source
 																	};
@@ -12463,6 +14325,15 @@
 																				'target_tip_symbol_shape_id'
 																			)
 																		),
+																		style: activeEdgeStylePayload(),
+																		waypoints: activeEdgeCreatesLoop()
+																			? edgeLoopWaypoints(
+																					doc.value,
+																					e.source.layer,
+																					e.loopPosition,
+																					e.loopClick
+																				)
+																			: undefined,
 																		semantic_tag: activeEdgeValue(
 																			'semantic_tag',
 																			'de.renew.gui.ArcConnection'
@@ -12661,13 +14532,13 @@
 														base_layer_id: L.get('id', singleSelectedLayer.value),
 														points,
 														cyclic:
-												points.length > 2 &&
-												Math.hypot(
-													points[0].x - points[points.length - 1].x,
-													points[0].y - points[points.length - 1].y
-												) < 0.01,
-											style: {
-												smoothness: 'linear'
+															points.length > 2 &&
+															Math.hypot(
+																points[0].x - points[points.length - 1].x,
+																points[0].y - points[points.length - 1].y
+															) < 0.01,
+														style: {
+															smoothness: 'linear'
 														}
 													}).then((l) => {
 														publishSelection(cast, [l.id]);
@@ -12694,166 +14565,132 @@
 					</CanvasDropper>
 				</div>
 
-				<div
-					class={{ topbar: true, hidden: !showHorizontalToolbar.value }}
-					use:editorDropZone={{ dispatch, cast }}
-				>
+				<div class="topbar" use:editorDropZone={{ dispatch, cast }}>
 					<div class="toolbar dense">
-						<div class="toolbar-body">
-							{#each tools as tool (tool.id)}
-								<label
-									class={{ 'tool-selector': true, active: activeTool.value == tool.id }}
-									title={tool.name}
-									data-tooltip={tool.name}
-									oncontextmenu={(evt) => {
-										openToolOptions(evt, {
-											name: tool.name,
-											description: 'Horizontal editor tool',
-											activate: () => selectEditorTool(tool.id, cast),
-											reset: tool.reset
-												? () => tool.reset(cameraScroller.value, cameraFocus, extension.value)
-												: undefined
-										});
-									}}
-									ondblclick={(evt) => {
-										evt.preventDefault();
-										tool.reset?.(cameraScroller.value, cameraFocus, extension.value);
-									}}
-									>{tool.name}
-									<input
-										class="tool-radio"
-										type="radio"
-										value={tool.id}
-										bind:group={activeTool.value}
-										onchange={() => selectEditorTool(tool.id, cast)}
-									/></label
-								>
-							{/each}
-							{#if activeTool.value === 'pen'}
-								<hr class="tool-spacer" />
-								<div class="pretty-checkbox-group">
-									<span class="pretty-checkbox-group-head">Pen</span>
-									<div class="pretty-checkbox-group-body">
-										<label class="pretty-checkbox"
-											><input
-												class="pretty-checkbox-control"
-												type="radio"
-												value="linear"
-												bind:group={penSmoothness.value}
-											/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
-												><title>Raw line</title>
-												<path
-													stroke="currentColor"
-													stroke-width="5"
-													d="M-12,-12L5,-4L-5,4L12,12"
-													fill="none"
+						{#if ['pen', 'polygon', 'spline'].includes(activeTool.value)}
+							<div class="toolbar-body tool-option-toolbar">
+								{#if activeTool.value === 'pen'}
+									<div class="pretty-checkbox-group">
+										<span class="pretty-checkbox-group-head">Pen</span>
+										<div class="pretty-checkbox-group-body">
+											<label class="pretty-checkbox"
+												><input
+													class="pretty-checkbox-control"
+													type="radio"
+													value="linear"
+													bind:group={penSmoothness.value}
+												/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+													><title>Raw line</title>
+													<path
+														stroke="currentColor"
+														stroke-width="5"
+														d="M-12,-12L5,-4L-5,4L12,12"
+														fill="none"
+													/>
+												</svg></label
+											>
+											<label class="pretty-checkbox"
+												><input
+													class="pretty-checkbox-control"
+													type="radio"
+													value="autobezier"
+													bind:group={penSmoothness.value}
+												/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+													><title>Smooth line</title>
+													<path
+														stroke="currentColor"
+														stroke-width="5"
+														d="M-12,-12  C 32,-7  -32,7  12,12"
+														fill="none"
+													/>
+												</svg></label
+											>
+											<label class="pretty-number">
+												<span class="pretty-number-label">Smoothness</span>
+												<input
+													class="pretty-number-control"
+													type="range"
+													min="0"
+													max="100"
+													step="1"
+													disabled={penSmoothness.value !== 'autobezier'}
+													bind:value={penSmoothnessAmount.value}
 												/>
-											</svg></label
-										>
-										<label class="pretty-checkbox"
-											><input
-												class="pretty-checkbox-control"
-												type="radio"
-												value="autobezier"
-												bind:group={penSmoothness.value}
-											/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
-												><title>Smooth line</title>
-												<path
-													stroke="currentColor"
-													stroke-width="5"
-													d="M-12,-12  C 32,-7  -32,7  12,12"
-													fill="none"
-												/>
-											</svg></label
-										>
-										<label class="pretty-number">
-											<span class="pretty-number-label">Smoothness</span>
-											<input
-												class="pretty-number-control"
-												type="range"
-												min="0"
-												max="100"
-												step="1"
-												disabled={penSmoothness.value !== 'autobezier'}
-												bind:value={penSmoothnessAmount.value}
-											/>
-										</label>
+											</label>
+										</div>
 									</div>
-								</div>
-							{/if}
-							{#if activeTool.value === 'polygon'}
-								<hr class="tool-spacer" />
-								<div class="pretty-checkbox-group">
-									<span class="pretty-checkbox-group-head">Polygon</span>
-									<div class="pretty-checkbox-group-body">
-										<label class="pretty-checkbox"
-											><input
-												class="pretty-checkbox-control"
-												type="radio"
-												value="linear"
-												bind:group={polygonSmoothness.value}
-											/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
-												><title>Raw line</title>
-												<path
-													stroke="currentColor"
-													stroke-width="5"
-													d="M-12,-12L5,-4L-5,4L12,12"
-													fill="none"
+								{/if}
+								{#if activeTool.value === 'polygon'}
+									<div class="pretty-checkbox-group">
+										<span class="pretty-checkbox-group-head">Polygon</span>
+										<div class="pretty-checkbox-group-body">
+											<label class="pretty-checkbox"
+												><input
+													class="pretty-checkbox-control"
+													type="radio"
+													value="linear"
+													bind:group={polygonSmoothness.value}
+												/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+													><title>Raw line</title>
+													<path
+														stroke="currentColor"
+														stroke-width="5"
+														d="M-12,-12L5,-4L-5,4L12,12"
+														fill="none"
+													/>
+												</svg></label
+											>
+											<label class="pretty-checkbox"
+												><input
+													class="pretty-checkbox-control"
+													type="radio"
+													value="autobezier"
+													bind:group={polygonSmoothness.value}
+												/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
+													><title>Smooth line</title>
+													<path
+														stroke="currentColor"
+														stroke-width="5"
+														d="M-12,-12  C 32,-7  -32,7  12,12"
+														fill="none"
+													/>
+												</svg></label
+											>
+											<label class="pretty-number">
+												<span class="pretty-number-label">Smoothness</span>
+												<input
+													class="pretty-number-control"
+													type="range"
+													min="0"
+													max="100"
+													step="1"
+													disabled={polygonSmoothness.value !== 'autobezier'}
+													bind:value={polygonSmoothnessAmount.value}
 												/>
-											</svg></label
-										>
-										<label class="pretty-checkbox"
-											><input
-												class="pretty-checkbox-control"
-												type="radio"
-												value="autobezier"
-												bind:group={polygonSmoothness.value}
-											/><svg viewBox="-16 -16 32 32" class="pretty-checkbox-label"
-												><title>Smooth line</title>
-												<path
-													stroke="currentColor"
-													stroke-width="5"
-													d="M-12,-12  C 32,-7  -32,7  12,12"
-													fill="none"
-												/>
-											</svg></label
-										>
-										<label class="pretty-number">
-											<span class="pretty-number-label">Smoothness</span>
-											<input
-												class="pretty-number-control"
-												type="range"
-												min="0"
-												max="100"
-												step="1"
-												disabled={polygonSmoothness.value !== 'autobezier'}
-												bind:value={polygonSmoothnessAmount.value}
-											/>
-										</label>
+											</label>
+										</div>
 									</div>
-								</div>
-							{/if}
-							{#if activeTool.value === 'spline'}
-								<hr class="tool-spacer" />
-								<label class="pretty-number">
-									<span class="pretty-number-label">Curve samples</span>
-									<input
-										class="pretty-number-control"
-										type="range"
-										min="4"
-										max="32"
-										step="1"
-										bind:value={splineSampleCount.value}
-									/>
-								</label>
-							{/if}
-							<hr class="tool-spacer" />
-						</div>
+								{/if}
+								{#if activeTool.value === 'spline'}
+									<label class="pretty-number">
+										<span class="pretty-number-label">Curve samples</span>
+										<input
+											class="pretty-number-control"
+											type="range"
+											min="4"
+											max="32"
+											step="1"
+											bind:value={splineSampleCount.value}
+										/>
+									</label>
+								{/if}
+							</div>
+						{/if}
 
 						{#snippet edgeProps()}
 							{@const isCyclic = view(['edge', 'cyclic', L.valueOr(false)], singleSelectedLayer)}
 
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="|">
 								<span class="pretty-number-label">Stroke</span>
 								<input
 									type="number"
@@ -12919,7 +14756,7 @@
 								],
 								singleSelectedLayer
 							)}
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="%" title="Opacity">
 								<span class="pretty-number-label">Line Opacity</span>
 								<input
 									type="number"
@@ -12951,7 +14788,7 @@
 								],
 								singleSelectedLayer
 							)}
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="%">
 								<span class="pretty-number-label">Opacity</span>
 								<input
 									type="number"
@@ -12978,13 +14815,14 @@
 								singleSelectedLayer
 							)}
 
-							<label class="pretty-select">
+							<label class="pretty-select" title="Shape">
 								<span class="pretty-select-label">Source Tip</span>
-								{#await data.symbols then symbols}
-									<span class="pretty-select-value"
-										>{symbols.get(sourceTipShapeValue.value)?.name ?? 'None'}</span
-									>
-								{/await}
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<path d="M12,-8L-8,0L12,8" fill="currentColor" />
+										<path d="M-12,0L10,0" stroke="currentColor" stroke-width="3" fill="none" />
+									</svg>
+								</span>
 								<select
 									class="pretty-select-control"
 									onchange={(evt) =>
@@ -13023,7 +14861,7 @@
 								],
 								singleSelectedLayer
 							)}
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="<">
 								<span class="pretty-number-label">Source Tip Size</span>
 								<input
 									type="number"
@@ -13051,7 +14889,16 @@
 							)}
 							<label class="pretty-select">
 								<span class="pretty-select-label">Dash</span>
-								<span class="pretty-select-value">{strokeDashValue.value || 'None'}</span>
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<path
+											d="M-13,0H13"
+											stroke="currentColor"
+											stroke-width="3"
+											stroke-dasharray="5 4"
+										/>
+									</svg>
+								</span>
 								<select
 									class="pretty-select-control"
 									onchange={(evt) =>
@@ -13076,11 +14923,12 @@
 
 							<label class="pretty-select">
 								<span class="pretty-select-label">Target Tip</span>
-								{#await data.symbols then symbols}
-									<span class="pretty-select-value"
-										>{symbols.get(targetTipShapeValue.value)?.name ?? 'None'}</span
-									>
-								{/await}
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<path d="M-12,-8L8,0L-12,8" fill="currentColor" />
+										<path d="M-10,0L12,0" stroke="currentColor" stroke-width="3" fill="none" />
+									</svg>
+								</span>
 								<select
 									class="pretty-select-control"
 									onchange={(evt) =>
@@ -13119,7 +14967,7 @@
 								],
 								singleSelectedLayer
 							)}
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon=">">
 								<span class="pretty-number-label">Target Tip Size</span>
 								<input
 									type="number"
@@ -13208,7 +15056,7 @@
 									>
 								</div>
 							</div>
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="~">
 								<span class="pretty-number-label">Smoothness</span>
 								<input
 									type="range"
@@ -13537,11 +15385,19 @@
 							)}
 							<label class="pretty-select">
 								<span class="pretty-select-label">Shape</span>
-								{#await data.symbols then symbols}
-									<span class="pretty-select-value"
-										>{symbols.get(shapeValue.value)?.name ?? 'None'}</span
-									>
-								{/await}
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<rect
+											x="-10"
+											y="-8"
+											width="20"
+											height="16"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="3"
+										/>
+									</svg>
+								</span>
 								<select
 									class="pretty-select-control"
 									onchange={(evt) =>
@@ -13651,7 +15507,7 @@
 								],
 								singleSelectedLayer
 							)}
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="%">
 								<span class="pretty-number-label">Fill Opacity</span>
 								<input
 									type="number"
@@ -13767,7 +15623,7 @@
 								],
 								singleSelectedLayer
 							)}
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="%">
 								<span class="pretty-number-label">Pen Opacity</span>
 								<input
 									type="number"
@@ -13798,7 +15654,7 @@
 								],
 								singleSelectedLayer
 							)}
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="%">
 								<span class="pretty-number-label">Opacity</span>
 								<input
 									type="number"
@@ -13825,7 +15681,16 @@
 							)}
 							<label class="pretty-select">
 								<span class="pretty-select-label">Dash</span>
-								<span class="pretty-select-value">{dashValue.value || 'None'}</span>
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<path
+											d="M-13,0H13"
+											stroke="currentColor"
+											stroke-width="3"
+											stroke-dasharray="5 4"
+										/>
+									</svg>
+								</span>
 								<select
 									class="pretty-select-control"
 									onchange={(evt) =>
@@ -13843,7 +15708,7 @@
 									<option value="2 2">2 2</option>
 								</select>
 							</label>
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="|">
 								<span class="pretty-number-label">Stroke</span>
 								<input
 									type="number"
@@ -13884,15 +15749,9 @@
 							)}
 							<label class="pretty-select">
 								<span class="pretty-select-label">Text Type</span>
-								<span class="pretty-select-value">
-									{[
-										{ label: 'Label', value: RENEW_TEXT_TYPE.LABEL },
-										{ label: 'Inscription', value: RENEW_TEXT_TYPE.INSCRIPTION },
-										{ label: 'Name', value: RENEW_TEXT_TYPE.NAME },
-										{ label: 'Declaration', value: RENEW_TEXT_TYPE.AUX },
-										{ label: 'Comment', value: RENEW_TEXT_TYPE.COMM }
-									].find(({ value }) => value === Number(textTypeValue.value))?.label ?? 'Label'}
-								</span>
+								<span class="pretty-select-value attribute-symbol-value attribute-symbol-text"
+									>T</span
+								>
 								<select
 									class="pretty-select-control"
 									onchange={(evt) => {
@@ -13906,14 +15765,15 @@
 									use:bindValue={textTypeValue}
 								>
 									{#each [{ label: 'Label', value: RENEW_TEXT_TYPE.LABEL }, { label: 'Inscription', value: RENEW_TEXT_TYPE.INSCRIPTION }, { label: 'Name', value: RENEW_TEXT_TYPE.NAME }, { label: 'Declaration', value: RENEW_TEXT_TYPE.AUX }, { label: 'Comment', value: RENEW_TEXT_TYPE.COMM }] as { label, value }}
-										<option value={value}>{label}</option>
+										<option {value}>{label}</option>
 									{/each}
 								</select>
 							</label>
 							<label class="pretty-select">
 								<span class="pretty-select-label">Font Family</span>
-								<span style:font-family={fontFamily.value} class="pretty-select-value"
-									>{fontFamily.value}</span
+								<span
+									style:font-family={fontFamily.value}
+									class="pretty-select-value attribute-symbol-value attribute-symbol-text">A</span
 								>
 								<select
 									class="pretty-select-control"
@@ -13929,13 +15789,24 @@
 									<option style:font-family={'sans-serif'} value="sans-serif">sans-serif</option>
 									<option style:font-family={'serif'} value="serif">serif</option>
 									<option style:font-family={'monospace'} value="monospace">monospace</option>
-									<option style:font-family={'Dialog, sans-serif'} value="Dialog, sans-serif">Dialog</option>
-									<option style:font-family={'Helvetica, Arial, sans-serif'} value="Helvetica, Arial, sans-serif">Helvetica</option>
-									<option style:font-family={'Times New Roman, Times, serif'} value='"Times New Roman", Times, serif'>Times</option>
-									<option style:font-family={'Courier New, Courier, monospace'} value='"Courier New", Courier, monospace'>Courier</option>
+									<option style:font-family={'Dialog, sans-serif'} value="Dialog, sans-serif"
+										>Dialog</option
+									>
+									<option
+										style:font-family={'Helvetica, Arial, sans-serif'}
+										value="Helvetica, Arial, sans-serif">Helvetica</option
+									>
+									<option
+										style:font-family={'Times New Roman, Times, serif'}
+										value={'"Times New Roman", Times, serif'}>Times</option
+									>
+									<option
+										style:font-family={'Courier New, Courier, monospace'}
+										value={'"Courier New", Courier, monospace'}>Courier</option
+									>
 								</select>
 							</label>
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="A">
 								<span class="pretty-number-label">Size</span>
 								<AttributeInput
 									cmd="change_style"
@@ -14123,7 +15994,7 @@
 								],
 								singleSelectedLayer
 							)}
-							<label class="pretty-number">
+							<label class="pretty-number attribute-icon-number" data-icon="%">
 								<span class="pretty-number-label">Text Opacity</span>
 								<input
 									type="number"
@@ -14395,21 +16266,767 @@
 								L.valueOr(0)
 							)}
 						{/snippet}
-						<div
-							style="display: flex; gap: 1em; align-items: center; white-space: wrap; padding: 0 1ex;"
-						>
-							{#if singleSelectedLayerType.value}
-								{@render {
-									text: textProps,
-									box: boxProps,
-									edge: edgeProps,
-									group: groupProps
-								}[singleSelectedLayerType.value]()}
-							{:else if selectedLayersType.value.length > 1}
-								{selectedLayersType.value.length} layers
-							{:else}
-								Nothing Selected
-							{/if}
+						{#snippet multiProps()}
+							<label class="pretty-number attribute-icon-number" data-icon="%">
+								<span class="pretty-number-label">Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									title="Opacity"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									placeholder="mixed"
+									onchange={(evt) => {
+										const val = evt.currentTarget.valueAsNumber;
+										if (Number.isFinite(val)) {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'layer',
+												'opacity',
+												val,
+												(layer) => !!layer
+											);
+										}
+									}}
+								/>
+							</label>
+
+							<span class="attribute-section-label">Figures</span>
+							<label class="pretty-select">
+								<span class="pretty-select-label">Shape</span>
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<rect
+											x="-10"
+											y="-8"
+											width="20"
+											height="16"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="3"
+										/>
+									</svg>
+								</span>
+								<select
+									class="pretty-select-control"
+									title="Shape"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedLayerShape(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												evt.currentTarget.value
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set shape</option>
+									{#await data.symbols then symbols}
+										<option value="">None</option>
+										{@const symbolGroups = R.groupBy(([id, symbol]) => {
+											return symbol.name.split('-', 2)[0];
+										}, symbols.entries())}
+										{#each Object.entries(symbolGroups) as [g, s] (g)}
+											<optgroup label={g}>
+												{#each s as [id, symbol] (id)}
+													<option value={id}>{symbol.name}</option>
+												{/each}
+											</optgroup>
+										{/each}
+									{/await}
+								</select>
+							</label>
+							<div class="pretty-color-group">
+								<label class="pretty-color" title="Fill color">
+									<span class="pretty-color-label">Fill</span>
+									<input
+										type="color"
+										alpha
+										class="pretty-color-control"
+										title="Fill color"
+										value="#70DB93"
+										onchange={(evt) =>
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'layer',
+												'background_color',
+												evt.currentTarget.value,
+												(layer) => !!(layer?.box || layer?.text)
+											)}
+									/>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										style:color="#70DB93"
+										viewBox="0 0 32 32"
+									>
+										<rect
+											fill="currentColor"
+											stroke-width="6"
+											x="0"
+											y="0"
+											width="32"
+											height="32"
+											stroke="#eee"
+											class="swatch-rect"
+										></rect>
+									</svg>
+								</label>
+								<button
+									type="button"
+									class="pretty-color-reset"
+									title="Clear fill"
+									onclick={() =>
+										changeSelectedStyle(
+											cast,
+											doc.value,
+											layersInOrder.value,
+											'layer',
+											'background_color',
+											'transparent',
+											(layer) => !!(layer?.box || layer?.text)
+										)}
+								>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										viewBox="0 0 32 32"
+									>
+										<title>Clear fill</title>
+										<path
+											line-joincap="round"
+											stroke-width="4"
+											d="M11 11 l 10 10 M 11 21 l 10 -10"
+											stroke="red"
+										/>
+									</svg>
+								</button>
+							</div>
+
+							<label class="pretty-number attribute-icon-number" data-icon="%" title="Fill opacity">
+								<span class="pretty-number-label">Fill Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									title="Fill opacity"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									placeholder="mixed"
+									onchange={(evt) => {
+										const val = evt.currentTarget.valueAsNumber;
+										if (Number.isFinite(val)) {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'layer',
+												'background_opacity',
+												val,
+												(layer) => !!(layer?.box || layer?.text)
+											);
+										}
+									}}
+								/>
+							</label>
+
+							<div class="pretty-color-group">
+								<label class="pretty-color" title="Stroke color">
+									<span class="pretty-color-label">Strk</span>
+									<input
+										type="color"
+										alpha
+										class="pretty-color-control"
+										title="Stroke color"
+										value="#000000"
+										onchange={(evt) =>
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'layer',
+												'border_color',
+												evt.currentTarget.value,
+												(layer) => !!(layer?.box || layer?.text)
+											)}
+									/>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										style:color="#000000"
+										viewBox="0 0 32 32"
+									>
+										<rect
+											stroke="currentColor"
+											stroke-width="4"
+											x="4"
+											y="4"
+											width="26"
+											height="26"
+											fill="none"
+										></rect>
+									</svg>
+								</label>
+								<button
+									type="button"
+									class="pretty-color-reset"
+									title="Clear stroke"
+									onclick={() =>
+										changeSelectedStyle(
+											cast,
+											doc.value,
+											layersInOrder.value,
+											'layer',
+											'border_color',
+											'transparent',
+											(layer) => !!(layer?.box || layer?.text)
+										)}
+								>
+									<svg
+										preserveAspectRatio="xMinYMid meet"
+										class="pretty-color-value"
+										viewBox="0 0 32 32"
+									>
+										<title>Clear stroke</title>
+										<path
+											line-joincap="round"
+											stroke-width="4"
+											d="M11 11 l 10 10 M 11 21 l 10 -10"
+											stroke="red"
+										/>
+									</svg>
+								</button>
+							</div>
+
+							<label class="pretty-number attribute-icon-number" data-icon="|" title="Stroke width">
+								<span class="pretty-number-label">Stroke</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									title="Stroke width"
+									size="4"
+									min="0"
+									placeholder="mixed"
+									onchange={(evt) => {
+										const val = evt.currentTarget.valueAsNumber;
+										if (Number.isFinite(val)) {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'layer',
+												'border_width',
+												val,
+												(layer) => !!(layer?.box || layer?.text)
+											);
+										}
+									}}
+								/>
+							</label>
+
+							<label class="pretty-select" title="Dash pattern">
+								<span class="pretty-select-label">Dash</span>
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<path
+											d="M-12 0 H12"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="4"
+											stroke-dasharray="5 4"
+										/>
+									</svg>
+								</span>
+								<select
+									class="pretty-select-control"
+									title="Dash pattern"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'layer',
+												'border_dash_array',
+												evt.currentTarget.value,
+												(layer) => !!layer && !layer.edge
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set dash</option>
+									<option value="">No Dash</option>
+									<option value="5 5">5 5</option>
+									<option value="10 5">10 5</option>
+									<option value="2 2">2 2</option>
+								</select>
+							</label>
+
+							<span class="attribute-section-label">Edges</span>
+							<label
+								class="pretty-number attribute-icon-number"
+								data-icon="|"
+								title="Edge stroke width"
+							>
+								<span class="pretty-number-label">Stroke</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									title="Edge stroke width"
+									size="4"
+									min="0"
+									placeholder="mixed"
+									onchange={(evt) => {
+										const val = evt.currentTarget.valueAsNumber;
+										if (Number.isFinite(val)) {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'edge',
+												'stroke_width',
+												val,
+												(layer) => !!layer?.edge
+											);
+										}
+									}}
+								/>
+							</label>
+							<label class="pretty-color" title="Edge color">
+								<span class="pretty-color-label">Line Color</span>
+								<svg
+									preserveAspectRatio="xMinYMid meet"
+									class="pretty-color-value"
+									style:color="#000000"
+									viewBox="-16 -16 32 32"
+								>
+									<path
+										stroke="currentColor"
+										stroke-width="8"
+										d="M-12,0C0,-12,12,12,24,0"
+										fill="none"
+									/>
+								</svg>
+								<input
+									type="color"
+									alpha
+									class="pretty-color-control"
+									title="Edge color"
+									value="#000000"
+									onchange={(evt) =>
+										changeSelectedStyle(
+											cast,
+											doc.value,
+											layersInOrder.value,
+											'edge',
+											'stroke_color',
+											evt.currentTarget.value,
+											(layer) => !!layer?.edge
+										)}
+								/>
+							</label>
+							<label class="pretty-number attribute-icon-number" data-icon="%" title="Edge opacity">
+								<span class="pretty-number-label">Line Opacity</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									title="Edge opacity"
+									size="4"
+									min="0"
+									max="1"
+									step="0.01"
+									placeholder="mixed"
+									onchange={(evt) => {
+										const val = evt.currentTarget.valueAsNumber;
+										if (Number.isFinite(val)) {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'edge',
+												'stroke_opacity',
+												val,
+												(layer) => !!layer?.edge
+											);
+										}
+									}}
+								/>
+							</label>
+							<label class="pretty-select" title="Edge dash pattern">
+								<span class="pretty-select-label">Line Dash</span>
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<path
+											d="M-12 0 H12"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="4"
+											stroke-dasharray="5 4"
+										/>
+									</svg>
+								</span>
+								<select
+									class="pretty-select-control"
+									title="Edge dash pattern"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'edge',
+												'stroke_dash_array',
+												evt.currentTarget.value,
+												(layer) => !!layer?.edge
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set dash</option>
+									<option value="">No Dash</option>
+									<option value="5 5">5 5</option>
+									<option value="10 5">10 5</option>
+									<option value="2 2">2 2</option>
+								</select>
+							</label>
+							<label class="pretty-select" title="Edge smoothness">
+								<span class="pretty-select-label">Smoothness</span>
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<path
+											d="M-12 8 C-4 -12 4 12 12 -8"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="3"
+										/>
+									</svg>
+								</span>
+								<select
+									class="pretty-select-control"
+									title="Edge smoothness"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'edge',
+												'smoothness',
+												evt.currentTarget.value,
+												(layer) => !!layer?.edge
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set smoothness</option>
+									<option value="linear">Linear</option>
+									<option value="autobezier">Autobezier</option>
+								</select>
+							</label>
+							<label class="pretty-select" title="Cyclic edge">
+								<span class="pretty-select-label">Cyclic</span>
+								<span class="pretty-select-value attribute-symbol-value attribute-symbol-text"
+									>C</span
+								>
+								<select
+									class="pretty-select-control"
+									title="Cyclic edge"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedEdgeCyclic(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												evt.currentTarget.value === 'true'
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set cyclic</option>
+									<option value="true">On</option>
+									<option value="false">Off</option>
+								</select>
+							</label>
+
+							<span class="attribute-section-label">Text</span>
+							<label class="pretty-select" title="Text type">
+								<span class="pretty-select-label">Text Type</span>
+								<span class="pretty-select-value attribute-symbol-value attribute-symbol-text"
+									>T</span
+								>
+								<select
+									class="pretty-select-control"
+									title="Text type"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedTextType(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												Number(evt.currentTarget.value)
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set type</option>
+									{#each [{ label: 'Label', value: RENEW_TEXT_TYPE.LABEL }, { label: 'Inscription', value: RENEW_TEXT_TYPE.INSCRIPTION }, { label: 'Name', value: RENEW_TEXT_TYPE.NAME }, { label: 'Declaration', value: RENEW_TEXT_TYPE.AUX }, { label: 'Comment', value: RENEW_TEXT_TYPE.COMM }] as { label, value }}
+										<option {value}>{label}</option>
+									{/each}
+								</select>
+							</label>
+							<label class="pretty-select" title="Font family">
+								<span class="pretty-select-label">Font Family</span>
+								<span class="pretty-select-value attribute-symbol-value attribute-symbol-text"
+									>A</span
+								>
+								<select
+									class="pretty-select-control"
+									title="Font family"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'text',
+												'font_family',
+												evt.currentTarget.value,
+												(layer) => !!layer?.text
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set font</option>
+									<option style:font-family={'sans-serif'} value="sans-serif">sans-serif</option>
+									<option style:font-family={'serif'} value="serif">serif</option>
+									<option style:font-family={'monospace'} value="monospace">monospace</option>
+									<option style:font-family={'Dialog, sans-serif'} value="Dialog, sans-serif"
+										>Dialog</option
+									>
+									<option
+										style:font-family={'Helvetica, Arial, sans-serif'}
+										value="Helvetica, Arial, sans-serif">Helvetica</option
+									>
+									<option
+										style:font-family={'Times New Roman, Times, serif'}
+										value={'"Times New Roman", Times, serif'}>Times</option
+									>
+									<option
+										style:font-family={'Courier New, Courier, monospace'}
+										value={'"Courier New", Courier, monospace'}>Courier</option
+									>
+								</select>
+							</label>
+							<label class="pretty-number attribute-icon-number" data-icon="A" title="Font size">
+								<span class="pretty-number-label">Size</span>
+								<input
+									type="number"
+									class="pretty-number-control"
+									title="Font size"
+									size="4"
+									min="1"
+									placeholder="mixed"
+									onchange={(evt) => {
+										const val = evt.currentTarget.valueAsNumber;
+										if (Number.isFinite(val)) {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'text',
+												'font_size',
+												val,
+												(layer) => !!layer?.text
+											);
+										}
+									}}
+								/>
+							</label>
+							<label class="pretty-color" title="Text color">
+								<span class="pretty-color-label">Color</span>
+								<svg
+									preserveAspectRatio="xMinYMid meet"
+									class="pretty-color-value"
+									style:color="#000000"
+									viewBox="-16 -16 32 32"
+								>
+									<text
+										text-anchor="middle"
+										dominant-baseline="middle"
+										x="0"
+										y="4"
+										font-size="30"
+										fill="currentColor"
+										stroke-width="0">A</text
+									>
+								</svg>
+								<input
+									type="color"
+									alpha
+									class="pretty-color-control"
+									title="Text color"
+									value="#000000"
+									onchange={(evt) =>
+										changeSelectedStyle(
+											cast,
+											doc.value,
+											layersInOrder.value,
+											'text',
+											'text_color',
+											evt.currentTarget.value,
+											(layer) => !!layer?.text
+										)}
+								/>
+							</label>
+							<label class="pretty-select" title="Bold">
+								<span class="pretty-select-label">Bold</span>
+								<span class="pretty-select-value attribute-symbol-value attribute-symbol-text"
+									><b>B</b></span
+								>
+								<select
+									class="pretty-select-control"
+									title="Bold"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'text',
+												'bold',
+												evt.currentTarget.value === 'true',
+												(layer) => !!layer?.text
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set bold</option>
+									<option value="true">On</option>
+									<option value="false">Off</option>
+								</select>
+							</label>
+							<label class="pretty-select" title="Italic">
+								<span class="pretty-select-label">Italic</span>
+								<span class="pretty-select-value attribute-symbol-value attribute-symbol-text"
+									><i>I</i></span
+								>
+								<select
+									class="pretty-select-control"
+									title="Italic"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'text',
+												'italic',
+												evt.currentTarget.value === 'true',
+												(layer) => !!layer?.text
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set italic</option>
+									<option value="true">On</option>
+									<option value="false">Off</option>
+								</select>
+							</label>
+							<label class="pretty-select" title="Underline">
+								<span class="pretty-select-label">Underline</span>
+								<span class="pretty-select-value attribute-symbol-value attribute-symbol-text"
+									><u>U</u></span
+								>
+								<select
+									class="pretty-select-control"
+									title="Underline"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'text',
+												'underline',
+												evt.currentTarget.value === 'true',
+												(layer) => !!layer?.text
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set underline</option>
+									<option value="true">On</option>
+									<option value="false">Off</option>
+								</select>
+							</label>
+							<label class="pretty-select" title="Text alignment">
+								<span class="pretty-select-label">Alignment</span>
+								<span class="pretty-select-value attribute-symbol-value">
+									<svg viewBox="-16 -16 32 32" aria-hidden="true">
+										<path
+											d="M-12 -8 H12 M-12 0 H6 M-12 8 H10"
+											stroke="currentColor"
+											stroke-width="3"
+											stroke-linecap="butt"
+										/>
+									</svg>
+								</span>
+								<select
+									class="pretty-select-control"
+									title="Text alignment"
+									value="__keep"
+									onchange={(evt) => {
+										if (evt.currentTarget.value !== '__keep') {
+											changeSelectedStyle(
+												cast,
+												doc.value,
+												layersInOrder.value,
+												'text',
+												'alignment',
+												evt.currentTarget.value,
+												(layer) => !!layer?.text
+											);
+											evt.currentTarget.value = '__keep';
+										}
+									}}
+								>
+									<option value="__keep" disabled>Set alignment</option>
+									<option value="left">Left</option>
+									<option value="center">Center</option>
+									<option value="right">Right</option>
+								</select>
+							</label>
+						{/snippet}
+						<div class="attribute-toolbar-body" use:attributeTooltips>
+							{@render multiProps()}
 						</div>
 					</div>
 				</div>
@@ -14884,12 +17501,81 @@
 				>
 					<div
 						class="toolbar vertical create-toolbar"
+						style={`--create-toolbar-width: ${createToolbarWidth.value}px;`}
 						use:polyfillDragDrop={{
 							dropArea: dropperDomElement,
 							options: { dragThresholdPixels: 0 }
 						}}
 					>
-						<small>Create</small>
+						<div class="create-toolbar-header">
+							<span>Tools</span>
+						</div>
+						{#snippet editorToolButton(item, groupName, groups)}
+							<div
+								class={{
+									'create-primitive-tool': true,
+									'editor-tool-entry': true,
+									'selectable-create': true,
+									'active-create-tool': activeTool.value === item.id
+								}}
+								role="button"
+								tabindex="0"
+								aria-pressed={activeTool.value === item.id}
+								title={item.name}
+								data-tooltip={item.name}
+								style="display: grid; justify-content: center; align-content: center;"
+								draggable="true"
+								ondragstart={(evt) => beginCreateToolEntryDrag(evt, groupName, item)}
+								ondragend={finishCreateToolbarDrag}
+								ondragover={allowCreateToolbarDrop}
+								ondrop={(evt) => dropCreateToolEntry(evt, groupName, item, groups)}
+								onclick={(evt) => {
+									selectEditorTool(item.id, cast);
+									evt.preventDefault();
+									evt.stopPropagation();
+								}}
+								oncontextmenu={(evt) => {
+									openToolOptions(evt, {
+										name: item.name,
+										description: 'Editor tool',
+										activate: () => selectEditorTool(item.id, cast),
+										reset: item.reset
+											? () => item.reset(cameraScroller.value, cameraFocus, extension.value)
+											: undefined,
+										actions: [
+											{
+												label: 'Move up',
+												run: () => moveCreateToolEntry(groupName, item, -1, groups)
+											},
+											{
+												label: 'Move down',
+												run: () => moveCreateToolEntry(groupName, item, 1, groups)
+											},
+											{
+												label: 'Hide',
+												run: () => hideCreateToolEntry(item)
+											}
+										]
+									});
+								}}
+								ondblclick={(evt) => {
+									evt.preventDefault();
+									evt.stopPropagation();
+									item.reset?.(cameraScroller.value, cameraFocus, extension.value);
+								}}
+								onkeydown={(evt) => {
+									if (evt.key === 'Enter' || evt.key === ' ') {
+										evt.preventDefault();
+										selectEditorTool(item.id, cast);
+									}
+								}}
+							>
+								<svg viewBox="-4 -4 40 40" width="32" aria-hidden="true">
+									<title>{item.name}</title>
+									{@html createToolEntryIcon(item)}
+								</svg>
+							</div>
+						{/snippet}
 						{#snippet edgeCreateToolButton(item, groupName, groups)}
 							<div
 								class={{
@@ -14953,7 +17639,7 @@
 							>
 								<svg viewBox="-4 -4 40 40" width="32" aria-hidden="true">
 									<title>{item.name}</title>
-									{@html item.icon}
+									{@html createToolEntryIcon(item)}
 								</svg>
 							</div>
 						{/snippet}
@@ -15020,7 +17706,9 @@
 														item,
 														singleSelectedLayer.value
 													)}
-													{#if isEdgeCreateToolEntry(item)}
+													{#if isEditorToolEntry(item)}
+														{@render editorToolButton(item, g.name, groups)}
+													{:else if isEdgeCreateToolEntry(item)}
 														{@render edgeCreateToolButton(item, g.name, groups)}
 													{:else}
 														<div
@@ -15032,13 +17720,17 @@
 																	!canActivateCreatePrimitive(item, linkedCreateTargetId),
 																'active-create-tool': isActiveCreatePrimitive(item),
 																'persistent-create-tool':
-																	isActiveCreatePrimitive(item) && activeCreateTool.value?.persistent
+																	isActiveCreatePrimitive(item) &&
+																	activeCreateTool.value?.persistent
 															}}
 															role="button"
 															tabindex={canActivateCreatePrimitive(item, linkedCreateTargetId)
 																? '0'
 																: '-1'}
-															aria-disabled={!canActivateCreatePrimitive(item, linkedCreateTargetId)}
+															aria-disabled={!canActivateCreatePrimitive(
+																item,
+																linkedCreateTargetId
+															)}
 															aria-pressed={isSelectableCreatePrimitive(item)
 																? isActiveCreatePrimitive(item)
 																: undefined}
@@ -15050,7 +17742,9 @@
 															ondragover={allowCreateToolbarDrop}
 															ondrop={(evt) => dropCreateToolEntry(evt, g.name, item, groups)}
 															onclick={(evt) => {
-																if (activateCreatePrimitive(item, false, linkedCreateTargetId, cast)) {
+																if (
+																	activateCreatePrimitive(item, false, linkedCreateTargetId, cast)
+																) {
 																	evt.preventDefault();
 																	evt.stopPropagation();
 																}
@@ -15094,7 +17788,9 @@
 																});
 															}}
 															ondblclick={(evt) => {
-																if (activateCreatePrimitive(item, true, linkedCreateTargetId, cast)) {
+																if (
+																	activateCreatePrimitive(item, true, linkedCreateTargetId, cast)
+																) {
 																	evt.preventDefault();
 																	evt.stopPropagation();
 																}
@@ -15155,7 +17851,7 @@
 																width="32"
 															>
 																<title>{item.name}</title>
-																{@html item.icon}
+																{@html createToolEntryIcon(item)}
 															</svg>
 														</div>
 													{/if}
@@ -15168,10 +17864,12 @@
 						{:catch e}
 							error
 						{/await}
-						<div style="border-top: 1px solid gray; padding-top: 1ex">
-							<div
-								style="background: #eee; padding: 4px; display: flex; flex-direction: column; gap: 4px;"
-							>
+						<div class="create-tool-group insert-tool-group">
+							<div class="create-tool-group-title static-create-tool-group-title">
+								<span class="create-tool-group-arrow">v</span>
+								<span>Insert</span>
+							</div>
+							<div class="create-tool-group-body insert-tool-group-body">
 								<label style="text-align: center; display: block;">
 									{#await data.blueprints}
 										-
@@ -15216,7 +17914,7 @@
 											isActiveBlueprintTool(selectedBlueprint.value) &&
 											activeCreateTool.value?.persistent
 									}}
-									style="width: 100%; padding: 1ex; color: #fff; box-sizing: border-box; text-align: center;"
+									style="display: grid; justify-content: center; align-content: center;"
 									role="button"
 									tabindex={canActivateBlueprintTool(selectedBlueprint.value) ? '0' : '-1'}
 									aria-disabled={!canActivateBlueprintTool(selectedBlueprint.value)}
@@ -15293,10 +17991,33 @@
 										);
 									}}
 								>
-									☰
+									<svg viewBox="-4 -4 40 40" aria-hidden="true">
+										<rect
+											x="8"
+											y="5"
+											width="16"
+											height="22"
+											fill="#eeeeee"
+											stroke="#aaaaaa"
+											stroke-width="1.5"
+										/>
+										<path
+											d="M12 10 H20 M12 15 H20 M12 20 H20"
+											stroke="#ffffff"
+											stroke-width="1.5"
+										/>
+									</svg>
 								</div>
 							</div>
 						</div>
+						<div
+							class="create-toolbar-resize-handle"
+							role="separator"
+							aria-orientation="vertical"
+							title="Resize tool palette"
+							data-tooltip="Resize tool palette"
+							onpointerdown={startCreateToolbarResize}
+						></div>
 					</div>
 					<div
 						style="user-select: none; text-align: center; font-size: 2em; cursor: pointer; display: grid; align-content: center; justify-content: center; line-height: 1; padding: 0.5ex"
@@ -15354,9 +18075,17 @@
 					{/if}
 				</span>
 				<span>{statusMessage.value || doc.value.name}</span>
-				<span>{data.offline ? 'offline snapshot' : data.connectionState.value === false ? 'offline' : 'online'}</span>
+				<span
+					>{data.offline
+						? 'offline snapshot'
+						: data.connectionState.value === false
+							? 'offline'
+							: 'online'}</span
+				>
 				{#if queuedActions.value > 0}
-					<span>{queuedActions.value} queued offline action{queuedActions.value === 1 ? '' : 's'}</span>
+					<span
+						>{queuedActions.value} queued offline action{queuedActions.value === 1 ? '' : 's'}</span
+					>
 				{/if}
 			</footer>
 		{/snippet}
@@ -15648,11 +18377,11 @@
 		z-index: 100;
 		display: grid;
 		grid-template-columns:
-			[body-start] 0.5ex [top-start left-start] auto [left-end topsubbar-start] 1fr[topsubbar-end right-start] max(
+			[body-start] 0.5ex [left-start] auto [left-end top-start topsubbar-start] 1fr[topsubbar-end right-start] max(
 				20vw
 			)
 			[right-end top-end] 1em [body-end];
-		grid-template-rows: [body-start] 0.5ex [top-start] auto [top-end left-start right-start topsubbar-start] 1fr [] auto [topsubbar-end left-end right-end] 1em [body-end];
+		grid-template-rows: [body-start] 0.5ex [top-start left-start] auto [top-end right-start topsubbar-start] 1fr [] auto [topsubbar-end left-end right-end] 1em [body-end];
 		gap: 0.5em;
 		overflow: hidden;
 		width: 100vw;
@@ -15730,6 +18459,278 @@
 		gap: 0.5ex;
 	}
 
+	.attribute-toolbar-body {
+		display: flex;
+		align-items: center;
+		gap: 0.18rem;
+		flex-wrap: nowrap;
+		padding: 0.12rem 0.3rem;
+		min-height: 2rem;
+		max-height: 2rem;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: thin;
+		background: #fff;
+		border: 1px solid #ddd;
+		box-shadow: 0 0 5px #0002;
+		font-size: 0.9rem;
+	}
+
+	.attribute-section-label {
+		width: 1px;
+		height: 1.55rem;
+		border-left: 1px solid #cfcfcf;
+		margin: 0 0.22rem;
+		padding: 0;
+		overflow: hidden;
+		text-indent: -999px;
+		flex: 0 0 auto;
+	}
+
+	.attribute-toolbar-body .pretty-select,
+	.attribute-toolbar-body .pretty-number,
+	.attribute-toolbar-body .pretty-color,
+	.attribute-toolbar-body .pretty-checkbox-group {
+		position: relative;
+		display: grid;
+		place-items: center;
+		flex: 0 0 auto;
+		width: 1.75rem;
+		height: 1.75rem;
+		min-width: 1.75rem;
+		max-width: 1.75rem;
+		grid-template-rows: none;
+		padding: 0;
+		margin: 0;
+		gap: 0;
+		align-self: center;
+	}
+
+	.attribute-toolbar-body .pretty-color-group {
+		display: flex;
+		align-items: center;
+		gap: 0.1rem;
+	}
+
+	.attribute-toolbar-body .pretty-select-label,
+	.attribute-toolbar-body .pretty-number-label,
+	.attribute-toolbar-body .pretty-color-label,
+	.attribute-toolbar-body .pretty-checkbox-group-head {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
+	.attribute-toolbar-body .pretty-select-value {
+		display: grid;
+		place-items: center;
+		grid-area: 1 / 1;
+		width: 1.75rem;
+		height: 1.75rem;
+		min-width: 1.75rem;
+		max-width: 1.75rem;
+		padding: 0;
+		line-height: 1;
+		background: #eee;
+		border: 1px solid #aaa;
+		border-radius: 2px;
+		box-sizing: border-box;
+		pointer-events: none;
+	}
+
+	.attribute-toolbar-body .pretty-select::after {
+		content: '';
+		position: absolute;
+		right: 0.14rem;
+		bottom: 0.12rem;
+		width: 0;
+		height: 0;
+		border-left: 0.16rem solid transparent;
+		border-right: 0.16rem solid transparent;
+		border-top: 0.24rem solid #333;
+		padding: 0;
+		pointer-events: none;
+		z-index: 2;
+	}
+
+	.attribute-toolbar-body .pretty-select-control {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		min-width: 0;
+		opacity: 0;
+		cursor: pointer;
+	}
+
+	.attribute-toolbar-body .pretty-number-control {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		min-width: 0;
+		padding: 0;
+		border: 0;
+		background: #fff;
+		text-align: center;
+		opacity: 0;
+		cursor: text;
+		font: inherit;
+	}
+
+	.attribute-toolbar-body .pretty-number-control::placeholder {
+		color: transparent;
+	}
+
+	.attribute-toolbar-body .pretty-color-value,
+	.attribute-toolbar-body .pretty-checkbox-label {
+		width: 1.75rem;
+		height: 1.75rem;
+		min-width: 1.75rem;
+		max-width: 1.75rem;
+		background: #eee;
+		border: 1px solid #aaa;
+		border-radius: 2px;
+		box-sizing: border-box;
+	}
+
+	.attribute-toolbar-body .pretty-color-reset,
+	.attribute-toolbar-body .pretty-color-clear {
+		width: 1.75rem;
+		height: 1.75rem;
+		min-width: 1.75rem;
+		padding: 0;
+		background: #eee;
+		border: 1px solid #aaa;
+		border-radius: 2px;
+	}
+
+	.attribute-toolbar-body .pretty-color-reset .pretty-color-value,
+	.attribute-toolbar-body .pretty-color-clear .pretty-color-value {
+		width: 100%;
+		height: 100%;
+		min-width: 0;
+		max-width: none;
+		background: transparent;
+		border: 0;
+		box-shadow: none;
+	}
+
+	.attribute-toolbar-body .pretty-checkbox-group-body {
+		gap: 0.15em;
+	}
+
+	.attribute-toolbar-body .pretty-color-control {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		opacity: 0;
+		cursor: pointer;
+	}
+
+	.attribute-toolbar-body .attribute-symbol-value {
+		display: grid;
+		place-items: center;
+		min-width: 1.75rem;
+		max-width: 1.75rem;
+		padding: 0;
+		line-height: 1;
+		color: #111;
+		font-size: 0;
+	}
+
+	.attribute-toolbar-body .attribute-symbol-value svg {
+		width: 1.2rem;
+		height: 1.2rem;
+		overflow: visible;
+	}
+
+	.attribute-toolbar-body .attribute-symbol-text {
+		display: grid;
+		place-items: center;
+		font-family: serif;
+		font-size: 1.05rem;
+		font-weight: bold;
+	}
+
+	.attribute-toolbar-body .attribute-icon-number {
+		display: grid;
+		grid-template-columns: 1.75rem;
+		place-items: center;
+		overflow: hidden;
+		background: #eee;
+		border: 1px solid #aaa;
+		border-radius: 2px;
+		box-sizing: border-box;
+		min-height: 1.75rem;
+	}
+
+	.attribute-toolbar-body .attribute-icon-number::before {
+		content: attr(data-icon);
+		display: grid;
+		place-items: center;
+		width: 1.75rem;
+		height: 1.75rem;
+		color: #111;
+		font-family: serif;
+		font-size: 0.95rem;
+		font-weight: bold;
+	}
+
+	.attribute-toolbar-body .attribute-icon-number:focus-within {
+		grid-template-columns: 1.45rem 2.4rem;
+		width: 3.85rem;
+		max-width: 3.85rem;
+		overflow: visible;
+		z-index: 3;
+	}
+
+	.attribute-toolbar-body .attribute-icon-number:focus-within::before {
+		width: 1.45rem;
+		height: 1.6rem;
+		border-right: 1px solid #9fb4c6;
+	}
+
+	.attribute-toolbar-body .attribute-icon-number:focus-within .pretty-number-control {
+		position: static;
+		width: 2.4rem;
+		height: 1.6rem;
+		padding: 0 0.15rem;
+		background: #fff;
+		opacity: 1;
+	}
+
+	.attribute-toolbar-body .pretty-select:hover .pretty-select-value,
+	.attribute-toolbar-body .pretty-color:hover .pretty-color-value,
+	.attribute-toolbar-body .pretty-color-reset:hover,
+	.attribute-toolbar-body .pretty-color-clear:hover,
+	.attribute-toolbar-body .pretty-checkbox-label:hover,
+	.attribute-toolbar-body .attribute-icon-number:hover {
+		background: #f7f7f7;
+	}
+
+	.attribute-toolbar-body .pretty-select:focus-within .pretty-select-value,
+	.attribute-toolbar-body .pretty-color:focus-within .pretty-color-value,
+	.attribute-toolbar-body .pretty-color-reset:focus-visible,
+	.attribute-toolbar-body .pretty-color-clear:focus-visible,
+	.attribute-toolbar-body .pretty-checkbox:focus-within .pretty-checkbox-label,
+	.attribute-toolbar-body .attribute-icon-number:focus-within {
+		outline: 2px solid #23875d;
+		outline-offset: -2px;
+	}
+
+	.attribute-empty {
+		width: 1px;
+		height: 1.75rem;
+	}
+
 	hr {
 		flex-grow: 1;
 		flex-shrink: 0;
@@ -15750,10 +18751,62 @@
 	}
 
 	.toolbar.vertical.create-toolbar {
+		--create-toolbar-width: 330px;
+		--create-tool-cell: 2.25rem;
+		--create-tool-icon: 1.78rem;
+		--create-tool-gap: 0.12rem;
 		align-items: stretch;
-		gap: 0.45rem;
-		min-width: 9.25rem;
-		padding: 0.5rem;
+		background: #fff;
+		border: 1px solid #d5dfdc;
+		border-left: 4px solid #23875d;
+		box-shadow: 0 2px 8px #0001;
+		box-sizing: border-box;
+		gap: 0.28rem;
+		max-width: 34rem;
+		min-width: 9rem;
+		padding: 0.35rem 0.55rem 0.35rem 0.35rem;
+		position: relative;
+		width: var(--create-toolbar-width);
+	}
+
+	.create-toolbar-header {
+		align-items: center;
+		background: #f2f6f5;
+		border: 1px solid #d5dfdc;
+		color: #111;
+		display: flex;
+		font-size: 0.76rem;
+		font-weight: bold;
+		justify-content: space-between;
+		line-height: 1.2;
+		min-height: 1.45rem;
+		padding: 0 0.35rem;
+		user-select: none;
+	}
+
+	.create-toolbar-resize-handle {
+		bottom: 0.25rem;
+		cursor: ew-resize;
+		position: absolute;
+		right: 0;
+		top: 0.25rem;
+		width: 0.5rem;
+	}
+
+	.create-toolbar-resize-handle::before {
+		background:
+			linear-gradient(#23875d, #23875d) center / 1px 70% no-repeat,
+			linear-gradient(#0000, #0000);
+		border-radius: 2px;
+		content: '';
+		inset: 0.15rem 0.18rem;
+		opacity: 0.35;
+		position: absolute;
+	}
+
+	.create-toolbar-resize-handle:hover::before,
+	.create-toolbar-resize-handle:focus-visible::before {
+		opacity: 0.9;
 	}
 
 	.statusbar {
@@ -15860,36 +18913,51 @@
 	}
 
 	.create-primitive-tool {
+		align-content: center;
+		background: linear-gradient(#f8fbfd, #dce8f2);
+		border: 1px solid #8fa8ba;
 		border-radius: 2px;
+		box-shadow:
+			inset 1px 1px 0 #ffffff,
+			inset -1px -1px 0 #b8c8d4;
+		box-sizing: border-box;
+		color: #000;
+		display: grid;
+		height: var(--create-tool-cell);
+		justify-content: center;
 		outline: 1px solid transparent;
 		outline-offset: 1px;
-		min-width: 2.5rem;
-		min-height: 2.5rem;
+		min-height: var(--create-tool-cell);
+		min-width: var(--create-tool-cell);
 		position: relative;
+		width: var(--create-tool-cell);
 	}
 
 	.create-tool-group {
-		border-top: 1px solid gray;
-		padding-top: 0.5ex;
+		background: #fff;
+		border: 1px solid #9fb4c6;
 		display: grid;
-		gap: 0.25rem;
+		gap: 0.16rem;
+		padding: 0.18rem;
 	}
 
 	.create-tool-group:first-of-type {
-		border-top: none;
-		padding-top: 0;
+		border-top: 1px solid #d5dfdc;
 	}
 
 	.create-tool-group-body {
 		display: grid;
-		gap: 0.2rem;
-		grid-template-columns: repeat(3, minmax(2.4rem, 1fr));
-		justify-items: center;
+		gap: var(--create-tool-gap);
+		grid-template-columns: repeat(auto-fill, var(--create-tool-cell));
+		justify-content: start;
+		justify-items: stretch;
 	}
 
 	.create-tool-group-title {
 		align-items: center;
-		color: #333;
+		background: #c8d7e2;
+		border: 1px solid #9fb4c6;
+		color: #111;
 		cursor: pointer;
 		display: flex;
 		font-size: 0.75rem;
@@ -15906,7 +18974,7 @@
 	}
 
 	.create-tool-group-title:hover {
-		background: #eee;
+		background: #d7e3ec;
 	}
 
 	.create-tool-group-title:focus-visible {
@@ -15918,6 +18986,25 @@
 		font-weight: bold;
 		text-align: center;
 		width: 1em;
+	}
+
+	.static-create-tool-group-title {
+		cursor: default;
+	}
+
+	.insert-tool-group-body {
+		align-items: center;
+		grid-template-columns: var(--create-tool-cell) var(--create-tool-cell);
+	}
+
+	.create-primitive-tool > svg {
+		height: var(--create-tool-icon);
+		overflow: visible;
+		width: var(--create-tool-icon);
+	}
+
+	.create-primitive-tool:hover {
+		background: linear-gradient(#ffffff, #e7f1f8);
 	}
 
 	.create-primitive-tool.selectable-create {

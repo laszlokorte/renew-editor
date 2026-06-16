@@ -18,6 +18,7 @@
 		validEdge,
 		newEdge,
 		newEdgeNode,
+		loop = false,
 		sourceLayerIds = undefined,
 		selectionHandles = false,
 		onCancelToSelect = undefined
@@ -104,10 +105,13 @@
 
 	export function cancel() {
 		isActive.value = false;
+		pointerStart = undefined;
+		cameraTow.value = undefined;
 	}
 
 	let preventNextClick = $state(false);
 	let reversePreview = $state(false);
+	let pointerStart = $state(undefined);
 	const defaultTipSize = 1;
 
 	function socketStencil(socket) {
@@ -342,6 +346,19 @@
 
 		return atSource ? sourceTipSymbolShapeId : targetTipSymbolShapeId;
 	}
+
+	function isClickGesture(evt) {
+		return pointerStart
+			? Math.hypot(evt.clientX - pointerStart.x, evt.clientY - pointerStart.y) <= 6
+			: false;
+	}
+
+	function finishGesture() {
+		preventNextClick = true;
+		pointerStart = undefined;
+		isActive.value = false;
+		onCancelToSelect?.();
+	}
 </script>
 
 <g
@@ -358,6 +375,7 @@
 		evt.preventDefault();
 		evt.stopPropagation();
 		isActive.value = false;
+		pointerStart = undefined;
 		onCancelToSelect?.();
 	}}
 	onkeydown={(evt) => {
@@ -376,12 +394,14 @@
 	onpointerdown={(evt) => {
 		if (!evt.isPrimary || !E.isLeftButton(evt)) {
 			isActive.value = false;
+			pointerStart = undefined;
 			onCancelToSelect?.();
 
 			return;
 		}
 		evt.preventDefault();
 		reversePreview = evt.shiftKey;
+		pointerStart = { x: evt.clientX, y: evt.clientY };
 		evt.currentTarget.focus({
 			preventScroll: true
 		});
@@ -389,7 +409,12 @@
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		if (nodeId !== null) {
 			draftSourceId.value = nodeId;
+			if (loop) {
+				draftTargetIds.value = [nodeId];
+			}
 			draftTargetPosition.value = clientToCanvas(evt.clientX, evt.clientY);
+		} else {
+			pointerStart = undefined;
 		}
 	}}
 	onpointermove={(evt) => {
@@ -397,6 +422,7 @@
 			return;
 		}
 		if (!isActive.value) {
+			pointerStart = undefined;
 			return;
 		}
 
@@ -404,6 +430,11 @@
 		const worldPos = clientToCanvas(evt.clientX, evt.clientY);
 		draftTargetPosition.value = worldPos;
 		cameraTow.value = worldPos;
+
+		if (loop) {
+			draftTargetIds.value = draftSourceId.value ? [draftSourceId.value] : undefined;
+			return;
+		}
 
 		const closeTargets = R.reject(R.isNil)(
 			R.map((node) => {
@@ -435,7 +466,21 @@
 		reversePreview = evt.shiftKey;
 		cameraTow.value = undefined;
 
-		if (validConnection.value && newEdge) {
+		if (loop) {
+			const source = draftSourceId.value;
+
+			if (source && validEdge(source, source) && newEdge) {
+				newEdge(
+					{
+						source,
+						target: source,
+						loopPosition: draftTargetPosition.value,
+						loopClick: isClickGesture(evt)
+					},
+					evt
+				);
+			}
+		} else if (validConnection.value && newEdge) {
 			newEdge(connection.value, evt);
 		} else if (newEdgeNode) {
 			const dist = Math.hypot(
@@ -454,16 +499,14 @@
 			}
 		}
 
-		preventNextClick = true;
-
-		isActive.value = false;
-		onCancelToSelect?.();
+		finishGesture();
 	}}
 	onpointercancel={(evt) => {
 		if (!evt.isPrimary) {
 			return;
 		}
 		isActive.value = false;
+		pointerStart = undefined;
 		onCancelToSelect?.();
 		cameraTow.value = undefined;
 	}}
@@ -478,7 +521,7 @@
 >
 	<path
 		d={frameBoxPath.value}
-		pointer-events="all"
+		pointer-events={isActive.value ? 'all' : 'none'}
 		fill="none"
 		class={{
 			'edge-surface': true,

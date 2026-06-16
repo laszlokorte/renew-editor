@@ -1,5 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
+	import { preloadCode } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as env from '../envvars';
 	import CurrentAuthState from './auth/CurrentAuthState.svelte';
@@ -40,12 +41,27 @@
 		navigator.clipboard?.writeText(formatCopyText(error));
 	}
 
+	function scheduleEditorPreload() {
+		const preloadEditor = () => {
+			preloadCode('/documents/__editor_preload__/editor').catch(() => {
+				// Best-effort warm-up for the large editor route.
+			});
+		};
+
+		if (typeof requestIdleCallback === 'function') {
+			requestIdleCallback(preloadEditor, { timeout: 2000 });
+		} else {
+			setTimeout(preloadEditor, 700);
+		}
+	}
+
 	onMount(() => {
 		function handleAppError(evt) {
 			errors.value = [...errors.value, evt.detail ?? evt];
 		}
 
 		window.addEventListener('petristation:error', handleAppError);
+		scheduleEditorPreload();
 
 		return () => {
 			window.removeEventListener('petristation:error', handleAppError);
