@@ -1651,6 +1651,11 @@
 
 	let deleteShortcutContext = { dispatch: null, cast: null, doc: null, layersInOrder: null };
 
+	// The live document atom, captured alongside the delete-shortcut context (both are
+	// registered from the same editor element). Used for optimistic local updates that
+	// don't have the atom passed in directly.
+	let editorDocAtom = null;
+
 	function setDeleteShortcutContext(context) {
 		deleteShortcutContext = context ?? {
 			dispatch: null,
@@ -1658,6 +1663,7 @@
 			doc: null,
 			layersInOrder: null
 		};
+		editorDocAtom = deleteShortcutContext.doc ?? null;
 	}
 
 	function deleteShortcutContextAction(_node, context) {
@@ -3748,6 +3754,7 @@
 			}
 			connectedEdgePreviewOverrides.value = new Map();
 			groupDrag.value = undefined;
+			backoffValue.value = undefined;
 			if (clickSelectLayerId && deleteShortcutContext.cast) {
 				publishSelection(deleteShortcutContext.cast, [clickSelectLayerId]);
 			}
@@ -3758,6 +3765,7 @@
 		relinkMovedInscriptions(cast, docAtom.value, layersInOrderValue, layerIds);
 		connectedEdgePreviewOverrides.value = new Map();
 		groupDrag.value = undefined;
+		backoffValue.value = undefined;
 
 		if (evt.currentTarget.hasPointerCapture(evt.pointerId)) {
 			evt.currentTarget.releasePointerCapture(evt.pointerId);
@@ -4931,27 +4939,98 @@
 		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, predicate);
 		if (layerIds.length) {
 			cast('change_style', { layer_ids: layerIds, type, attr, val });
+			applyOptimisticStyle(layerIds, type, attr, val);
 		}
+	}
+
+	// Apply a style change to the local document immediately so the selection updates
+	// without waiting for the server round-trip. The batched change_style triggers a
+	// single document push that confirms this same value, so there is no flicker. If
+	// the document atom isn't available we simply skip and rely on the server echo.
+	function applyOptimisticStyle(layerIds, type, attr, val) {
+		const docAtom = editorDocAtom;
+		const items = docAtom?.value?.layers?.items;
+		if (!Array.isArray(items)) {
+			return;
+		}
+
+		const ids = new Set(layerIds);
+		const withAttr = (style) => ({ ...(style ?? {}), [attr]: val });
+
+		docAtom.value = {
+			...docAtom.value,
+			layers: {
+				...docAtom.value.layers,
+				items: items.map((layer) => {
+					if (!ids.has(layer.id)) {
+						return layer;
+					}
+
+					if (type === 'text' && layer.text) {
+						return { ...layer, text: { ...layer.text, style: withAttr(layer.text.style) } };
+					}
+
+					if (type === 'edge' && layer.edge) {
+						return { ...layer, edge: { ...layer.edge, style: withAttr(layer.edge.style) } };
+					}
+
+					if (type === 'layer') {
+						return { ...layer, style: withAttr(layer.style) };
+					}
+
+					return layer;
+				})
+			}
+		};
+	}
+
+	function applyOptimisticLayerUpdate(layerIds, updateLayer) {
+		const docAtom = editorDocAtom;
+		const items = docAtom?.value?.layers?.items;
+		if (!Array.isArray(items)) {
+			return;
+		}
+
+		const ids = new Set(layerIds);
+		docAtom.value = {
+			...docAtom.value,
+			layers: {
+				...docAtom.value.layers,
+				items: items.map((layer) => (ids.has(layer.id) ? updateLayer(layer) : layer))
+			}
+		};
 	}
 
 	function changeSelectedTextType(cast, docValue, layersInOrderValue, renewType) {
 		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, (layer) => !!layer?.text);
-		for (const layerId of layerIds) {
-			cast('change_text_type', { layer_id: layerId, renew_type: renewType });
+		if (layerIds.length) {
+			cast('change_text_type', { layer_ids: layerIds, renew_type: renewType });
+			applyOptimisticLayerUpdate(layerIds, (layer) => ({
+				...layer,
+				text: { ...layer.text, renew_type: renewType }
+			}));
 		}
 	}
 
 	function changeSelectedLayerShape(cast, docValue, layersInOrderValue, shapeId) {
 		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, (layer) => !!layer?.box);
-		for (const layerId of layerIds) {
-			cast('change_layer_shape', { layer_id: layerId, shape_id: shapeId });
+		if (layerIds.length) {
+			cast('change_layer_shape', { layer_ids: layerIds, shape_id: shapeId });
+			applyOptimisticLayerUpdate(layerIds, (layer) => ({
+				...layer,
+				box: { ...layer.box, shape: shapeId }
+			}));
 		}
 	}
 
 	function changeSelectedEdgeCyclic(cast, docValue, layersInOrderValue, cyclic) {
 		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, (layer) => !!layer?.edge);
-		for (const layerId of layerIds) {
-			cast('change_edge_attributes', { layer_id: layerId, attrs: { cyclic } });
+		if (layerIds.length) {
+			cast('change_edge_attributes', { layer_ids: layerIds, attrs: { cyclic } });
+			applyOptimisticLayerUpdate(layerIds, (layer) => ({
+				...layer,
+				edge: { ...layer.edge, cyclic }
+			}));
 		}
 	}
 
@@ -13922,7 +14001,8 @@
 															/>
 														</g>
 													{/if}
-													{#if supportsRoundRadiusHandle(el.value, symbols)}
+													{#await data.symbols then symbols}
+														{#if supportsRoundRadiusHandle(el.value, symbols)}
 														{@const radiusHandlePos = roundRadiusHandlePosition(el.value.box)}
 														<g
 															role="button"
@@ -14189,8 +14269,7 @@
 																/>
 															</g>
 														{/each}
-													{/if}
-													{#await data.symbols then symbols}
+														{/if}
 														{#if supportsTriangleRotationHandle(el.value, symbols)}
 															{@const triangleRotationValue = triangleRotation(el.value, symbols)}
 															{@const triangleHandlePos = triangleRotationHandlePosition(
