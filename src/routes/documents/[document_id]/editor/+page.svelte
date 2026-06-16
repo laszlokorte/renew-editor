@@ -4929,8 +4929,8 @@
 
 	function changeSelectedStyle(cast, docValue, layersInOrderValue, type, attr, val, predicate) {
 		const layerIds = selectedLayersWithKind(docValue, layersInOrderValue, predicate);
-		for (const layerId of layerIds) {
-			cast('change_style', { layer_id: layerId, type, attr, val });
+		if (layerIds.length) {
+			cast('change_style', { layer_ids: layerIds, type, attr, val });
 		}
 	}
 
