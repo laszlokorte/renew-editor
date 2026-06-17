@@ -41,7 +41,13 @@
 	import { buildPath, buildCoord } from '$lib/components/renew/symbols';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 	import TextElement from '$lib/components/renew/TextElement.svelte';
-	import { edgeAngle, edgePath, tipColor } from '$lib/components/renew/edges.js';
+	import {
+		edgeAngle,
+		edgePath,
+		elbowPoints,
+		elbowHandlePoints,
+		tipColor
+	} from '$lib/components/renew/edges.js';
 	import { walkDocument } from '$lib/components/renew/document.js';
 
 	import * as E from '$lib/dom/events';
@@ -363,7 +369,44 @@
 		return true;
 	}
 
-	function openTargetLocation(evt, layer) {
+	function activeTargetTool() {
+		return (
+			activeTool.value === CREATE_TOOL_ID && activeCreateTool.value?.type === 'target-location'
+		);
+	}
+
+	function editTargetLocation(evt, layer, cast) {
+		if (!activeTargetTool() || !layer?.id || !cast) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+
+		const nextLocation = window.prompt('Target location', layer?.style?.target_location ?? '');
+		if (nextLocation === null) {
+			return true;
+		}
+
+		cast('change_style', {
+			type: 'layer',
+			layer_ids: [layer.id],
+			attr: 'target_location',
+			val: nextLocation.trim()
+		});
+
+		if (!activeCreateTool.value?.persistent) {
+			resetToSelectTool();
+		}
+
+		return true;
+	}
+
+	function openTargetLocation(evt, layer, cast = undefined) {
+		if (editTargetLocation(evt, layer, cast)) {
+			return true;
+		}
+
 		if (activeTool.value !== 'select') {
 			return false;
 		}
@@ -392,7 +435,7 @@
 	}
 
 	function openTargetLocationOrDirectModification(evt, layer, cast) {
-		if (openTargetLocation(evt, layer)) {
+		if (openTargetLocation(evt, layer, cast)) {
 			return true;
 		}
 
@@ -6559,6 +6602,13 @@
 		return primitiveCreatesVirtualPlace(tool) || primitiveCreatesVirtualTransition(tool);
 	}
 
+	function isTargetToolItem(item) {
+		return (
+			item?.name === 'Target Tool' ||
+			item?.data?.content?.semantic_tag === 'CH.ifa.draw.figures.TargetFigure'
+		);
+	}
+
 	const renewStandardToolNames = [
 		'Rectangle Tool',
 		'Round Rectangle Tool',
@@ -6618,55 +6668,55 @@
 			'<path d="M23 10 A9 9 0 1 0 25 19" fill="none" stroke="currentColor" stroke-width="2" /><path d="M23 4 V11 H30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />',
 		pen: '<path d="M5 24 C9 9 13 27 17 12 C21 2 25 18 29 8" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />',
 		polygon:
-			'<path d="M6 24 L13 7 L25 10 L28 23 L16 29 Z" fill="#f2df60" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />',
+			'<path d="M6 24 L13 7 L25 10 L28 23 L16 29 Z" fill="#fff" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />',
 		spline:
 			'<path d="M5 24 C10 5 20 29 28 8" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />',
 		spacer:
 			'<path d="M8 8 H24 M8 24 H24 M12 10 V22 M20 10 V22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" />',
 		'Rectangle Tool':
-			'<rect fill="#f2df60" x="4" y="7" width="24" height="18" stroke="#111" stroke-width="2" />',
+			'<rect fill="#fff" x="4" y="8" width="24" height="16" stroke="#111" stroke-width="1.8" />',
 		'Round Rectangle Tool':
-			'<rect fill="#f2df60" x="4" y="7" width="24" height="18" rx="6" ry="6" stroke="#111" stroke-width="2" />',
+			'<rect fill="#fff" x="4" y="8" width="24" height="16" rx="5" ry="5" stroke="#111" stroke-width="1.8" />',
 		'Ellipse Tool':
-			'<circle fill="#f2df60" cx="16" cy="16" r="12.5" stroke="#111" stroke-width="2" />',
+			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" />',
 		'Elliptical Arc/Pie Tool':
-			'<path d="M16 16 L16 3 A13 13 0 1 1 3 16 Z" fill="#f2df60" stroke="#111" stroke-width="2" />',
+			'<path d="M16 16 L16 4 A12 12 0 1 1 4 16 Z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="miter" />',
 		'Diamond Tool':
-			'<path d="M16 3 L29 16 L16 29 L3 16 Z" fill="#f2df60" stroke="#111" stroke-width="2" />',
+			'<path d="M16 4 L28 16 L16 28 L4 16 Z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="miter" />',
 		'Triangle Tool':
-			'<path d="M16 4 L29 28 L3 28 Z" fill="#f2df60" stroke="#111" stroke-width="2" />',
+			'<path d="M16 5 L28 27 L4 27 Z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="miter" />',
 		'Line Tool':
-			'<path d="M5 25 L27 7" fill="none" stroke="#111" stroke-width="2" stroke-linecap="butt" />',
+			'<path d="M7 25 L25 7" fill="none" stroke="#111" stroke-width="1.8" stroke-linecap="butt" />',
 		'Target Tool':
-			'<circle cx="16" cy="16" r="10" fill="none" stroke="#111" stroke-width="1.8" /><path d="M16 5 V27 M5 16 H27" fill="none" stroke="#111" stroke-width="1.4" stroke-linecap="butt" />',
+			'<rect x="6" y="16" width="11" height="9" fill="none" stroke="#111" stroke-width="1.7" /><path d="M14 18 L25 7" fill="none" stroke="#111" stroke-width="1.7" stroke-linecap="butt" /><path d="M25 7 L19 8.4 L23.6 13 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M19 7 H25 V13" fill="none" stroke="#111" stroke-width="1.7" stroke-linecap="butt" stroke-linejoin="miter" />',
 		'Image Tool':
-			'<rect fill="#eee" x="5" y="5" width="22" height="22" stroke="#999" stroke-width="2" /><path d="M8 24 L14 17 L18 21 L22 14 L26 24 Z" fill="#ccc" stroke="none" />',
+			'<rect fill="#fff" x="5" y="7" width="22" height="18" stroke="#111" stroke-width="1.6" /><circle cx="11" cy="13" r="2.2" fill="#f2b01e" /><path d="M6 25 L13 16 L17 20 L22 12 L26 25 Z" fill="#6fae5f" stroke="none" />',
 		'Text Tool':
-			'<text text-anchor="middle" font-size="27" font-weight="bold" x="16" y="26" font-family="serif" fill="#111">A</text>',
+			'<text text-anchor="middle" font-size="27" x="16" y="26" font-family="serif" fill="#111">A</text>',
 		'Connected Text Tool':
-			'<text x="4" y="12" font-size="12" font-family="serif" fill="#111">*</text><text text-anchor="middle" font-size="26" font-weight="bold" x="18" y="27" font-family="serif" fill="#111">A</text>',
+			'<text x="3" y="13" font-size="13" font-family="serif" fill="#111">*</text><text text-anchor="middle" font-size="25" x="18" y="27" font-family="serif" fill="#111">A</text>',
 		'Transition Tool':
-			'<rect fill="#f2df60" x="6" y="9" width="20" height="14" stroke="#111" stroke-width="1.8" /><text x="16" y="20" text-anchor="middle" font-family="serif" font-size="10.5" font-weight="bold" fill="#111">T</text>',
+			'<rect fill="#fff" x="5" y="9" width="22" height="14" stroke="#111" stroke-width="1.6" /><text x="16" y="19.5" text-anchor="middle" font-family="serif" font-size="11" fill="#111">T</text>',
 		'Virtual Transition Tool':
-			'<rect fill="#f2df60" x="6" y="9" width="20" height="14" stroke="#111" stroke-width="1.8" /><rect fill="none" x="9" y="12" width="14" height="8" stroke="#111" stroke-width="1.2" /><text x="16" y="20" text-anchor="middle" font-family="serif" font-size="8.5" font-weight="bold" fill="#111">T</text>',
+			'<rect fill="#fff" x="4" y="8" width="24" height="16" stroke="#111" stroke-width="1.6" /><rect fill="none" x="8" y="12" width="16" height="8" stroke="#111" stroke-width="1.1" />',
 		'Place Tool':
-			'<circle fill="#f2df60" cx="16" cy="16" r="11.5" stroke="#111" stroke-width="1.8" /><text x="16" y="20" text-anchor="middle" font-family="serif" font-size="10.5" font-weight="bold" fill="#111">P</text>',
+			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.6" /><text x="16" y="19.5" text-anchor="middle" font-family="serif" font-size="11" fill="#111">P</text>',
 		'Virtual Place Tool':
-			'<circle fill="#f2df60" cx="16" cy="16" r="11.5" stroke="#111" stroke-width="1.8" /><circle fill="none" cx="16" cy="16" r="8.2" stroke="#111" stroke-width="1.2" /><text x="16" y="20" text-anchor="middle" font-family="serif" font-size="8.5" font-weight="bold" fill="#111">P</text>',
+			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.6" /><circle fill="none" cx="16" cy="16" r="8" stroke="#111" stroke-width="1.1" />',
 		'Arc Tool':
-			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+			'<path d="M8 8 L24 24" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M24 24 L18.4 21.5 L21.5 18.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
 		'Connection Tool':
-			'<path d="M5 25 L27 7" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" />',
+			'<path d="M8 24 L24 8" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M24 8 L18.4 10.5 L21.5 13.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M8 24 L13.6 21.5 L10.5 18.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
 		'Elbow Connection Tool':
-			'<path d="M7 8 L7 24 L24 24" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" stroke-linejoin="miter" />',
+			'<path d="M7 8 L7 23 L23 23" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" stroke-linejoin="miter" /><path d="M7 8 L4.5 13.6 L9.5 13.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M23 23 L17.4 20.5 L20.5 17.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
 		'Test Arc Tool':
-			'<path d="M5 25 L27 7" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" />',
+			'<path d="M8 24 L24 8" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" />',
 		'Reserve Arc Tool':
-			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M5 25 L10.6 22.5 L7.5 19.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+			'<path d="M8 8 L24 24" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M24 24 L18.4 21.5 L21.5 18.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M8 8 L13.6 10.5 L10.5 13.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
 		'Flexible Arc Tool':
 			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M21 9 L15.4 11.5 L18.5 14.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
 		'Inhibitor Arc Tool':
-			'<path d="M6 24 L21 9" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><circle cx="24" cy="6" r="3.8" fill="white" stroke="#111" stroke-width="1.7" />',
+			'<path d="M8 24 L24 8" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><circle cx="8" cy="24" r="2.4" fill="#111" /><circle cx="24" cy="8" r="2.4" fill="#111" />',
 		'Clear Arc Tool':
 			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M21 9 L15.4 11.5 L18.5 14.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
 		'Inscription Tool':
@@ -6678,19 +6728,19 @@
 		'Comment Tool':
 			'<text text-anchor="middle" font-size="22" font-weight="bold" x="16" y="24" font-family="serif" fill="#111">@</text>',
 		'FA Start State Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="13.5" stroke="#111" stroke-width="2" /><path d="M3 3 L9 9" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" /><path d="M9 9 L4.5 8.2 M9 9 L8.2 4.5" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" />',
+			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" /><path d="M6 6 L13 13" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="butt" /><path d="M13 13 L7.8 11.7 L11.7 7.8 Z" fill="#111" stroke="#111" stroke-width="0.4" />',
 		'FA State Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="13.5" stroke="#111" stroke-width="2" />',
+			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" />',
 		'FA End State Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="13.5" stroke="#111" stroke-width="2" /><circle fill="none" cx="16" cy="16" r="10.2" stroke="#111" stroke-width="1.4" />',
+			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" /><circle fill="none" cx="16" cy="16" r="8.7" stroke="#111" stroke-width="1.2" />',
 		'FA Start End State Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="13.5" stroke="#111" stroke-width="2" /><circle fill="none" cx="16" cy="16" r="10.2" stroke="#111" stroke-width="1.4" /><path d="M3 3 L9 9" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" /><path d="M9 9 L4.5 8.2 M9 9 L8.2 4.5" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round" />',
+			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" /><circle fill="none" cx="16" cy="16" r="8.7" stroke="#111" stroke-width="1.2" /><path d="M6 6 L13 13" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="butt" /><path d="M13 13 L7.8 11.7 L11.7 7.8 Z" fill="#111" stroke="#111" stroke-width="0.4" />',
 		'FA Name Tool':
 			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">n</text>',
 		'FA Inscription Tool':
 			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">i</text>',
 		'FA Word Placement Tool':
-			'<text text-anchor="middle" font-size="20" font-weight="bold" font-style="italic" x="16" y="23" font-family="serif" fill="#025bff">w</text>',
+			'<text text-anchor="middle" font-size="21" font-style="italic" x="16" y="23" font-family="serif" fill="#111">w</text>',
 		'FA ArcConnection Tool':
 			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
 		'FA Loop ArcConnection Tool':
@@ -6988,7 +7038,7 @@
 			return {};
 		}
 
-		const { id, ...payload } = activeEdgeTool.value;
+		const { id, connection_layout, create_node_on_empty, ...payload } = activeEdgeTool.value;
 		return payload;
 	}
 
@@ -7013,6 +7063,14 @@
 
 	function activeEdgeCreatesLoop() {
 		return activeEdgeValue('loop', false) === true;
+	}
+
+	function activeEdgeConnectionLayout() {
+		return activeEdgeValue('connection_layout', 'line');
+	}
+
+	function activeEdgeCreatesNodeOnEmpty() {
+		return activeEdgeValue('create_node_on_empty', true) !== false;
 	}
 
 	function edgeLoopWaypoints(docValue, layerId, loopPosition = undefined, loopClick = true) {
@@ -7072,6 +7130,20 @@
 		}
 
 		clearSelectionForNonSelectTool(CREATE_TOOL_ID, cast);
+		if (isTargetToolItem(item)) {
+			activeCreateTool.value = {
+				type: 'target-location',
+				id: primitiveToolId(item),
+				item,
+				persistent
+			};
+			activeEdgeTool.value = undefined;
+			primitiveCreation.value = undefined;
+			inlineTextEdit.value = undefined;
+			activeTool.value = CREATE_TOOL_ID;
+			return true;
+		}
+
 		activeCreateTool.value = {
 			type: 'primitive',
 			id: primitiveToolId(item),
@@ -7246,7 +7318,8 @@
 	function activeCreateToolUsesCrosshair() {
 		return (
 			activeTool.value === CREATE_TOOL_ID &&
-			(primitiveNeedsLinkedTarget(activeCreateTool.value) ||
+			(activeTargetTool() ||
+				primitiveNeedsLinkedTarget(activeCreateTool.value) ||
 				primitiveCreatesText(activeCreateTool.value))
 		);
 	}
@@ -11347,7 +11420,7 @@
 																	) {
 																		return;
 																	}
-																	if (openTargetLocation(evt, el.value)) {
+																	if (openTargetLocation(evt, el.value, cast)) {
 																		return;
 																	}
 																	evt.stopPropagation();
@@ -11442,7 +11515,7 @@
 																		) {
 																			return;
 																		}
-																		if (openTargetLocation(evt, el.value)) {
+																		if (openTargetLocation(evt, el.value, cast)) {
 																			return;
 																		}
 																		evt.stopPropagation();
@@ -11606,7 +11679,7 @@
 																	) {
 																		return;
 																	}
-																	if (openTargetLocation(evt, el.value)) {
+																	if (openTargetLocation(evt, el.value, cast)) {
 																		return;
 																	}
 																	evt.stopPropagation();
@@ -12503,7 +12576,7 @@
 											</g>
 										{/if}
 
-										{#if activeCreateTool.value && !primitiveNeedsLinkedTarget(activeCreateTool.value) && !primitiveCreatesText(activeCreateTool.value)}
+										{#if activeCreateTool.value && !activeTargetTool() && !primitiveNeedsLinkedTarget(activeCreateTool.value) && !primitiveCreatesText(activeCreateTool.value)}
 											<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 											<path
 												class="primitive-creation-hitbox"
@@ -12667,9 +12740,144 @@
 															L.get(localProp('waypoints'), selectedPreviewEdge) ??
 															selectedPreviewEdge?.waypoints ??
 															[]}
-														{@const selectedPreviewWaypointProposals =
-															edgeWaypointProposals(selectedPreviewEdge)}
+														{@const isElbowEdge =
+															selectedPreviewEdge?.style?.smoothness === 'elbow'}
+														{@const selectedPreviewWaypointProposals = isElbowEdge
+															? []
+															: edgeWaypointProposals(selectedPreviewEdge)}
 														{#if activeTool.value === 'select'}
+															{#if isElbowEdge}
+																{#each elbowPoints(selectedPreviewEdge, selectedPreviewWaypoints) as bend, bi (bi)}
+																	<rect
+																		fill="none"
+																		stroke="#111"
+																		stroke-width="1.2"
+																		vector-effect="non-scaling-stroke"
+																		pointer-events="none"
+																		width={7 * cameraScale.value}
+																		height={7 * cameraScale.value}
+																		x={bend.x - 3.5 * cameraScale.value}
+																		y={bend.y - 3.5 * cameraScale.value}
+																	/>
+																{/each}
+																{#each elbowHandlePoints(selectedPreviewEdge, selectedPreviewWaypoints) as handle, hi (hi)}
+																	{#if handle.draggable}
+																		<g
+																			role="button"
+																			tabindex="-1"
+																			onpointerdown={(evt) => {
+																				if (!(evt.isPrimary && E.isLeftButton(evt))) {
+																					return;
+																				}
+																				evt.preventDefault();
+																				evt.stopPropagation();
+																				waypoints.value = localProp.reset;
+																				const axis = handle.axis;
+																				const perp = axis === 'x' ? handle.y : handle.x;
+																				const layerId = el.value.id;
+																				const previewEdge = selectedPreviewEdge;
+																				const existingId = el.value?.edge?.waypoints?.[0]?.id;
+																				const offset = Geo.diff2d(
+																					{ x: handle.x, y: handle.y },
+																					liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																				);
+																				const controlFor = (clientX, clientY) => {
+																					const p = Geo.translate(
+																						offset,
+																						liveLenses.clientToCanvas(clientX, clientY)
+																					);
+																					return axis === 'x'
+																						? { x: p.x, y: perp }
+																						: { x: perp, y: p.y };
+																				};
+																				console.log('[elbow] drag start', {
+																					layerId,
+																					axis,
+																					existingId
+																				});
+																				const onMove = (e) => {
+																					const control = controlFor(e.clientX, e.clientY);
+																					console.log('[elbow] move', control);
+																					patchLayerLocally(doc, layerId, (cur) => ({
+																						...cur,
+																						edge: {
+																							...cur.edge,
+																							waypoints: [
+																								{ id: existingId, x: control.x, y: control.y }
+																							]
+																						}
+																					}));
+																				};
+																				const onUp = (e) => {
+																					window.removeEventListener('pointermove', onMove);
+																					window.removeEventListener('pointerup', onUp);
+																					const control = controlFor(e.clientX, e.clientY);
+																					let action;
+																					let committedWaypoints;
+																					if (existingId) {
+																						action = cast('update_waypoint_position', {
+																							layer_id: layerId,
+																							waypoint_id: existingId,
+																							value: control
+																						});
+																						committedWaypoints = [
+																							{ id: existingId, x: control.x, y: control.y }
+																						];
+																					} else {
+																						action = cast('create_waypoint', {
+																							layer_id: layerId,
+																							position: control
+																						});
+																						committedWaypoints = [
+																							{ id: '__pending', x: control.x, y: control.y }
+																						];
+																					}
+																					holdCommittedEdgeWaypointPreview(
+																						layerId,
+																						previewEdge,
+																						committedWaypoints,
+																						action,
+																						doc
+																					);
+																				};
+																				window.addEventListener('pointermove', onMove);
+																				window.addEventListener('pointerup', onUp);
+																			}}
+																		>
+																			<circle
+																				fill="none"
+																				stroke="none"
+																				pointer-events="all"
+																				cursor="move"
+																				r={9 * cameraScale.value}
+																				cx={handle.x}
+																				cy={handle.y}
+																			/>
+																			<circle
+																				fill="#ffeb3b"
+																				stroke="#111"
+																				stroke-width="1.5"
+																				vector-effect="non-scaling-stroke"
+																				pointer-events="none"
+																				r={4 * cameraScale.value}
+																				cx={handle.x}
+																				cy={handle.y}
+																			/>
+																		</g>
+																	{:else}
+																		<circle
+																			fill="#ffeb3b"
+																			stroke="#111"
+																			stroke-width="1.5"
+																			vector-effect="non-scaling-stroke"
+																			pointer-events="none"
+																			r={4 * cameraScale.value}
+																			cx={handle.x}
+																			cy={handle.y}
+																		/>
+																	{/if}
+																{/each}
+															{/if}
 															<path
 																d={edgePath[selectedPreviewEdge?.style?.smoothness ?? 'linear'](
 																	selectedPreviewEdge,
@@ -13002,7 +13210,7 @@
 																/></g
 															>
 														{/each}
-														{#each persistentWaypoints.value as wp, wi (wp.id)}
+														{#each isElbowEdge ? [] : persistentWaypoints.value as wp, wi (wp.id)}
 															{@const previewWp = previewWaypointPosition(
 																selectedPreviewWaypoints,
 																wp
@@ -14010,136 +14218,7 @@
 													{/if}
 													{#await data.symbols then symbols}
 														{#if supportsRoundRadiusHandle(el.value, symbols)}
-														{@const radiusHandlePos = roundRadiusHandlePosition(el.value.box)}
-														<g
-															role="button"
-															tabindex="-1"
-															transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
-															onpointerdown={(evt) => {
-																if (
-																	beginSelectionMoveFromHandle(
-																		evt,
-																		liveLenses,
-																		el.value.id,
-																		layersInOrder.value,
-																		doc.value
-																	)
-																) {
-																	return;
-																}
-
-																if (evt.isPrimary && E.isLeftButton(evt)) {
-																	evt.preventDefault();
-																	evt.currentTarget.focus({ preventScroll: true });
-																	evt.currentTarget.setPointerCapture(evt.pointerId);
-																	evt.currentTarget.currentPointerId = evt.pointerId;
-																	attributeHandleDrag.value = {
-																		type: 'round_radius',
-																		layerId: el.value.id,
-																		startRadii: boxRoundRadii(el.value.box),
-																		value: boxRoundRadii(el.value.box)
-																	};
-																}
-															}}
-															onpointermove={(evt) => {
-																if (
-																	updateSelectionMoveFromHandle(
-																		evt,
-																		liveLenses,
-																		doc,
-																		layersInOrder.value
-																	)
-																) {
-																	return;
-																}
-
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	const drag = attributeHandleDrag.value;
-																	if (
-																		drag?.type !== 'round_radius' ||
-																		drag.layerId !== el.value.id
-																	) {
-																		return;
-																	}
-																	const radius = roundRadiusFromPointer(
-																		el.value.box,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-																	attributeHandleDrag.value = { ...drag, value: radius };
-																	patchBoxRoundRadiusLocally(doc, el.value.id, radius);
-																}
-															}}
-															onpointerup={(evt) => {
-																if (
-																	finishSelectionMoveFromHandle(
-																		evt,
-																		dispatch,
-																		doc,
-																		layersInOrder.value
-																	)
-																) {
-																	return;
-																}
-
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	const radius =
-																		attributeHandleDrag.value?.value ?? boxRoundRadii(el.value.box);
-																	commitBoxRoundRadius(cast, el.value, radius);
-																	attributeHandleDrag.value = undefined;
-																}
-															}}
-															onkeydown={(evt) => {
-																if (cancelSelectionMoveFromHandle(evt)) {
-																	return;
-																}
-
-																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	const drag = attributeHandleDrag.value;
-																	if (drag?.type !== 'round_radius') {
-																		return;
-																	}
-																	evt.stopPropagation();
-																	evt.currentTarget.releasePointerCapture(
-																		evt.currentTarget.currentPointerId
-																	);
-																	patchBoxRoundRadiusLocally(doc, el.value.id, drag.startRadii);
-																	attributeHandleDrag.value = undefined;
-																}
-															}}
-														>
-															<circle
-																fill="none"
-																stroke="none"
-																cursor="default"
-																pointer-events="all"
-																r={cameraScale.value * 7}
-																cx={radiusHandlePos.x}
-																cy={radiusHandlePos.y}
-															/>
-															<circle
-																fill="#ffeb3b"
-																stroke="#111"
-																stroke-width="1.5"
-																vector-effect="non-scaling-stroke"
-																pointer-events="none"
-																r={cameraScale.value * 4}
-																cx={radiusHandlePos.x}
-																cy={radiusHandlePos.y}
-															/>
-														</g>
-													{/if}
-													{#if supportsPieAngleHandles(el.value, symbols)}
-														{#each ['start_angle', 'end_angle'] as angleKind (angleKind)}
-															{@const pieHandlePos = pieAngleHandlePosition(
-																el.value.box,
-																angleKind
-															)}
+															{@const radiusHandlePos = roundRadiusHandlePosition(el.value.box)}
 															<g
 																role="button"
 																tabindex="-1"
@@ -14163,11 +14242,10 @@
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		evt.currentTarget.currentPointerId = evt.pointerId;
 																		attributeHandleDrag.value = {
-																			type: 'pie_angle',
-																			angleKind,
+																			type: 'round_radius',
 																			layerId: el.value.id,
-																			startAngle: pieAngleValue(el.value.box, angleKind),
-																			value: pieAngleValue(el.value.box, angleKind)
+																			startRadii: boxRoundRadii(el.value.box),
+																			value: boxRoundRadii(el.value.box)
 																		};
 																	}
 																}}
@@ -14189,19 +14267,17 @@
 																	) {
 																		const drag = attributeHandleDrag.value;
 																		if (
-																			drag?.type !== 'pie_angle' ||
-																			drag.layerId !== el.value.id ||
-																			drag.angleKind !== angleKind
+																			drag?.type !== 'round_radius' ||
+																			drag.layerId !== el.value.id
 																		) {
 																			return;
 																		}
-																		const angle = pieAngleFromPointer(
+																		const radius = roundRadiusFromPointer(
 																			el.value.box,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY),
-																			evt.ctrlKey || evt.metaKey
+																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																		);
-																		attributeHandleDrag.value = { ...drag, value: angle };
-																		patchPieAngleLocally(doc, el.value.id, angleKind, angle);
+																		attributeHandleDrag.value = { ...drag, value: radius };
+																		patchBoxRoundRadiusLocally(doc, el.value.id, radius);
 																	}
 																}}
 																onpointerup={(evt) => {
@@ -14220,10 +14296,10 @@
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
 																	) {
-																		const angle =
+																		const radius =
 																			attributeHandleDrag.value?.value ??
-																			pieAngleValue(el.value.box, angleKind);
-																		commitPieAngle(cast, el.value, angleKind, angle);
+																			boxRoundRadii(el.value.box);
+																		commitBoxRoundRadius(cast, el.value, radius);
 																		attributeHandleDrag.value = undefined;
 																	}
 																}}
@@ -14234,23 +14310,14 @@
 
 																	if (evt.key === 'Escape' || evt.key === 'Esc') {
 																		const drag = attributeHandleDrag.value;
-																		if (
-																			drag?.type !== 'pie_angle' ||
-																			drag.layerId !== el.value.id ||
-																			drag.angleKind !== angleKind
-																		) {
+																		if (drag?.type !== 'round_radius') {
 																			return;
 																		}
 																		evt.stopPropagation();
 																		evt.currentTarget.releasePointerCapture(
 																			evt.currentTarget.currentPointerId
 																		);
-																		patchPieAngleLocally(
-																			doc,
-																			el.value.id,
-																			angleKind,
-																			drag.startAngle
-																		);
+																		patchBoxRoundRadiusLocally(doc, el.value.id, drag.startRadii);
 																		attributeHandleDrag.value = undefined;
 																	}
 																}}
@@ -14261,8 +14328,8 @@
 																	cursor="default"
 																	pointer-events="all"
 																	r={cameraScale.value * 7}
-																	cx={pieHandlePos.x}
-																	cy={pieHandlePos.y}
+																	cx={radiusHandlePos.x}
+																	cy={radiusHandlePos.y}
 																/>
 																<circle
 																	fill="#ffeb3b"
@@ -14271,11 +14338,153 @@
 																	vector-effect="non-scaling-stroke"
 																	pointer-events="none"
 																	r={cameraScale.value * 4}
-																	cx={pieHandlePos.x}
-																	cy={pieHandlePos.y}
+																	cx={radiusHandlePos.x}
+																	cy={radiusHandlePos.y}
 																/>
 															</g>
-														{/each}
+														{/if}
+														{#if supportsPieAngleHandles(el.value, symbols)}
+															{#each ['start_angle', 'end_angle'] as angleKind (angleKind)}
+																{@const pieHandlePos = pieAngleHandlePosition(
+																	el.value.box,
+																	angleKind
+																)}
+																<g
+																	role="button"
+																	tabindex="-1"
+																	transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
+																	onpointerdown={(evt) => {
+																		if (
+																			beginSelectionMoveFromHandle(
+																				evt,
+																				liveLenses,
+																				el.value.id,
+																				layersInOrder.value,
+																				doc.value
+																			)
+																		) {
+																			return;
+																		}
+
+																		if (evt.isPrimary && E.isLeftButton(evt)) {
+																			evt.preventDefault();
+																			evt.currentTarget.focus({ preventScroll: true });
+																			evt.currentTarget.setPointerCapture(evt.pointerId);
+																			evt.currentTarget.currentPointerId = evt.pointerId;
+																			attributeHandleDrag.value = {
+																				type: 'pie_angle',
+																				angleKind,
+																				layerId: el.value.id,
+																				startAngle: pieAngleValue(el.value.box, angleKind),
+																				value: pieAngleValue(el.value.box, angleKind)
+																			};
+																		}
+																	}}
+																	onpointermove={(evt) => {
+																		if (
+																			updateSelectionMoveFromHandle(
+																				evt,
+																				liveLenses,
+																				doc,
+																				layersInOrder.value
+																			)
+																		) {
+																			return;
+																		}
+
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			const drag = attributeHandleDrag.value;
+																			if (
+																				drag?.type !== 'pie_angle' ||
+																				drag.layerId !== el.value.id ||
+																				drag.angleKind !== angleKind
+																			) {
+																				return;
+																			}
+																			const angle = pieAngleFromPointer(
+																				el.value.box,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY),
+																				evt.ctrlKey || evt.metaKey
+																			);
+																			attributeHandleDrag.value = { ...drag, value: angle };
+																			patchPieAngleLocally(doc, el.value.id, angleKind, angle);
+																		}
+																	}}
+																	onpointerup={(evt) => {
+																		if (
+																			finishSelectionMoveFromHandle(
+																				evt,
+																				dispatch,
+																				doc,
+																				layersInOrder.value
+																			)
+																		) {
+																			return;
+																		}
+
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			const angle =
+																				attributeHandleDrag.value?.value ??
+																				pieAngleValue(el.value.box, angleKind);
+																			commitPieAngle(cast, el.value, angleKind, angle);
+																			attributeHandleDrag.value = undefined;
+																		}
+																	}}
+																	onkeydown={(evt) => {
+																		if (cancelSelectionMoveFromHandle(evt)) {
+																			return;
+																		}
+
+																		if (evt.key === 'Escape' || evt.key === 'Esc') {
+																			const drag = attributeHandleDrag.value;
+																			if (
+																				drag?.type !== 'pie_angle' ||
+																				drag.layerId !== el.value.id ||
+																				drag.angleKind !== angleKind
+																			) {
+																				return;
+																			}
+																			evt.stopPropagation();
+																			evt.currentTarget.releasePointerCapture(
+																				evt.currentTarget.currentPointerId
+																			);
+																			patchPieAngleLocally(
+																				doc,
+																				el.value.id,
+																				angleKind,
+																				drag.startAngle
+																			);
+																			attributeHandleDrag.value = undefined;
+																		}
+																	}}
+																>
+																	<circle
+																		fill="none"
+																		stroke="none"
+																		cursor="default"
+																		pointer-events="all"
+																		r={cameraScale.value * 7}
+																		cx={pieHandlePos.x}
+																		cy={pieHandlePos.y}
+																	/>
+																	<circle
+																		fill="#ffeb3b"
+																		stroke="#111"
+																		stroke-width="1.5"
+																		vector-effect="non-scaling-stroke"
+																		pointer-events="none"
+																		r={cameraScale.value * 4}
+																		cx={pieHandlePos.x}
+																		cy={pieHandlePos.y}
+																	/>
+																</g>
+															{/each}
 														{/if}
 														{#if supportsTriangleRotationHandle(el.value, symbols)}
 															{@const triangleRotationValue = triangleRotation(el.value, symbols)}
@@ -14451,6 +14660,8 @@
 																: visibleEdgeSourceLayerIds.value}
 															selectionHandles={activeTool.value === 'select'}
 															loop={activeEdgeCreatesLoop()}
+															connectionLayout={activeEdgeConnectionLayout()}
+															createNodeOnEmpty={activeEdgeCreatesNodeOnEmpty()}
 															sockets={viewCombined(
 																[
 																	L.reread(({ inOrder, flatLayers, dragState, moveDelta }) =>
@@ -14593,7 +14804,7 @@
 																					e.loopPosition,
 																					e.loopClick
 																				)
-																			: undefined,
+																			: e.waypoints,
 																		semantic_tag: activeEdgeValue(
 																			'semantic_tag',
 																			'de.renew.gui.ArcConnection'

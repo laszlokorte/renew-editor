@@ -52,7 +52,12 @@ export default function (fetchFn, routes, token) {
 							};
 						})
 						.then((json) => {
-							throw { error: 'http', status: r.status, message: extractServerMessage(json), original: json };
+							throw {
+								error: 'http',
+								status: r.status,
+								message: extractServerMessage(json),
+								original: json
+							};
 						});
 				}
 			});

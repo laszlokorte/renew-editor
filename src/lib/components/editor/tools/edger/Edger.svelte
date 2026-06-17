@@ -19,6 +19,8 @@
 		newEdge,
 		newEdgeNode,
 		loop = false,
+		connectionLayout = 'line',
+		createNodeOnEmpty = true,
 		sourceLayerIds = undefined,
 		selectionHandles = false,
 		onCancelToSelect = undefined
@@ -135,8 +137,9 @@
 			return 0;
 		}
 
-		const from = reverse ? target : source;
-		const to = reverse ? source : target;
+		const points = previewPoints(source, target);
+		const from = reverse ? points[1] : points[points.length - 2];
+		const to = reverse ? points[0] : points[points.length - 1];
 
 		return (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
 	}
@@ -164,8 +167,9 @@
 			return '';
 		}
 
-		const from = reverse ? target : source;
-		const to = reverse ? source : target;
+		const points = previewPoints(source, target);
+		const from = reverse ? points[1] : points[points.length - 2];
+		const to = reverse ? points[0] : points[points.length - 1];
 		const dx = to.x - from.x;
 		const dy = to.y - from.y;
 		const len = Math.hypot(dx, dy);
@@ -190,6 +194,56 @@
 		const rightY = to.y - ny * outerBack + nx * outerSide;
 
 		return `M ${to.x} ${to.y} L ${leftX} ${leftY} L ${innerX} ${innerY} L ${rightX} ${rightY} Z`;
+	}
+
+	function elbowWaypoints(source, target) {
+		if (!source || !target) {
+			return [];
+		}
+
+		const dx = target.x - source.x;
+		const dy = target.y - source.y;
+
+		if (Math.abs(dx) < 0.001 || Math.abs(dy) < 0.001) {
+			return [];
+		}
+
+		if (Math.abs(dx) >= Math.abs(dy)) {
+			const midX = source.x + dx / 2;
+			return [
+				{ x: midX, y: source.y },
+				{ x: midX, y: target.y }
+			];
+		}
+
+		const midY = source.y + dy / 2;
+		return [
+			{ x: source.x, y: midY },
+			{ x: target.x, y: midY }
+		];
+	}
+
+	function connectionWaypoints(source, target) {
+		return connectionLayout === 'elbow' ? elbowWaypoints(source, target) : [];
+	}
+
+	function previewPoints(source, target) {
+		if (!source || !target) {
+			return [];
+		}
+
+		return [source, ...connectionWaypoints(source, target), target];
+	}
+
+	function previewPath(source, target) {
+		const points = previewPoints(source, target);
+		if (points.length === 0) {
+			return '';
+		}
+
+		return points
+			.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+			.join(' ');
 	}
 
 	function socketVisible(socket) {
@@ -403,7 +457,11 @@
 					(socketTargetContainsPoint(node, worldPos) || distance < snapRadiusScaled.value)
 				);
 			})
-			.sort((a, b) => Math.hypot(a.x - worldPos.x, a.y - worldPos.y) - Math.hypot(b.x - worldPos.x, b.y - worldPos.y))
+			.sort(
+				(a, b) =>
+					Math.hypot(a.x - worldPos.x, a.y - worldPos.y) -
+					Math.hypot(b.x - worldPos.x, b.y - worldPos.y)
+			)
 			.map((node) => node.id);
 
 		if (closeTargets.length > 0) {
@@ -437,8 +495,17 @@
 				);
 			}
 		} else if (validConnection.value && newEdge) {
-			newEdge(connection.value, evt);
-		} else if (newEdgeNode) {
+			newEdge(
+				{
+					...connection.value,
+					waypoints: connectionWaypoints(
+						draftEdgeSourcePosition.value,
+						draftEdgeTargetPosition.value
+					)
+				},
+				evt
+			);
+		} else if (createNodeOnEmpty && newEdgeNode) {
 			const dist = Math.hypot(
 				draftSourcePosition.value.x - draftTargetPosition.value.x,
 				draftSourcePosition.value.y - draftTargetPosition.value.y
@@ -521,8 +588,7 @@
 				class={{ edge: true, valid: validConnection.value }}
 				stroke="black"
 				pointer-events="none"
-				d="M{draftEdgeSourcePosition.value.x} {draftEdgeSourcePosition.value
-					.y} L {draftEdgeTargetPosition.value.x} {draftEdgeTargetPosition.value.y}"
+				d={previewPath(draftEdgeSourcePosition.value, draftEdgeTargetPosition.value)}
 			/>
 			{@const previewSourceTipSymbolId = previewTipSymbolId(reversePreview, true)}
 			{@const previewTargetTipSymbolId = previewTipSymbolId(reversePreview, false)}

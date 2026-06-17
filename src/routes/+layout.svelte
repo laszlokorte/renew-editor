@@ -15,7 +15,10 @@
 			navigator.serviceWorker.getRegistrations().then(async (registrations) => {
 				await Promise.all(registrations.map((registration) => registration.unregister()));
 
-				if (navigator.serviceWorker.controller && !sessionStorage.getItem('petristation-sw-dev-reload')) {
+				if (
+					navigator.serviceWorker.controller &&
+					!sessionStorage.getItem('petristation-sw-dev-reload')
+				) {
 					sessionStorage.setItem('petristation-sw-dev-reload', '1');
 					window.location.reload();
 				} else if (!navigator.serviceWorker.controller) {

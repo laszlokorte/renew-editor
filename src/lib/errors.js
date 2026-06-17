@@ -278,7 +278,9 @@ function describeErrorWithoutContext(error, fallbackMessage) {
 			message: serverMessage || statusDescription.message,
 			detail:
 				explicitDetail ||
-				(serverMessage && serverMessage !== statusDescription.message ? statusDescription.message : ''),
+				(serverMessage && serverMessage !== statusDescription.message
+					? statusDescription.message
+					: ''),
 			status
 		};
 	}
@@ -328,7 +330,9 @@ export function publishError(error, fallbackMessage = DEFAULT_FALLBACK_MESSAGE) 
 
 export function formatErrorMessage(error, fallbackMessage) {
 	const description = describeError(error, fallbackMessage);
-	const prefix = description.status ? `${description.title} (${description.status})` : description.title;
+	const prefix = description.status
+		? `${description.title} (${description.status})`
+		: description.title;
 
 	return [prefix, description.message].filter(Boolean).join(': ');
 }

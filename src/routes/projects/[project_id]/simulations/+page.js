@@ -53,7 +53,10 @@ export async function load({ fetch, params, parent }) {
 			}))
 			.catch((e) => {
 				const description = describeError(e, 'Simulations could not be loaded');
-				return error(description.status || 503, errorPageBody(e, 'Simulations could not be loaded'));
+				return error(
+					description.status || 503,
+					errorPageBody(e, 'Simulations could not be loaded')
+				);
 			});
 	} else {
 		return redirect(307, resolve(`/auth`));

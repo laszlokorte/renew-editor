@@ -165,15 +165,23 @@
 						{@const currentError = describeError(rawError)}
 						<li class="error" role="alert">
 							<div class="error-body">
-								<strong>{currentError.title}{currentError.status ? ` ${currentError.status}` : ''}:</strong>
+								<strong
+									>{currentError.title}{currentError.status
+										? ` ${currentError.status}`
+										: ''}:</strong
+								>
 								<span>{currentError.message}</span>
 								{#if currentError.detail}
 									<small>{currentError.detail}</small>
 								{/if}
 							</div>
 							<div class="error-actions">
-								<button class="error-button" type="button" onclick={() => copyError(rawError)}>Copy</button>
-								<button class="error-button" type="button" onclick={() => discardError(index)}>Dismiss</button>
+								<button class="error-button" type="button" onclick={() => copyError(rawError)}
+									>Copy</button
+								>
+								<button class="error-button" type="button" onclick={() => discardError(index)}
+									>Dismiss</button
+								>
 							</div>
 						</li>
 					{/each}

@@ -72,7 +72,10 @@
 	}
 
 	function discardLiveError(signature) {
-		update((errors) => errors.filter((error) => liveErrorSignature(error) !== signature), liveErrors);
+		update(
+			(errors) => errors.filter((error) => liveErrorSignature(error) !== signature),
+			liveErrors
+		);
 	}
 
 	function discardAllLiveErrors() {

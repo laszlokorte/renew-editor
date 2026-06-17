@@ -7,9 +7,7 @@
 	import { describeError } from '$lib/errors';
 
 	import { resolve } from '$app/paths';
-	const displayedError = $derived(
-		describeError({ status: page.status, ...(page.error ?? {}) })
-	);
+	const displayedError = $derived(describeError({ status: page.status, ...(page.error ?? {}) }));
 
 	function onLogin(auth) {
 		return new Promise((res) => {
@@ -21,7 +19,9 @@
 </script>
 
 <div>
-	<h1 class="center">{displayedError.title}{displayedError.status ? ` ${displayedError.status}` : ''}</h1>
+	<h1 class="center">
+		{displayedError.title}{displayedError.status ? ` ${displayedError.status}` : ''}
+	</h1>
 	<p class="center">{displayedError.message}</p>
 
 	{#if displayedError.detail}

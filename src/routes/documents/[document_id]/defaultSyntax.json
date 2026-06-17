@@ -1,6 +1,4 @@
 {
-	"edgeWhitelist": {
-	},
-	"autoEdgeNode": {
-	}
+	"edgeWhitelist": {},
+	"autoEdgeNode": {}
 }

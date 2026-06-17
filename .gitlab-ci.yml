@@ -3,13 +3,13 @@ workflow:
     - if: '$CI_COMMIT_BRANCH =~ /^(main|staging|dev)$/'
     - when: never
 stages:
-   - build
+  - build
 
 build:
   stage: build
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: [""]
+    entrypoint: ['']
   variables:
     IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_BRANCH
     DOCKER_FILE: Dockerfile
@@ -32,7 +32,7 @@ build_with_sub_path:
   stage: build
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: [""]
+    entrypoint: ['']
   variables:
     IMAGE_TAG: $CI_REGISTRY_IMAGE:subpath-$CI_COMMIT_BRANCH
     DOCKER_FILE: Dockerfile

@@ -143,9 +143,16 @@ export async function load({ params, fetch }) {
 							simulation,
 							commands: createCommands(fetch, j),
 							offline: Boolean(r.offline),
-							symbols: cachedJson(api, simulationLinkedCacheKey(simulationId, 'symbols'), j.links.symbols.href, (symbols) => {
-								return new Map(symbols.shapes.map((s) => [s.id, { name: s.name, paths: s.paths }]));
-							}),
+							symbols: cachedJson(
+								api,
+								simulationLinkedCacheKey(simulationId, 'symbols'),
+								j.links.symbols.href,
+								(symbols) => {
+									return new Map(
+										symbols.shapes.map((s) => [s.id, { name: s.name, paths: s.paths }])
+									);
+								}
+							),
 							socket_schemas: cachedJson(
 								api,
 								simulationLinkedCacheKey(simulationId, 'socket-schemas'),

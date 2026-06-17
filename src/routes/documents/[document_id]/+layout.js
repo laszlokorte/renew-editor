@@ -235,7 +235,9 @@ function documentLoadData(api, fetchFn, document, syntaxes, offline = false) {
 			return primitives.groups;
 		}),
 		blueprints: cachedLinkJson(api, document.links.blueprints, 'blueprints').then((blueprints) => {
-			return new Map(blueprints.blueprints.map((s) => [s.id, { name: s.name, sockets: s.sockets }]));
+			return new Map(
+				blueprints.blueprints.map((s) => [s.id, { name: s.name, sockets: s.sockets }])
+			);
 		}),
 		linked_simulations: cachedLinkJson(
 			api,
@@ -263,8 +265,8 @@ export async function load({ params, fetch }) {
 				'Content-Type': 'application/json',
 				Authorization: authState.authHeader
 			},
-				contentType: 'application/json'
-			})
+			contentType: 'application/json'
+		})
 			.catch((e) => {
 				const cached = readOfflineDocument(params.document_id);
 				if (cached) {

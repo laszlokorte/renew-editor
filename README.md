@@ -12,8 +12,8 @@ Most of the work is actually already done at [lazlokorte/svatom](https://github.
 
 ### Prerequisites
 
-* [NodeJS](https://nodejs.org/en) is installed on your machine ([instructions](https://nodejs.org/en/download/prebuilt-installer))
-* [Yarn](https://yarnpkg.com/) Package manager is installed (recommended alternative to NPM) (intall via `npm install -G yarn`)
+- [NodeJS](https://nodejs.org/en) is installed on your machine ([instructions](https://nodejs.org/en/download/prebuilt-installer))
+- [Yarn](https://yarnpkg.com/) Package manager is installed (recommended alternative to NPM) (intall via `npm install -G yarn`)
 
 ### Clone this repository
 

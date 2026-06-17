@@ -1,4 +1,4 @@
-import * as R from "ramda";	
+import * as R from 'ramda';
 
 export const Psi = R.curry((a, b, c, d) => R.curry(a)(b(c))(b(d)));
 export const Phi = R.curry((a, b, c, d) => R.curry(a)(b(d))(c(d)));

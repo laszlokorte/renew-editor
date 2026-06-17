@@ -35,6 +35,7 @@
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
 	import Modal from '$lib/components/modal/Modal.svelte';
 	import Thumbnail from './Thumbnail.svelte';
+	import BindingSelectionSync from './BindingSelectionSync.svelte';
 	import { describeError } from '$lib/errors';
 	import Magnifier from '$lib/components/editor/tools/magnifier/Magnifier.svelte';
 	import Paner from '$lib/components/editor/tools/paner/Paner.svelte';
@@ -329,10 +330,6 @@
 	const cameraJson = view(L.inverse(L.json({ space: '  ' })), camera);
 
 	let cameraScroller = atom(undefined);
-	const bindingAutoRefresh = {
-		lastSignature: null,
-		queued: false
-	};
 
 	const logLens = (base) =>
 		L.lens(
@@ -1349,7 +1346,6 @@
 	function closeBindingSelection() {
 		bindingSelection.value = null;
 		bindingDialogPosition.value = null;
-		bindingAutoRefresh.lastSignature = null;
 	}
 
 	function layerDisplayName(layer) {
@@ -1769,86 +1765,88 @@
 	}
 
 	function netInstanceForBinding(selection, simulation, netInstance = null) {
-		if (netInstance?.label === selection?.net_instance_label) {
+		if (
+			(netInstance?.id && netInstance.id === selection?.net_instance_id) ||
+			netInstance?.label === selection?.net_instance_label
+		) {
 			return netInstance;
 		}
 
 		return simulation?.net_instances?.find(
-			(instance) => instance.label === selection?.net_instance_label
+			(instance) =>
+				(selection?.net_instance_id && instance.id === selection.net_instance_id) ||
+				instance.label === selection?.net_instance_label
 		);
 	}
 
-	function netInstanceTokenSignature(netInstance) {
-		return (netInstance?.tokens ?? [])
-			.map((token) => [token.id, token.place_id, token.value])
-			.sort(([a], [b]) => `${a}`.localeCompare(`${b}`));
-	}
-
-	function bindingAutoRefreshSignature(selection, simulation, netInstance = null) {
-		if (!selection || !simulation?.running) {
+	function bindingSelectionResource(selection, simulation) {
+		if (!selection?.transition_id) {
 			return null;
 		}
 
-		const selectedInstance = netInstanceForBinding(selection, simulation, netInstance);
+		const netInstance = netInstanceForBinding(selection, simulation);
 
-		return JSON.stringify([
-			selection.net_instance_label,
-			selection.transition_id,
-			simulation.running,
-			simulation.timestep,
-			simulation.is_playing,
-			selectedInstance?.id,
-			netInstanceTokenSignature(selectedInstance)
-		]);
-	}
-
-	function scheduleBindingSelectionRefresh(dispatch, delay = 0) {
-		const refresh = () => {
-			const selection = bindingSelection.value;
-
-			if (!selection || selection.loading || selection.refreshing) {
-				return;
-			}
-
-			void updateBindingSelection(dispatch, selection, { showLoading: false });
-		};
-
-		if (delay > 0) {
-			setTimeout(refresh, delay);
-		} else {
-			queueMicrotask(refresh);
+		if (!netInstance?.id) {
+			return null;
 		}
+
+		const topic = `live:net_instance_bindings:${netInstance.id}:${selection.transition_id}`;
+		return {
+			id: topic,
+			topic,
+			content: {
+				bindings: [],
+				transition_id: selection.transition_id,
+				transition_instance: selection.transition_instance,
+				error: null,
+				loading: true
+			}
+		};
 	}
 
-	function autoRefreshBindingSelection(dispatch, simulation, netInstance = null) {
-		const selection = bindingSelection.value;
-		const signature = bindingAutoRefreshSignature(selection, simulation, netInstance);
+	function bindingsEqual(left = [], right = []) {
+		return left.length === right.length && left.every((binding, index) => binding === right[index]);
+	}
 
-		if (!signature) {
-			bindingAutoRefresh.lastSignature = null;
+	function syncBindingSelectionFromResource(selection, content) {
+		if (!selection || !content) {
 			return '';
 		}
 
+		const bindings = content.bindings ?? [];
+		const selectedIndex = Math.min(
+			Number(selection.selected_index ?? 0),
+			Math.max(bindings.length - 1, 0)
+		);
+		const transitionInstance =
+			content.transition_instance ??
+			transitionInstanceFromBinding(bindings[0]) ??
+			selection.transition_instance;
+		const error = content.error ?? null;
+		const loading = content.loading === true;
+
 		if (
-			selection.loading ||
-			selection.refreshing ||
-			signature === bindingAutoRefresh.lastSignature
+			selection.transition_id === content.transition_id &&
+			selection.transition_instance === transitionInstance &&
+			Number(selection.selected_index ?? 0) === selectedIndex &&
+			selection.loading === loading &&
+			selection.refreshing === false &&
+			selection.error === error &&
+			bindingsEqual(selection.bindings ?? [], bindings)
 		) {
 			return '';
 		}
 
-		bindingAutoRefresh.lastSignature = signature;
-
-		if (bindingAutoRefresh.queued) {
-			return '';
-		}
-
-		bindingAutoRefresh.queued = true;
-
-		queueMicrotask(() => {
-			bindingAutoRefresh.queued = false;
-			scheduleBindingSelectionRefresh(dispatch);
-		});
+		bindingSelection.value = {
+			...selection,
+			transition_id: content.transition_id ?? selection.transition_id,
+			transition_instance: transitionInstance,
+			bindings,
+			selected_index: selectedIndex,
+			loading,
+			refreshing: false,
+			error
+		};
 
 		return '';
 	}
@@ -1929,6 +1927,7 @@
 		const payload = transitionCommandPayload(netInstance, transitionLayer);
 
 		bindingSelection.value = {
+			net_instance_id: netInstance?.id,
 			net_instance_label: payload.net_instance_label,
 			transition_id: payload.transition_id,
 			transition_instance: null,
@@ -1938,12 +1937,9 @@
 			error: null
 		};
 
-		await updateBindingSelection(dispatch, bindingSelection.value);
-		bindingAutoRefresh.lastSignature = bindingAutoRefreshSignature(
-			bindingSelection.value,
-			simulation,
-			netInstance
-		);
+		if (!netInstance?.id) {
+			await updateBindingSelection(dispatch, bindingSelection.value);
+		}
 	}
 
 	async function fireTransition(
@@ -2992,6 +2988,21 @@
 								</div>
 							</div>
 						</section>
+					{/if}
+					{@const bindingResource = bindingSelectionResource(
+						bindingSelection.value,
+						simulation.value
+					)}
+					{#if bindingResource}
+						<LiveResource socket={data.live_socket} resource={bindingResource} errors={liveErrors}>
+							{#snippet children(bindingContent)}
+								<BindingSelectionSync
+									selection={bindingSelection.value}
+									content={bindingContent.value}
+									sync={syncBindingSelectionFromResource}
+								/>
+							{/snippet}
+						</LiveResource>
 					{/if}
 					{#if bindingSelection.value}
 						<section class="binding-dialog-backdrop" role="presentation">
@@ -4100,11 +4111,6 @@
 														>
 															{#snippet children(instance, _presence, actions)}
 																{@html rememberNetInstanceActions(instance.value, actions)}
-																{@html autoRefreshBindingSelection(
-																	actions.dispatch,
-																	simulation.value,
-																	instance.value
-																)}
 																{@const places = view(
 																	[
 																		'tokens',
@@ -4366,11 +4372,6 @@
 														>
 															{#snippet children(instance, _presence, actions)}
 																{@html rememberNetInstanceActions(instance.value, actions)}
-																{@html autoRefreshBindingSelection(
-																	actions.dispatch,
-																	simulation.value,
-																	instance.value
-																)}
 																{@const places = view(
 																	[
 																		'tokens',
