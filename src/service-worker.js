@@ -3,7 +3,7 @@ import { build, files, version } from '$service-worker';
 const CACHE = `petristation-${version}`;
 const DATA_CACHE = `petristation-data-${version}`;
 const base = new URL(self.registration.scope).pathname.replace(/\/$/, '');
-const SHELL = `${base}/200.html`;
+const SHELL = `${base}/`;
 const API_PREFIX = `${base}/api/`;
 
 const assets = [...build, ...files, SHELL].map((path) => {
@@ -16,7 +16,11 @@ const assets = [...build, ...files, SHELL].map((path) => {
 
 self.addEventListener('install', (event) => {
 	event.waitUntil(
-		caches.open(CACHE).then((cache) => cache.addAll([...new Set(assets)]).catch(() => cache.addAll([...build, ...files])))
+		caches
+			.open(CACHE)
+			.then((cache) =>
+				cache.addAll([...new Set(assets)]).catch(() => cache.addAll([...build, ...files]))
+			)
 	);
 });
 
@@ -26,9 +30,7 @@ self.addEventListener('activate', (event) => {
 			.keys()
 			.then((keys) =>
 				Promise.all(
-					keys
-						.filter((key) => ![CACHE, DATA_CACHE].includes(key))
-						.map((key) => caches.delete(key))
+					keys.filter((key) => ![CACHE, DATA_CACHE].includes(key)).map((key) => caches.delete(key))
 				)
 			)
 			.then(() => self.clients.claim())
@@ -51,10 +53,13 @@ function unavailableResponse(request) {
 	}
 
 	if (new URL(request.url).pathname.startsWith(API_PREFIX)) {
-		return new Response(JSON.stringify({ error: 'offline', message: 'No cached response available.' }), {
-			status: 503,
-			headers: { 'content-type': 'application/json;charset=utf-8' }
-		});
+		return new Response(
+			JSON.stringify({ error: 'offline', message: 'No cached response available.' }),
+			{
+				status: 503,
+				headers: { 'content-type': 'application/json;charset=utf-8' }
+			}
+		);
 	}
 
 	return new Response('', { status: 503 });
