@@ -62,8 +62,8 @@ export function elbowControlPoint(edge, wps) {
 }
 
 // Yellow handles at every segment midpoint (Renew adds one ElbowHandle per segment).
-// Only the middle one (the crossbar between the two bends) is draggable in our model;
-// it shifts the whole crossbar orthogonally and is stored as the control waypoint.
+// A horizontal segment is moved by changing its y coordinate, a vertical segment by
+// changing its x coordinate.
 export function elbowHandlePoints(edge, wps) {
 	const bends = elbowPoints(edge, wps);
 	if (!bends.length) {
@@ -75,15 +75,16 @@ export function elbowHandlePoints(edge, wps) {
 		...bends,
 		{ x: edge.target_x, y: edge.target_y }
 	];
-	const axis = elbowHorizontalDominant(edge) ? 'x' : 'y';
 
 	const handles = [];
 	for (let i = 0; i < points.length - 1; i += 1) {
+		const verticalSegment = points[i].x === points[i + 1].x;
 		handles.push({
 			x: (points[i].x + points[i + 1].x) / 2,
 			y: (points[i].y + points[i + 1].y) / 2,
-			draggable: i === 1,
-			axis
+			draggable: true,
+			segment: i,
+			axis: verticalSegment ? 'x' : 'y'
 		});
 	}
 

@@ -17,6 +17,9 @@ const config = {
 		}),
 		paths: {
 			base: (process.env.BASE_PATH ?? '').replace(/\/$/, '')
+		},
+		serviceWorker: {
+			register: false
 		}
 	}
 };

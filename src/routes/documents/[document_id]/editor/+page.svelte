@@ -6360,6 +6360,232 @@
 		return Array.isArray(waypoints) ? waypoints.map((waypoint) => ({ ...waypoint })) : [];
 	}
 
+	function firstFiniteWaypointIndex(waypoints) {
+		return Array.isArray(waypoints)
+			? waypoints.findIndex(
+					(waypoint) =>
+						waypoint && Number.isFinite(waypoint.x) && Number.isFinite(waypoint.y)
+				)
+			: -1;
+	}
+
+	function isPendingWaypointId(id) {
+		return id && String(id).startsWith('__');
+	}
+
+	function commandWaypoints(waypoints) {
+		return copyEdgeWaypoints(waypoints)
+			.filter((waypoint) => waypoint?.id && !isPendingWaypointId(waypoint.id))
+			.map(({ id, x, y }) => ({ id, x, y }));
+	}
+
+	function normalizeElbowControlWaypoint(edge, waypoint) {
+		if (!edge || !waypoint) {
+			return waypoint;
+		}
+
+		const horizontalDominant =
+			Math.abs(edge.target_x - edge.source_x) >= Math.abs(edge.target_y - edge.source_y);
+
+		return horizontalDominant
+			? { ...waypoint, y: (edge.source_y + edge.target_y) / 2 }
+			: { ...waypoint, x: (edge.source_x + edge.target_x) / 2 };
+	}
+
+	function clampElbowEndpointValue(edge, handle, value, docValue, layersInOrderValue) {
+		if (handle.segment !== 0 && handle.segment !== 2) {
+			return value;
+		}
+		if (!edge || !docValue || !layersInOrderValue) {
+			return value;
+		}
+
+		const endpoint = handle.segment === 0 ? 'source' : 'target';
+		const box = edgeBondLayerBox(edge, endpoint, docValue, layersInOrderValue, undefined, {
+			x: 0,
+			y: 0
+		});
+
+		if (!box) {
+			return value;
+		}
+
+		const min = handle.axis === 'x' ? box.x : box.y;
+		const max = handle.axis === 'x' ? box.x + box.width : box.y + box.height;
+
+		if (!Number.isFinite(min) || !Number.isFinite(max)) {
+			return value;
+		}
+
+		return Math.max(Math.min(min, max), Math.min(Math.max(min, max), value));
+	}
+
+	function elbowHandleDragPreview(edge, waypoints, handle, pointer, docValue, layersInOrderValue) {
+		const previewWaypoints = copyEdgeWaypoints(waypoints);
+		const previewEdge = {
+			...(edge ?? {}),
+			waypoints: previewWaypoints
+		};
+		const movedValue = clampElbowEndpointValue(
+			edge,
+			handle,
+			handle.axis === 'x' ? pointer.x : pointer.y,
+			docValue,
+			layersInOrderValue
+		);
+		const controlIndex = firstFiniteWaypointIndex(previewWaypoints);
+		const existingControl =
+			controlIndex >= 0 ? previewWaypoints[controlIndex] : undefined;
+		let controlWaypoint;
+
+		if (handle.segment === 0) {
+			if (handle.axis === 'x') {
+				previewEdge.source_x = movedValue;
+			} else {
+				previewEdge.source_y = movedValue;
+			}
+		} else if (handle.segment === 1) {
+			controlWaypoint =
+				handle.axis === 'x'
+					? {
+							...(existingControl?.id ? { id: existingControl.id } : {}),
+							x: movedValue,
+							y: handle.y
+						}
+					: {
+							...(existingControl?.id ? { id: existingControl.id } : {}),
+							x: handle.x,
+							y: movedValue
+						};
+
+			if (existingControl) {
+				previewWaypoints[controlIndex] = controlWaypoint;
+			} else {
+				previewWaypoints.push({ ...controlWaypoint, id: '__pending' });
+			}
+		} else if (handle.segment === 2) {
+			if (handle.axis === 'x') {
+				previewEdge.target_x = movedValue;
+			} else {
+				previewEdge.target_y = movedValue;
+			}
+		}
+
+		if (handle.segment !== 1 && existingControl) {
+			previewWaypoints[controlIndex] = normalizeElbowControlWaypoint(
+				previewEdge,
+				existingControl
+			);
+		}
+
+		previewEdge.waypoints = previewWaypoints;
+
+		return {
+			edge: previewEdge,
+			waypoints: previewWaypoints,
+			controlWaypoint
+		};
+	}
+
+	function beginElbowHandleDrag(
+		evt,
+		liveLenses,
+		layer,
+		handle,
+		selectedPreviewEdge,
+		selectedPreviewWaypoints,
+		cast,
+		dispatch,
+		docAtom,
+		layersInOrderValue = undefined,
+		waypointsAtom = undefined
+	) {
+		if (!(evt.isPrimary && E.isLeftButton(evt))) {
+			return false;
+		}
+
+		evt.preventDefault();
+		evt.stopPropagation();
+		if (waypointsAtom) {
+			waypointsAtom.value = localProp.reset;
+		}
+
+		const layerId = layer.id;
+		const startWaypoints = copyEdgeWaypoints(selectedPreviewWaypoints);
+		const startEdge = {
+			...(selectedPreviewEdge ?? {}),
+			id: layerId,
+			layer_id: layerId,
+			waypoints: startWaypoints
+		};
+		const existingControl = startWaypoints[firstFiniteWaypointIndex(startWaypoints)];
+		const offset = Geo.diff2d(
+			{ x: handle.x, y: handle.y },
+			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+		);
+		const previewFor = (clientX, clientY) =>
+			elbowHandleDragPreview(
+				startEdge,
+				startWaypoints,
+				handle,
+				Geo.translate(offset, liveLenses.clientToCanvas(clientX, clientY)),
+				docAtom?.value,
+				layersInOrderValue
+			);
+		const applyPreview = (preview) => {
+			setCommittedEdgeWaypointPreview(layerId, preview.waypoints);
+			setCommittedEdgePreview(layerId, preview.edge);
+		};
+
+		const onMove = (e) => applyPreview(previewFor(e.clientX, e.clientY));
+		const onUp = (e) => {
+			window.removeEventListener('pointermove', onMove);
+			window.removeEventListener('pointerup', onUp);
+			const preview = previewFor(e.clientX, e.clientY);
+			applyPreview(preview);
+
+			let action;
+			if (handle.segment === 1) {
+				const control = preview.controlWaypoint;
+				if (existingControl?.id) {
+					action = cast('update_waypoint_position', {
+						layer_id: layerId,
+						waypoint_id: existingControl.id,
+						value: control
+					});
+				} else {
+					action = cast('create_waypoint', {
+						layer_id: layerId,
+						position: control
+					});
+				}
+			} else {
+				action = dispatch('update_edge_points', {
+					layer_id: layerId,
+					value: {
+						source_x: preview.edge.source_x,
+						source_y: preview.edge.source_y,
+						target_x: preview.edge.target_x,
+						target_y: preview.edge.target_y
+					},
+					waypoints: commandWaypoints(preview.waypoints)
+				});
+			}
+
+			holdCommittedEdgeWaypointPreview(
+				layerId,
+				preview.edge,
+				preview.waypoints,
+				action,
+				docAtom
+			);
+		};
+
+		window.addEventListener('pointermove', onMove);
+		window.addEventListener('pointerup', onUp);
+		return true;
+	}
+
 	function holdCommittedEdgeWaypointPreview(layerId, edge, waypoints, action, docAtom = undefined) {
 		const committedWaypoints = copyEdgeWaypoints(waypoints);
 		const previewEdge = {
@@ -6655,97 +6881,134 @@
 		'FA Automaton Compiler': ['FA Tools'],
 		'FA Net Compiler': ['FA Tools']
 	};
+	const toolbarIconStroke = '#111';
+	const toolbarIconFill = '#f3df63';
+	const toolbarIconGreen = '#6fd28d';
+	const toolbarIconBlue = '#4477b7';
+
+	function arrowHead(x, y, angle, size = 5, color = toolbarIconStroke) {
+		return `<path d="M${x} ${y} L${x - size} ${y - size * 0.48} L${x - size * 0.48} ${y + size} Z" fill="${color}" transform="rotate(${angle} ${x} ${y})" />`;
+	}
+
+	function lineIcon(x1, y1, x2, y2, { start = false, end = false, width = 1.8 } = {}) {
+		const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
+		return [
+			`<path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="${toolbarIconStroke}" stroke-width="${width}" stroke-linecap="butt" />`,
+			start ? arrowHead(x1, y1, angle + 180, 4.2) : '',
+			end ? arrowHead(x2, y2, angle, 4.2) : ''
+		].join('');
+	}
+
+	function textToolIcon(label, { x = 16, y = 25, size = 23, italic = false } = {}) {
+		return `<text text-anchor="middle" font-size="${size}" x="${x}" y="${y}" font-family="serif" font-style="${italic ? 'italic' : 'normal'}" font-weight="600" fill="${toolbarIconStroke}">${label}</text>`;
+	}
+
+	function incomingStateArrow() {
+		return `${lineIcon(5, 7, 13, 15, { end: true, width: 1.5 })}`;
+	}
+
+	const connectedTextIcon = `${lineIcon(4, 10, 12, 4, { end: true, width: 1.4 })}${textToolIcon('A', { x: 19, y: 26, size: 23 })}`;
+	const targetTextIcon = `${lineIcon(8, 23, 24, 7, { end: true, width: 1.5 })}<path d="M6 25 H13 V18" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.7" stroke-linecap="butt" />`;
+
 	const toolbarIconOverrides = {
 		select:
-			'<path d="M7 5 L7 27 L14 20 L18 29 L21 28 L17 19 L26 19 Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="miter" />',
+			`<path d="M7 5 L7 27 L14 20 L18 29 L21 28 L17 19 L26 19 Z" fill="#fff" stroke="${toolbarIconStroke}" stroke-width="1.5" stroke-linejoin="miter" />`,
 		magnifier:
-			'<circle cx="13" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2" /><path d="M19 19 L28 28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="butt" />',
+			`<circle cx="13" cy="13" r="7.2" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><path d="M18.2 18.2 L27 27" fill="none" stroke="${toolbarIconStroke}" stroke-width="2.1" stroke-linecap="butt" />`,
 		zoomer:
-			'<circle cx="13" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2" /><path d="M9 13 H17 M13 9 V17 M19 19 L28 28" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="butt" />',
+			`<circle cx="13" cy="13" r="7.2" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><path d="M13 9 V17 M9 13 H17 M18.2 18.2 L27 27" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />`,
 		paner:
-			'<path d="M10 19 L7 16 L7 24 L15 24 L12 21 C18 20 22 16 25 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="miter" />',
+			`<path d="M10 20 L7 17 L7 25 L15 25 L12 22 C18 21 23 16 25 10" fill="none" stroke="${toolbarIconStroke}" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" />`,
 		rotator:
-			'<path d="M23 10 A9 9 0 1 0 25 19" fill="none" stroke="currentColor" stroke-width="2" /><path d="M23 4 V11 H30" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />',
-		pen: '<path d="M5 24 C9 9 13 27 17 12 C21 2 25 18 29 8" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />',
+			`<path d="M24 13 C23 8 19 5 14 6 C9 7 6 11 7 16 C8 22 14 25 20 22" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.9" stroke-linecap="butt" />${arrowHead(24, 13, -20, 4.2)}`,
+		pen:
+			`<path d="M5 24 C8 12 13 28 17 15 C20 6 24 17 28 8" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.9" stroke-linecap="round" />`,
 		polygon:
-			'<path d="M6 24 L13 7 L25 10 L28 23 L16 29 Z" fill="#fff" stroke="currentColor" stroke-width="2" stroke-linejoin="miter" />',
+			`<path d="M6 20 L11 7 L24 10 L27 22 L14 26 Z" fill="${toolbarIconGreen}" stroke="${toolbarIconStroke}" stroke-width="1.5" stroke-linejoin="miter" />`,
 		spline:
-			'<path d="M5 24 C10 5 20 29 28 8" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" />',
+			`<path d="M5 24 C10 5 20 29 28 8" fill="none" stroke="${toolbarIconStroke}" stroke-width="2" stroke-linecap="round" />`,
 		spacer:
-			'<path d="M8 8 H24 M8 24 H24 M12 10 V22 M20 10 V22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" />',
+			`<path d="M8 8 H24 M8 24 H24 M12 10 V22 M20 10 V22" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />`,
 		'Rectangle Tool':
-			'<rect fill="#fff" x="4" y="8" width="24" height="16" stroke="#111" stroke-width="1.8" />',
+			`<rect x="5" y="9" width="22" height="14" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
 		'Round Rectangle Tool':
-			'<rect fill="#fff" x="4" y="8" width="24" height="16" rx="5" ry="5" stroke="#111" stroke-width="1.8" />',
+			`<rect x="5" y="9" width="22" height="14" rx="5" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
 		'Ellipse Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" />',
+			`<circle cx="16" cy="16" r="11.2" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
 		'Elliptical Arc/Pie Tool':
-			'<path d="M16 16 L16 4 A12 12 0 1 1 4 16 Z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="miter" />',
+			`<path d="M16 16 L16 5 A11 11 0 1 1 7.6 23.2 L16 23.2 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" stroke-linejoin="round" />`,
 		'Diamond Tool':
-			'<path d="M16 4 L28 16 L16 28 L4 16 Z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="miter" />',
+			`<path d="M16 4 L28 16 L16 28 L4 16 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
 		'Triangle Tool':
-			'<path d="M16 5 L28 27 L4 27 Z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="miter" />',
-		'Line Tool':
-			'<path d="M7 25 L25 7" fill="none" stroke="#111" stroke-width="1.8" stroke-linecap="butt" />',
-		'Target Tool':
-			'<rect x="6" y="16" width="11" height="9" fill="none" stroke="#111" stroke-width="1.7" /><path d="M14 18 L25 7" fill="none" stroke="#111" stroke-width="1.7" stroke-linecap="butt" /><path d="M25 7 L19 8.4 L23.6 13 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M19 7 H25 V13" fill="none" stroke="#111" stroke-width="1.7" stroke-linecap="butt" stroke-linejoin="miter" />',
-		'Image Tool':
-			'<rect fill="#fff" x="5" y="7" width="22" height="18" stroke="#111" stroke-width="1.6" /><circle cx="11" cy="13" r="2.2" fill="#f2b01e" /><path d="M6 25 L13 16 L17 20 L22 12 L26 25 Z" fill="#6fae5f" stroke="none" />',
-		'Text Tool':
-			'<text text-anchor="middle" font-size="27" x="16" y="26" font-family="serif" fill="#111">A</text>',
-		'Connected Text Tool':
-			'<text x="3" y="13" font-size="13" font-family="serif" fill="#111">*</text><text text-anchor="middle" font-size="25" x="18" y="27" font-family="serif" fill="#111">A</text>',
-		'Transition Tool':
-			'<rect fill="#fff" x="5" y="9" width="22" height="14" stroke="#111" stroke-width="1.6" /><text x="16" y="19.5" text-anchor="middle" font-family="serif" font-size="11" fill="#111">T</text>',
-		'Virtual Transition Tool':
-			'<rect fill="#fff" x="4" y="8" width="24" height="16" stroke="#111" stroke-width="1.6" /><rect fill="none" x="8" y="12" width="16" height="8" stroke="#111" stroke-width="1.1" />',
-		'Place Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.6" /><text x="16" y="19.5" text-anchor="middle" font-family="serif" font-size="11" fill="#111">P</text>',
-		'Virtual Place Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.6" /><circle fill="none" cx="16" cy="16" r="8" stroke="#111" stroke-width="1.1" />',
-		'Arc Tool':
-			'<path d="M8 8 L24 24" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M24 24 L18.4 21.5 L21.5 18.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
-		'Connection Tool':
-			'<path d="M8 24 L24 8" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M24 8 L18.4 10.5 L21.5 13.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M8 24 L13.6 21.5 L10.5 18.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+			`<path d="M16 5 L28 27 H4 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" stroke-linejoin="miter" />`,
+		'Line Tool': lineIcon(6, 25, 26, 7),
+		'Connection Tool': lineIcon(6, 25, 26, 7, { start: true, end: true }),
 		'Elbow Connection Tool':
-			'<path d="M7 8 L7 23 L23 23" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" stroke-linejoin="miter" /><path d="M7 8 L4.5 13.6 L9.5 13.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M23 23 L17.4 20.5 L20.5 17.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
-		'Test Arc Tool':
-			'<path d="M8 24 L24 8" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" />',
-		'Reserve Arc Tool':
-			'<path d="M8 8 L24 24" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M24 24 L18.4 21.5 L21.5 18.4 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M8 8 L13.6 10.5 L10.5 13.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+			`<path d="M6 25 H15 V7 H26" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="miter" />${arrowHead(6, 25, 180, 4.2)}${arrowHead(26, 7, 0, 4.2)}`,
+		'Target Tool': targetTextIcon,
+		'Image Tool':
+			`<rect x="6" y="7" width="20" height="18" fill="#eee" stroke="#aaa" stroke-width="1.5" /><path d="M8 23 L14 15 L18 19 L21 14 L25 23 Z" fill="#cfcfcf" stroke="#aaa" stroke-width="1" />`,
+		'Text Tool': textToolIcon('A', { size: 24 }),
+		'Connected Text Tool': connectedTextIcon,
+		'Transition Tool':
+			`<rect x="6" y="10" width="20" height="13" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><text x="16" y="20" text-anchor="middle" font-size="10" font-family="serif" font-weight="700" fill="${toolbarIconBlue}">T</text>`,
+		'Virtual Transition Tool':
+			`<rect x="5" y="9" width="22" height="15" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><rect x="9" y="12" width="14" height="9" fill="none" stroke="${toolbarIconBlue}" stroke-width="1.4" />`,
+		'Place Tool':
+			`<circle cx="16" cy="16" r="10.8" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><text x="16" y="20" text-anchor="middle" font-size="10" font-family="serif" font-weight="700" fill="${toolbarIconBlue}">P</text>`,
+		'Virtual Place Tool':
+			`<circle cx="16" cy="16" r="10.8" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><circle cx="16" cy="16" r="6.8" fill="none" stroke="${toolbarIconBlue}" stroke-width="1.4" />`,
+		'Arc Tool': lineIcon(6, 25, 26, 7, { end: true }),
+		'Test Arc Tool': lineIcon(6, 25, 26, 7),
+		'Reserve Arc Tool': lineIcon(6, 25, 26, 7, { start: true, end: true }),
 		'Flexible Arc Tool':
-			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M21 9 L15.4 11.5 L18.5 14.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+			`${lineIcon(6, 25, 26, 7, { end: true })}<path d="M15 18 L18 21" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.4" />`,
 		'Inhibitor Arc Tool':
-			'<path d="M8 24 L24 8" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><circle cx="8" cy="24" r="2.4" fill="#111" /><circle cx="24" cy="8" r="2.4" fill="#111" />',
+			`<path d="M6 25 L22 9" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><circle cx="24" cy="7" r="3" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.5" />`,
 		'Clear Arc Tool':
-			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" /><path d="M21 9 L15.4 11.5 L18.5 14.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
-		'Inscription Tool':
-			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">i</text>',
-		'Name Tool':
-			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">n</text>',
-		'Declaration Tool':
-			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">d</text>',
-		'Comment Tool':
-			'<text text-anchor="middle" font-size="22" font-weight="bold" x="16" y="24" font-family="serif" fill="#111">@</text>',
+			`${lineIcon(6, 25, 26, 7, { end: true })}<path d="M8 27 L28 9" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.2" stroke-linecap="butt" />`,
+		'Inscription Tool': textToolIcon('i', { size: 22 }),
+		'Name Tool': textToolIcon('n', { size: 22 }),
+		'Declaration Tool': textToolIcon('d', { size: 22 }),
+		'Comment Tool': textToolIcon('@', { size: 22, italic: true }),
 		'FA Start State Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" /><path d="M6 6 L13 13" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="butt" /><path d="M13 13 L7.8 11.7 L11.7 7.8 Z" fill="#111" stroke="#111" stroke-width="0.4" />',
+			`<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" />${incomingStateArrow()}`,
 		'FA State Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" />',
+			`<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
 		'FA End State Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" /><circle fill="none" cx="16" cy="16" r="8.7" stroke="#111" stroke-width="1.2" />',
+			`<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" /><circle fill="none" cx="16" cy="16" r="8" stroke="${toolbarIconStroke}" stroke-width="1.2" />`,
 		'FA Start End State Tool':
-			'<circle fill="#fff" cx="16" cy="16" r="12" stroke="#111" stroke-width="1.8" /><circle fill="none" cx="16" cy="16" r="8.7" stroke="#111" stroke-width="1.2" /><path d="M6 6 L13 13" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="butt" /><path d="M13 13 L7.8 11.7 L11.7 7.8 Z" fill="#111" stroke="#111" stroke-width="0.4" />',
-		'FA Name Tool':
-			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">n</text>',
-		'FA Inscription Tool':
-			'<text text-anchor="middle" font-size="25" font-weight="bold" x="16" y="25" font-family="serif" fill="#111">i</text>',
+			`<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" /><circle fill="none" cx="16" cy="16" r="8" stroke="${toolbarIconStroke}" stroke-width="1.2" />${incomingStateArrow()}`,
+		'FA Name Tool': textToolIcon('n', { size: 22 }),
+		'FA Inscription Tool': textToolIcon('i', { size: 22 }),
 		'FA Word Placement Tool':
-			'<text text-anchor="middle" font-size="21" font-style="italic" x="16" y="23" font-family="serif" fill="#111">w</text>',
-		'FA ArcConnection Tool':
-			'<path d="M5 25 L25 5" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M25 5 L19.4 7.5 L22.5 10.6 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />',
+			textToolIcon('w', { size: 21, italic: true }),
+		'FA ArcConnection Tool': lineIcon(6, 25, 26, 7, { end: true }),
 		'FA Loop ArcConnection Tool':
-			'<path d="M9 20 C3 12 7 5 15 5 C23 5 27 12 22 19" fill="none" stroke="#111" stroke-width="1.9" stroke-linecap="butt" /><path d="M22 19 L18 16.5 L18.8 21 Z" fill="#111" stroke="#111" stroke-width="0.6" stroke-linejoin="miter" />'
+			`<path d="M9 20 C3 12 7 5 15 5 C23 5 27 12 22 19" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />${arrowHead(22, 19, 45, 4.2)}`
 	};
+	Object.assign(toolbarIconOverrides, {
+		Place: toolbarIconOverrides['Place Tool'],
+		Transition: toolbarIconOverrides['Transition Tool'],
+		'Virtual Place': toolbarIconOverrides['Virtual Place Tool'],
+		'Virtual Transition': toolbarIconOverrides['Virtual Transition Tool'],
+		Rectangle: toolbarIconOverrides['Rectangle Tool'],
+		'Round Rectangle': toolbarIconOverrides['Round Rectangle Tool'],
+		Ellipse: toolbarIconOverrides['Ellipse Tool'],
+		'Pie Segment': toolbarIconOverrides['Elliptical Arc/Pie Tool'],
+		Diamond: toolbarIconOverrides['Diamond Tool'],
+		Triangle: toolbarIconOverrides['Triangle Tool'],
+		Line: toolbarIconOverrides['Line Tool'],
+		Target: toolbarIconOverrides['Target Tool'],
+		Image: toolbarIconOverrides['Image Tool'],
+		'Free Text': toolbarIconOverrides['Text Tool'],
+		Inscription: toolbarIconOverrides['Inscription Tool'],
+		'Connected Text': toolbarIconOverrides['Connected Text Tool'],
+		Name: toolbarIconOverrides['Name Tool'],
+		Declaration: toolbarIconOverrides['Declaration Tool'],
+		Comment: toolbarIconOverrides['Comment Tool'],
+		State: toolbarIconOverrides['FA State Tool']
+	});
 
 	function createToolEntryIcon(item) {
 		if (isEditorToolEntry(item)) {
@@ -12761,110 +13024,33 @@
 																	/>
 																{/each}
 																{#each elbowHandlePoints(selectedPreviewEdge, selectedPreviewWaypoints) as handle, hi (hi)}
-																	{#if handle.draggable}
-																		<g
-																			role="button"
-																			tabindex="-1"
-																			onpointerdown={(evt) => {
-																				if (!(evt.isPrimary && E.isLeftButton(evt))) {
-																					return;
-																				}
-																				evt.preventDefault();
-																				evt.stopPropagation();
-																				waypoints.value = localProp.reset;
-																				const axis = handle.axis;
-																				const perp = axis === 'x' ? handle.y : handle.x;
-																				const layerId = el.value.id;
-																				const previewEdge = selectedPreviewEdge;
-																				const existingId = el.value?.edge?.waypoints?.[0]?.id;
-																				const offset = Geo.diff2d(
-																					{ x: handle.x, y: handle.y },
-																					liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																				);
-																				const controlFor = (clientX, clientY) => {
-																					const p = Geo.translate(
-																						offset,
-																						liveLenses.clientToCanvas(clientX, clientY)
-																					);
-																					return axis === 'x'
-																						? { x: p.x, y: perp }
-																						: { x: perp, y: p.y };
-																				};
-																				console.log('[elbow] drag start', {
-																					layerId,
-																					axis,
-																					existingId
-																				});
-																				const onMove = (e) => {
-																					const control = controlFor(e.clientX, e.clientY);
-																					console.log('[elbow] move', control);
-																					patchLayerLocally(doc, layerId, (cur) => ({
-																						...cur,
-																						edge: {
-																							...cur.edge,
-																							waypoints: [
-																								{ id: existingId, x: control.x, y: control.y }
-																							]
-																						}
-																					}));
-																				};
-																				const onUp = (e) => {
-																					window.removeEventListener('pointermove', onMove);
-																					window.removeEventListener('pointerup', onUp);
-																					const control = controlFor(e.clientX, e.clientY);
-																					let action;
-																					let committedWaypoints;
-																					if (existingId) {
-																						action = cast('update_waypoint_position', {
-																							layer_id: layerId,
-																							waypoint_id: existingId,
-																							value: control
-																						});
-																						committedWaypoints = [
-																							{ id: existingId, x: control.x, y: control.y }
-																						];
-																					} else {
-																						action = cast('create_waypoint', {
-																							layer_id: layerId,
-																							position: control
-																						});
-																						committedWaypoints = [
-																							{ id: '__pending', x: control.x, y: control.y }
-																						];
-																					}
-																					holdCommittedEdgeWaypointPreview(
-																						layerId,
-																						previewEdge,
-																						committedWaypoints,
-																						action,
-																						doc
-																					);
-																				};
-																				window.addEventListener('pointermove', onMove);
-																				window.addEventListener('pointerup', onUp);
-																			}}
-																		>
-																			<circle
-																				fill="none"
-																				stroke="none"
-																				pointer-events="all"
-																				cursor="move"
-																				r={9 * cameraScale.value}
-																				cx={handle.x}
-																				cy={handle.y}
-																			/>
-																			<circle
-																				fill="#ffeb3b"
-																				stroke="#111"
-																				stroke-width="1.5"
-																				vector-effect="non-scaling-stroke"
-																				pointer-events="none"
-																				r={4 * cameraScale.value}
-																				cx={handle.x}
-																				cy={handle.y}
-																			/>
-																		</g>
-																	{:else}
+																	<g
+																		role="button"
+																		tabindex="-1"
+																		onpointerdown={(evt) =>
+																			beginElbowHandleDrag(
+																				evt,
+																				liveLenses,
+																				el.value,
+																				handle,
+																				selectedPreviewEdge,
+																				selectedPreviewWaypoints,
+																				cast,
+																				dispatch,
+																				doc,
+																				layersInOrder.value,
+																				waypoints
+																			)}
+																	>
+																		<circle
+																			fill="none"
+																			stroke="none"
+																			pointer-events="all"
+																			cursor="move"
+																			r={9 * cameraScale.value}
+																			cx={handle.x}
+																			cy={handle.y}
+																		/>
 																		<circle
 																			fill="#ffeb3b"
 																			stroke="#111"
@@ -12875,7 +13061,7 @@
 																			cx={handle.x}
 																			cy={handle.y}
 																		/>
-																	{/if}
+																	</g>
 																{/each}
 															{/if}
 															<path
@@ -12922,6 +13108,38 @@
 																onpointercancel={cancelLayerMove}
 																onlostpointercapture={cancelLayerMove}
 															/>
+								{#if isElbowEdge}
+									{#each elbowHandlePoints(selectedPreviewEdge, selectedPreviewWaypoints) as handle, hi (hi)}
+										<g
+											role="button"
+											tabindex="-1"
+											onpointerdown={(evt) =>
+												beginElbowHandleDrag(
+													evt,
+													liveLenses,
+													el.value,
+													handle,
+													selectedPreviewEdge,
+													selectedPreviewWaypoints,
+													cast,
+													dispatch,
+													doc,
+													layersInOrder.value,
+													waypoints
+												)}
+										>
+											<circle
+												fill="none"
+												stroke="none"
+												pointer-events="all"
+												cursor="move"
+												r={9 * cameraScale.value}
+												cx={handle.x}
+												cy={handle.y}
+											/>
+										</g>
+									{/each}
+								{/if}
 														{/if}
 														{#if activeTool.value === 'select' && isPolygonLayer(el.value)}
 															{@const polygonHandlePos = polygonScaleHandlePosition(
@@ -19538,9 +19756,9 @@
 	}
 
 	.create-primitive-tool.active-create-tool {
-		background: #333;
-		outline-color: #333;
-		color: #fff;
+		background: linear-gradient(#dbeaf5, #b8cedf);
+		outline-color: #5f86a2;
+		color: #000;
 	}
 
 	.create-primitive-tool.persistent-create-tool {
