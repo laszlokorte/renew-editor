@@ -183,7 +183,7 @@
 								<a
 									class="project-list-link"
 									data-sveltekit-preload-data="off"
-									href={resolve(`/projects/${d.id}/documents`)}
+									href={resolve(`/projects/${d.id}/workspace`)}
 									title="Project #{d.id}"
 								>
 									{d.name}</a

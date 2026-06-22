@@ -203,11 +203,14 @@ var DragDropTouch = class {
 	 */
 	constructor(dragRoot = document, dropRoot = document, options) {
 		this.configuration = { ...DefaultConfiguration, ...(options || {}) };
-		this._dragRoot = dragRoot;
-		this._dropRootOriginal = dropRoot;
-		this._dropRoot = dropRoot;
-		while (!this._dropRoot.elementFromPoint && this._dropRoot.parentNode)
+		this._dragRoot = dragRoot ?? document;
+		this._dropRootOriginal = dropRoot ?? document;
+		this._dropRoot = dropRoot ?? document;
+		while (this._dropRoot && !this._dropRoot.elementFromPoint && this._dropRoot.parentNode)
 			this._dropRoot = this._dropRoot.parentNode;
+		if (!this._dropRoot?.elementFromPoint) {
+			this._dropRoot = document;
+		}
 		this._dragSource = null;
 		this._lastTouch = null;
 		this._lastTarget = null;

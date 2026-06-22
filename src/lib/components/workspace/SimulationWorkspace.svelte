@@ -2,8 +2,10 @@
 	import { onMount } from 'svelte';
 	import * as L from 'partial.lenses';
 	import * as R from 'ramda';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import AppBar from '../../../AppBar.svelte';
+	import { page } from '$app/state';
+	import AppBar from '../../../routes/AppBar.svelte';
 	import { numberSvgFormat } from '$lib/svg/formatter';
 
 	import LiveResource from '$lib/components/live/LiveResource.svelte';
@@ -46,10 +48,13 @@
 		setLookAndFeel
 	} from '$lib/api/look_and_feel.js';
 
-	const { data } = $props();
+	let { data, embedded = false } = $props();
+	const embeddedMode = $derived(embedded || page.url.searchParams.get('embedded') === '1');
 	const lookAndFeel = atom(loadLookAndFeel());
+	const RECENT_DOCUMENTS_STORAGE_KEY = 'petristation:recent-documents';
 	const RECENT_SIMULATIONS_STORAGE_KEY = 'petristation:recent-simulations';
 	const SIMULATION_ANNOTATIONS_STORAGE_KEY = `petristation:simulation-annotations:${data.simulation.id}`;
+	const recentDocuments = atom(loadRecentDocuments());
 	const recentSimulations = atom(loadRecentSimulations());
 
 	function backendUrl(path) {
@@ -74,6 +79,25 @@
 		}
 	}
 
+	function loadRecentDocuments() {
+		try {
+			const parsed = JSON.parse(localStorage.getItem(RECENT_DOCUMENTS_STORAGE_KEY) ?? '[]');
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
+	}
+
+	function documentTabs() {
+		return recentDocuments.value.filter((recent) => recent?.id && recent?.href).slice(0, 8);
+	}
+
+	function removeRecentDocument(documentId) {
+		const next = loadRecentDocuments().filter((recent) => recent?.id !== documentId);
+		localStorage.setItem(RECENT_DOCUMENTS_STORAGE_KEY, JSON.stringify(next));
+		recentDocuments.value = next;
+	}
+
 	function loadSimulationAnnotations() {
 		try {
 			const parsed = JSON.parse(localStorage.getItem(SIMULATION_ANNOTATIONS_STORAGE_KEY) ?? '[]');
@@ -95,12 +119,17 @@
 		return simulationContent?.name ?? simulationContent?.label ?? data.simulation.id ?? 'Untitled';
 	}
 
+	function simulationWorkbenchHref(simulationId = data.simulation.id, simulationContent = data.simulation.content) {
+		const projectId = data.simulation.links.project.id;
+		return resolve(`/projects/${projectId}/workspace/${simulationId}`);
+	}
+
 	function rememberCurrentSimulation(simulationContent = data.simulation.content) {
 		const simulationId = data.simulation.id;
 		const entry = {
 			id: simulationId,
 			name: simulationLabel(simulationContent),
-			href: resolve(`/simulations/${simulationId}/observer`),
+			href: simulationWorkbenchHref(simulationId, simulationContent),
 			savedAt: Date.now()
 		};
 		const next = [entry, ...loadRecentSimulations().filter((recent) => recent?.id !== simulationId)]
@@ -126,7 +155,7 @@
 		const current = {
 			id: currentId,
 			name: simulationLabel(simulationContent),
-			href: resolve(`/simulations/${currentId}/observer`)
+			href: simulationWorkbenchHref(currentId, simulationContent)
 		};
 		return [
 			current,
@@ -147,8 +176,7 @@
 
 		const next = tabs.find((candidate) => candidate.id !== tab.id);
 		removeRecentSimulation(tab.id);
-		location.href =
-			next?.href ?? resolve(`/projects/${data.simulation.links.project.id}/simulations`);
+		location.href = next?.href ?? resolve(`/projects/${data.simulation.links.project.id}/workspace`);
 	}
 
 	function openSimulationNavigator() {
@@ -160,11 +188,11 @@
 
 	function closeAllSimulations() {
 		clearRecentSimulations();
-		location.href = resolve(`/projects/${data.simulation.links.project.id}/simulations`);
+		location.href = resolve(`/projects/${data.simulation.links.project.id}/workspace`);
 	}
 
 	function exitSimulationObserver() {
-		location.href = resolve('/projects');
+		location.href = resolve(`/projects/${data.simulation.links.project.id}/workspace`);
 	}
 
 	function onSimulationKeyDown(evt) {
@@ -195,12 +223,13 @@
 			return;
 		}
 
-		const url = new URL(resolve(`/projects/${projectId}/simulations`), window.location.origin);
+		const url = new URL(resolve(`/projects/${projectId}/workspace`), window.location.origin);
+		url.searchParams.set('createSimulation', '1');
 		if (formalism?.id) {
 			url.searchParams.set('formalism', formalism.id);
 		}
 
-		window.open(url.href, '_blank', 'noopener,noreferrer');
+		return goto(`${url.pathname}${url.search}${url.hash}`);
 	}
 
 	function explainSimulationFormalism(formalism = null) {
@@ -1306,6 +1335,127 @@
 		});
 	}
 
+	function embeddedSimulationToolId(tool) {
+		const ids = {
+			select: 'select',
+			magnifier: 'magnifier',
+			pan: 'paner',
+			paner: 'paner',
+			zoom: 'zoomer',
+			zoomer: 'zoomer',
+			rectangle: 'annotation-rect',
+			rect: 'annotation-rect',
+			ellipse: 'annotation-ellipse',
+			line: 'annotation-line',
+			text: 'annotation-text'
+		};
+
+		return ids[tool] ?? tool;
+	}
+
+	function performEmbeddedSimulationCommand(command, context = {}, payload = {}) {
+		const { cast, dispatch, simulation, current_instance, current_net_id } = context;
+
+		switch (command) {
+			case 'tool':
+				activeSimulationTool.value = embeddedSimulationToolId(payload?.tool);
+				return;
+			case 'configure':
+				showSimulationConfig.value = true;
+				return;
+			case 'init':
+			case 'step':
+			case 'play':
+			case 'pause':
+			case 'terminate':
+				cast?.(command);
+				return;
+			case 'net_step':
+				void performNetStep(cast, current_instance?.value);
+				return;
+			case 'save_state':
+				saveSimulationState(simulation?.value);
+				return;
+			case 'load_state':
+				loadSimulationState(simulation);
+				return;
+			case 'toggle_log':
+				showLog.value = !showLog.value;
+				return;
+			case 'console':
+				openSimulationConsole();
+				return;
+			case 'clear_messages':
+				discardAllLiveErrors();
+				return;
+			case 'clear_annotations':
+				clearSimulationAnnotations();
+				return;
+			case 'set_breakpoint_at_selection':
+				void setBreakpointAtSelection(dispatch);
+				return;
+			case 'clear_breakpoint_at_selection':
+				void clearBreakpointAtSelection(dispatch);
+				return;
+			case 'clear_all_breakpoints':
+				void clearAllBreakpoints(dispatch);
+				return;
+			case 'explain_formalism':
+				explainSimulationFormalism(payload?.formalism);
+				return;
+			case 'drawing_copy':
+				void data.shadow_net_system
+					.then((sns) => openEditableSimulationDrawing(sns, current_net_id?.value))
+					.catch(appendLiveError);
+				return;
+			default:
+				return;
+		}
+	}
+
+	function embeddedSimulationCommandBridge(node, context) {
+		let liveContext = context;
+
+		function onMessage(evt) {
+			if (!embeddedMode || evt.origin !== window.location.origin) {
+				return;
+			}
+
+			const message = evt.data;
+			if (message?.type !== 'petristation:simulation-command') {
+				return;
+			}
+
+			performEmbeddedSimulationCommand(message.command, liveContext, message.payload);
+		}
+
+		function onPageCommand(evt) {
+			if (!embeddedMode) {
+				return;
+			}
+
+			const message = evt.detail;
+			if (message?.simulationId && message.simulationId !== data.simulation.id) {
+				return;
+			}
+
+			performEmbeddedSimulationCommand(message?.command, liveContext, message?.payload);
+		}
+
+		window.addEventListener('message', onMessage);
+		window.addEventListener('petristation:simulation-command', onPageCommand);
+
+		return {
+			update(nextContext) {
+				liveContext = nextContext;
+			},
+			destroy() {
+				window.removeEventListener('message', onMessage);
+				window.removeEventListener('petristation:simulation-command', onPageCommand);
+			}
+		};
+	}
+
 	function shortBindingText(binding) {
 		const text = `${binding ?? ''}`.replace(/\s+/g, '');
 		return text.length > 50 ? `${text.slice(0, 47)}...` : text;
@@ -2006,14 +2156,16 @@
 	}
 </script>
 
-<div class="full-page">
-	<AppBar
-		active="simulations"
-		title={`Simulatation Observer`}
-		projectId={data.simulation.links.project.id}
-		authState={data.authState}
-		connectionState={data.connectionState}
-	/>
+<div class={{ 'full-page': true, embedded: embeddedMode }}>
+	{#if !embeddedMode}
+		<AppBar
+			active="simulations"
+			title="Simulation Workspace"
+			projectId={data.simulation.links.project.id}
+			authState={data.authState}
+			connectionState={data.connectionState}
+		/>
+	{/if}
 
 	<LiveResource socket={data.live_socket} resource={breakPointEntriesResource} errors={liveErrors}>
 		{#snippet children(breakPointEntries)}
@@ -2031,10 +2183,18 @@
 
 					{@const current_instance_href = view('href', current_instance)}
 
+					{#if embeddedMode && !currentInstance.value && net_instances.value?.length}
+						<MountTrigger
+							onMount={() => {
+								currentInstance.value = L.get([0, 'id'], net_instances.value);
+							}}
+						/>
+					{/if}
+
 					<Modal bind:visible={showAbout.value} closeLabel="Close">
 						<h2>About PetriStation</h2>
 						<p>
-							PetriStation simulation observer with Renew-compatible simulation controls and
+							PetriStation simulation workspace with Renew-compatible simulation controls and
 							visualization.
 						</p>
 						<p>Simulation: {simulation.value.name}</p>
@@ -2111,764 +2271,792 @@
 						</div>
 					</Modal>
 
-					<header
-						role="presentation"
-						class={{
-							header: true,
-							'drop-target': simulationDraggingFiles
-						}}
-						ondragenter={onSimulationDragEnter}
-						ondragover={onSimulationDragOver}
-						ondragleave={onSimulationDragLeave}
-						ondrop={onSimulationDrop}
-					>
-						<div class="header-titel">
-							<a
-								href={resolve(`/projects/${data.simulation.links.project.id}/simulations`)}
-								title="Back"
-								data-sveltekit-preload-data="off"
-								class="nav-link">Back</a
-							>
+					{#if !embeddedMode}
+						<header
+							role="presentation"
+							class={{
+								header: true,
+								'drop-target': simulationDraggingFiles
+							}}
+							ondragenter={onSimulationDragEnter}
+							ondragover={onSimulationDragOver}
+							ondragleave={onSimulationDragLeave}
+							ondrop={onSimulationDrop}
+						>
+							<div class="header-titel">
+								<a
+									href={resolve(`/projects/${data.simulation.links.project.id}/workspace`)}
+									title="Back"
+									data-sveltekit-preload-data="off"
+									class="nav-link">Back</a
+								>
 
-							<h2>Simulation: {simulation.value.name}</h2>
-						</div>
+								<h2>Simulation: {simulation.value.name}</h2>
+							</div>
 
-						<menu class="header-menu">
-							<ol class="menu-bar">
-								<li class="menu-bar-item" tabindex="-1">
-									File
-									<ul class="menu-bar-menu">
-										<li class="menu-bar-menu-item submenu">
-											<button type="button" class="menu-bar-item-button submenu-trigger">
-												<span>Recently opened</span>
-												<span class="submenu-arrow">&gt;</span>
-											</button>
-											<ul class="menu-bar-menu submenu-menu">
-												{#each recentSimulations.value as recent}
+							<menu class="header-menu">
+								<ol class="menu-bar">
+									<li class="menu-bar-item" tabindex="-1">
+										File
+										<ul class="menu-bar-menu">
+											<li class="menu-bar-menu-item submenu">
+												<button type="button" class="menu-bar-item-button submenu-trigger">
+													<span>Recently opened</span>
+													<span class="submenu-arrow">&gt;</span>
+												</button>
+												<ul class="menu-bar-menu submenu-menu">
+													{#each recentSimulations.value as recent}
+														<li class="menu-bar-menu-item">
+															<a class="menu-bar-item-button" href={recent.href}>{recent.name}</a>
+														</li>
+													{:else}
+														<li class="menu-bar-menu-item">
+															<MenuBarButton disabled>No recent simulations</MenuBarButton>
+														</li>
+													{/each}
+													<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 													<li class="menu-bar-menu-item">
-														<a class="menu-bar-item-button" href={recent.href}>{recent.name}</a>
+														<MenuBarButton
+															disabled={recentSimulations.value.length === 0}
+															onclick={(evt) => {
+																evt.preventDefault();
+																clearRecentSimulations();
+															}}>Clear list</MenuBarButton
+														>
 													</li>
-												{:else}
+												</ul>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														openSimulationNavigator();
+													}}>Open Navigator</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<button
+													class="menu-bar-item-button"
+													onclick={() => {
+														data.commands.duplicate();
+													}}>Duplicate</button
+												>
+											</li>
+											<li class="menu-bar-menu-item submenu" tabindex="-1">
+												<button class="menu-bar-item-button submenu-button" type="button">
+													Import
+													<span class="submenu-arrow">&gt;</span>
+												</button>
+												<ul class="menu-bar-menu">
 													<li class="menu-bar-menu-item">
-														<MenuBarButton disabled>No recent simulations</MenuBarButton>
+														<MenuBarButton
+															onclick={(evt) => {
+																evt.preventDefault();
+																importSimulationDrawing();
+															}}>Drawing...</MenuBarButton
+														>
 													</li>
-												{/each}
-												<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-												<li class="menu-bar-menu-item">
-													<MenuBarButton
-														disabled={recentSimulations.value.length === 0}
-														onclick={(evt) => {
-															evt.preventDefault();
-															clearRecentSimulations();
-														}}>Clear list</MenuBarButton
-													>
-												</li>
-											</ul>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													openSimulationNavigator();
-												}}>Open Navigator</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<button
-												class="menu-bar-item-button"
-												onclick={() => {
-													data.commands.duplicate();
-												}}>Duplicate</button
-											>
-										</li>
-										<li class="menu-bar-menu-item submenu" tabindex="-1">
-											<button class="menu-bar-item-button submenu-button" type="button">
-												Import
-												<span class="submenu-arrow">&gt;</span>
-											</button>
-											<ul class="menu-bar-menu">
-												<li class="menu-bar-menu-item">
-													<MenuBarButton
-														onclick={(evt) => {
-															evt.preventDefault();
-															importSimulationDrawing();
-														}}>Drawing...</MenuBarButton
-													>
-												</li>
-												<li class="menu-bar-menu-item">
-													<MenuBarButton
-														onclick={(evt) => {
-															evt.preventDefault();
-															void openSimulationUrl();
-														}}>URL...</MenuBarButton
-													>
-												</li>
-											</ul>
-										</li>
-										<li class="menu-bar-menu-item">
-											<button
-												class="menu-bar-item-button"
-												onclick={() => {
-													data.commands.downloadSNS();
-												}}>Download SNS</button
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton onclick={printSimulationDrawing}>Print Drawing</MenuBarButton>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													closeAllSimulations();
-												}}>Close All Simulations</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													exitSimulationObserver();
-												}}>Exit</MenuBarButton
-											>
-										</li>
-									</ul>
-								</li>
-								<li class="menu-bar-item" tabindex="-1">
-									View
-
-									<ul class="menu-bar-menu">
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={() => {
-													call((c) => {
-														c && c.resetCamera();
-													}, cameraScroller);
-												}}>Fit into Camera</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												shortcut={{ ctrlKey: true, key: '0' }}
-												onclick={() => {
-													cameraZoom.value = 0;
-												}}>Reset Zoom</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												shortcut={{ ctrlKey: true, key: '+' }}
-												onclick={() => {
-													update(R.add(0.2), cameraZoom);
-												}}>Zoom in</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												shortcut={{ ctrlKey: true, key: '-' }}
-												onclick={() => {
-													update(R.add(-0.2), cameraZoom);
-												}}>Zoom out</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<input
-												type="range"
-												bind:value={cameraZoom.value}
-												min="-3"
-												step=".01"
-												max="3"
-												style="width: 100%; box-sizing: border-box;"
-											/>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={() => {
-													cameraRotation.value = 0;
-												}}>Reset Rotation</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={() => {
-													update(R.add(90), cameraRotation);
-												}}>Rotate Clockwise</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={() => {
-													update(R.add(-90), cameraRotation);
-												}}>Rotate Counter-Clockwise</MenuBarButton
-											>
-										</li>
-
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={lockRotation.value} />
-												Lock rotation</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<input
-												disabled={lockRotation.value}
-												type="range"
-												bind:value={cameraRotation.value}
-												min="-180"
-												step="5"
-												max="180"
-												style="width: 100%; box-sizing: border-box;"
-											/>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showGrid.value} />
-												Show Grid</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<input
-												disabled={!showGrid.value}
-												type="range"
-												bind:value={gridDistanceExp.value}
-												min="2"
-												step="1"
-												max="10"
-												style="width: 100%; box-sizing: border-box;"
-											/>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showMinimap.value} />
-												Show Minimap</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showInstances.value} />
-												Show Instances</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showLog.value} />
-												Show Log</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showDebug.value} />
-												Show Debug</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showSequentialOnlyArcs.value} />
-												Show sequential-only arcs</label
-											>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												disabled={simulationAnnotations.value.length === 0}
-												onclick={(evt) => {
-													evt.preventDefault();
-													clearSimulationAnnotations();
-												}}>Clear Drawing Annotations</MenuBarButton
-											>
-										</li>
-									</ul>
-								</li>
-								<li class="menu-bar-item" tabindex="-1">
-									Simulation
-
-									<ul class="menu-bar-menu">
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={backendUrl(`/simulations/${simulation.value.id}`)}
-												target="_blank">Configure Simulation...</a
-											>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												shortcut={{ ctrlKey: true, key: 'i' }}
-												disabled={!online || simulation.value.running}
-												onclick={(evt) => {
-													evt.preventDefault();
-													cast('init');
-												}}>Initialize</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												shortcut={{ ctrlKey: true, key: 'i' }}
-												disabled={!online || !simulation.value.running}
-												onclick={(evt) => {
-													evt.preventDefault();
-													cast('step');
-												}}>Step</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												shortcut={{ ctrlKey: true, shiftKey: true, key: 'i' }}
-												disabled={!online ||
-													!simulation.value.running ||
-													!current_instance.value?.label}
-												onclick={(evt) => {
-													evt.preventDefault();
-													void performNetStep(cast, current_instance.value);
-												}}>Net Step</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												shortcut={{ ctrlKey: true, key: 'p' }}
-												disabled={!online ||
-													!simulation.value.running ||
-													simulation.value.is_playing === true}
-												onclick={(evt) => {
-													evt.preventDefault();
-													cast('play');
-												}}>Play</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												disabled={!online ||
-													!simulation.value.running ||
-													simulation.value.is_playing !== true}
-												shortcut={{ ctrlKey: true, key: 'p' }}
-												onclick={(evt) => {
-													evt.preventDefault();
-													cast('pause');
-												}}>Pause</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												disabled={!online || !simulation.value.running}
-												shortcut={{ ctrlKey: true, key: 'x' }}
-												onclick={(evt) => {
-													evt.preventDefault();
-													cast('terminate');
-												}}>Terminate</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													showSimulationConfig.value = true;
-												}}>Configure Simulation...</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													saveSimulationState(simulation.value);
-												}}>Save simulation state</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													loadSimulationState(simulation);
-												}}>Load simulation state...</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showLog.value} />
-												Show simulation trace</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													openSimulationConsole();
-												}}>Console...</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item submenu" tabindex="-1">
-											<button class="menu-bar-item-button submenu-button" type="button">
-												Formalisms
-												<span class="submenu-arrow">&gt;</span>
-											</button>
-											<ul class="menu-bar-menu">
-												{#await data.formalisms}
 													<li class="menu-bar-menu-item">
-														<MenuBarButton disabled>Loading...</MenuBarButton>
+														<MenuBarButton
+															onclick={(evt) => {
+																evt.preventDefault();
+																void openSimulationUrl();
+															}}>URL...</MenuBarButton
+														>
 													</li>
-												{:then formalisms}
-													{#each formalisms as formalism (formalism.id)}
+												</ul>
+											</li>
+											<li class="menu-bar-menu-item">
+												<button
+													class="menu-bar-item-button"
+													onclick={() => {
+														data.commands.downloadSNS();
+													}}>Download SNS</button
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton onclick={printSimulationDrawing}>Print Drawing</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														closeAllSimulations();
+													}}>Close All Simulations</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														exitSimulationObserver();
+													}}>Exit</MenuBarButton
+												>
+											</li>
+										</ul>
+									</li>
+									<li class="menu-bar-item" tabindex="-1">
+										View
+
+										<ul class="menu-bar-menu">
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={() => {
+														call((c) => {
+															c && c.resetCamera();
+														}, cameraScroller);
+													}}>Fit into Camera</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													shortcut={{ ctrlKey: true, key: '0' }}
+													onclick={() => {
+														cameraZoom.value = 0;
+													}}>Reset Zoom</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													shortcut={{ ctrlKey: true, key: '+' }}
+													onclick={() => {
+														update(R.add(0.2), cameraZoom);
+													}}>Zoom in</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													shortcut={{ ctrlKey: true, key: '-' }}
+													onclick={() => {
+														update(R.add(-0.2), cameraZoom);
+													}}>Zoom out</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<input
+													type="range"
+													bind:value={cameraZoom.value}
+													min="-3"
+													step=".01"
+													max="3"
+													style="width: 100%; box-sizing: border-box;"
+												/>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={() => {
+														cameraRotation.value = 0;
+													}}>Reset Rotation</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={() => {
+														update(R.add(90), cameraRotation);
+													}}>Rotate Clockwise</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={() => {
+														update(R.add(-90), cameraRotation);
+													}}>Rotate Counter-Clockwise</MenuBarButton
+												>
+											</li>
+
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={lockRotation.value} />
+													Lock rotation</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<input
+													disabled={lockRotation.value}
+													type="range"
+													bind:value={cameraRotation.value}
+													min="-180"
+													step="5"
+													max="180"
+													style="width: 100%; box-sizing: border-box;"
+												/>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showGrid.value} />
+													Show Grid</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<input
+													disabled={!showGrid.value}
+													type="range"
+													bind:value={gridDistanceExp.value}
+													min="2"
+													step="1"
+													max="10"
+													style="width: 100%; box-sizing: border-box;"
+												/>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showMinimap.value} />
+													Show Minimap</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showInstances.value} />
+													Show Instances</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showLog.value} />
+													Show Log</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showDebug.value} />
+													Show Debug</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showSequentialOnlyArcs.value} />
+													Show sequential-only arcs</label
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={simulationAnnotations.value.length === 0}
+													onclick={(evt) => {
+														evt.preventDefault();
+														clearSimulationAnnotations();
+													}}>Clear Drawing Annotations</MenuBarButton
+												>
+											</li>
+										</ul>
+									</li>
+									<li class="menu-bar-item" tabindex="-1">
+										Simulation
+
+										<ul class="menu-bar-menu">
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationWorkbenchHref(data.simulation.id, simulation.value)}
+													data-sveltekit-preload-data="off">Configure Simulation...</a
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													shortcut={{ ctrlKey: true, key: 'i' }}
+													disabled={!online || simulation.value.running}
+													onclick={(evt) => {
+														evt.preventDefault();
+														cast('init');
+													}}>Initialize</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													shortcut={{ ctrlKey: true, key: 'i' }}
+													disabled={!online || !simulation.value.running}
+													onclick={(evt) => {
+														evt.preventDefault();
+														cast('step');
+													}}>Step</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													shortcut={{ ctrlKey: true, shiftKey: true, key: 'i' }}
+													disabled={!online ||
+														!simulation.value.running ||
+														!current_instance.value?.label}
+													onclick={(evt) => {
+														evt.preventDefault();
+														void performNetStep(cast, current_instance.value);
+													}}>Net Step</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													shortcut={{ ctrlKey: true, key: 'p' }}
+													disabled={!online ||
+														!simulation.value.running ||
+														simulation.value.is_playing === true}
+													onclick={(evt) => {
+														evt.preventDefault();
+														cast('play');
+													}}>Play</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={!online ||
+														!simulation.value.running ||
+														simulation.value.is_playing !== true}
+													shortcut={{ ctrlKey: true, key: 'p' }}
+													onclick={(evt) => {
+														evt.preventDefault();
+														cast('pause');
+													}}>Pause</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													disabled={!online || !simulation.value.running}
+													shortcut={{ ctrlKey: true, key: 'x' }}
+													onclick={(evt) => {
+														evt.preventDefault();
+														cast('terminate');
+													}}>Terminate</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														showSimulationConfig.value = true;
+													}}>Configure Simulation...</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														saveSimulationState(simulation.value);
+													}}>Save simulation state</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														loadSimulationState(simulation);
+													}}>Load simulation state...</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showLog.value} />
+													Show simulation trace</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														openSimulationConsole();
+													}}>Console...</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item submenu" tabindex="-1">
+												<button class="menu-bar-item-button submenu-button" type="button">
+													Formalisms
+													<span class="submenu-arrow">&gt;</span>
+												</button>
+												<ul class="menu-bar-menu">
+													{#await data.formalisms}
+														<li class="menu-bar-menu-item">
+															<MenuBarButton disabled>Loading...</MenuBarButton>
+														</li>
+													{:then formalisms}
+														{#each formalisms as formalism (formalism.id)}
+															<li class="menu-bar-menu-item">
+																<MenuBarButton
+																	onclick={(evt) => {
+																		evt.preventDefault();
+																		explainSimulationFormalism(formalism);
+																	}}>{formalism.label}</MenuBarButton
+																>
+															</li>
+														{:else}
+															<li class="menu-bar-menu-item">
+																<MenuBarButton disabled>No formalisms available</MenuBarButton>
+															</li>
+														{/each}
+													{:catch}
+														<li class="menu-bar-menu-item">
+															<MenuBarButton disabled>Error loading formalisms</MenuBarButton>
+														</li>
+													{/await}
+												</ul>
+											</li>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationMenuHref('simulator_health', '/health/simulator')}
+													target="_blank">Remote Server...</a
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item submenu" tabindex="-1">
+												<button class="menu-bar-item-button submenu-button" type="button">
+													Breakpoints
+													<span class="submenu-arrow">&gt;</span>
+												</button>
+												<ul class="menu-bar-menu">
+													<li class="menu-bar-menu-item">
+														<MenuBarButton
+															disabled={!online ||
+																!simulation.value.running ||
+																!selectedTransitionId.value}
+															onclick={(evt) => {
+																evt.preventDefault();
+																void setBreakpointAtSelection(dispatch);
+															}}>Set BP at selection</MenuBarButton
+														>
+													</li>
+													<li class="menu-bar-menu-item">
+														<MenuBarButton
+															disabled={!online ||
+																!simulation.value.running ||
+																!selectedTransitionId.value}
+															onclick={(evt) => {
+																evt.preventDefault();
+																void clearBreakpointAtSelection(dispatch);
+															}}>Clear BP at selection</MenuBarButton
+														>
+													</li>
+													<li class="menu-bar-menu-item">
+														<MenuBarButton
+															disabled={!online ||
+																!simulation.value.running ||
+																activeBreakpoints.length === 0}
+															onclick={(evt) => {
+																evt.preventDefault();
+																void clearAllBreakpoints(dispatch);
+															}}>Clear all BPs in current simulation</MenuBarButton
+														>
+													</li>
+													<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+													{#each activeBreakpoints as breakpoint (breakpoint.transition_id)}
 														<li class="menu-bar-menu-item">
 															<MenuBarButton
 																onclick={(evt) => {
 																	evt.preventDefault();
-																	explainSimulationFormalism(formalism);
-																}}>{formalism.label}</MenuBarButton
+																	selectBreakpointTransition(breakpoint);
+																}}>{breakpointLabel(breakpoint)}</MenuBarButton
+															>
+														</li>
+														<li class="menu-bar-menu-item">
+															<MenuBarButton
+																onclick={(evt) => {
+																	evt.preventDefault();
+																	void clearBreakpoint(dispatch, breakpoint);
+																}}>Clear {breakpointLabel(breakpoint)}</MenuBarButton
 															>
 														</li>
 													{:else}
 														<li class="menu-bar-menu-item">
-															<MenuBarButton disabled>No formalisms available</MenuBarButton>
+															<button class="menu-bar-item-button" type="button" disabled
+																>No Breakpoints</button
+															>
 														</li>
 													{/each}
-												{:catch}
-													<li class="menu-bar-menu-item">
-														<MenuBarButton disabled>Error loading formalisms</MenuBarButton>
-													</li>
-												{/await}
-											</ul>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={simulationMenuHref('simulator_health', '/health/simulator')}
-												target="_blank">Remote Server...</a
-											>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item submenu" tabindex="-1">
-											<button class="menu-bar-item-button submenu-button" type="button">
-												Breakpoints
-												<span class="submenu-arrow">&gt;</span>
-											</button>
-											<ul class="menu-bar-menu">
-												<li class="menu-bar-menu-item">
-													<MenuBarButton
-														disabled={!online ||
-															!simulation.value.running ||
-															!selectedTransitionId.value}
-														onclick={(evt) => {
-															evt.preventDefault();
-															void setBreakpointAtSelection(dispatch);
-														}}>Set BP at selection</MenuBarButton
-													>
-												</li>
-												<li class="menu-bar-menu-item">
-													<MenuBarButton
-														disabled={!online ||
-															!simulation.value.running ||
-															!selectedTransitionId.value}
-														onclick={(evt) => {
-															evt.preventDefault();
-															void clearBreakpointAtSelection(dispatch);
-														}}>Clear BP at selection</MenuBarButton
-													>
-												</li>
-												<li class="menu-bar-menu-item">
-													<MenuBarButton
-														disabled={!online ||
-															!simulation.value.running ||
-															activeBreakpoints.length === 0}
-														onclick={(evt) => {
-															evt.preventDefault();
-															void clearAllBreakpoints(dispatch);
-														}}>Clear all BPs in current simulation</MenuBarButton
-													>
-												</li>
-												<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-												{#each activeBreakpoints as breakpoint (breakpoint.transition_id)}
-													<li class="menu-bar-menu-item">
-														<MenuBarButton
-															onclick={(evt) => {
-																evt.preventDefault();
-																selectBreakpointTransition(breakpoint);
-															}}>{breakpointLabel(breakpoint)}</MenuBarButton
-														>
-													</li>
-													<li class="menu-bar-menu-item">
-														<MenuBarButton
-															onclick={(evt) => {
-																evt.preventDefault();
-																void clearBreakpoint(dispatch, breakpoint);
-															}}>Clear {breakpointLabel(breakpoint)}</MenuBarButton
-														>
-													</li>
-												{:else}
-													<li class="menu-bar-menu-item">
-														<button class="menu-bar-item-button" type="button" disabled
-															>No Breakpoints</button
-														>
-													</li>
-												{/each}
-											</ul>
-										</li>
-									</ul>
-								</li>
-								<li class="menu-bar-item" tabindex="-1">
-									Plugins
-									<ul class="menu-bar-menu">
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={simulationMenuHref('primitives', '/primitives')}
-												target="_blank"
-											>
-												Primitives
-											</a>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={simulationMenuHref('icons', '/icons')}
-												target="_blank">Icons</a
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={simulationMenuHref('socket_schemas', '/socket_schemas')}
-												target="_blank">Socket Schemas</a
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={simulationMenuHref('syntax', '/syntax')}
-												target="_blank"
-											>
-												Syntax Rules
-											</a>
-										</li>
-									</ul>
-								</li>
-								<li class="menu-bar-item" tabindex="-1">
-									Tools
-									<ul class="menu-bar-menu">
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													call((c) => {
-														c && c.resetCamera();
-													}, cameraScroller);
-												}}>Navigator</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={backendUrl(`/simulations/${simulation.value.id}`)}
-												target="_blank">Inspect Simulation</a
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											{#await data.shadow_net_system then sns}
+												</ul>
+											</li>
+										</ul>
+									</li>
+									<li class="menu-bar-item" tabindex="-1">
+										Plugins
+										<ul class="menu-bar-menu">
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationMenuHref('primitives', '/primitives')}
+													target="_blank"
+												>
+													Primitives
+												</a>
+											</li>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationMenuHref('icons', '/icons')}
+													target="_blank">Icons</a
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationMenuHref('socket_schemas', '/socket_schemas')}
+													target="_blank">Socket Schemas</a
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationMenuHref('syntax', '/syntax')}
+													target="_blank"
+												>
+													Syntax Rules
+												</a>
+											</li>
+										</ul>
+									</li>
+									<li class="menu-bar-item" tabindex="-1">
+										Tools
+										<ul class="menu-bar-menu">
+											<li class="menu-bar-menu-item">
 												<MenuBarButton
 													onclick={(evt) => {
 														evt.preventDefault();
-														openEditableSimulationDrawing(sns, current_net_id.value);
-													}}>Open Drawing Copy</MenuBarButton
-												>
-											{:catch}
-												<MenuBarButton disabled>Open Drawing Copy</MenuBarButton>
-											{/await}
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													openSimulationConsole();
-												}}>Command Console...</MenuBarButton
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													discardAllLiveErrors();
-												}}>Clear Messages</MenuBarButton
-											>
-										</li>
-									</ul>
-								</li>
-								<li class="menu-bar-item" tabindex="-1">
-									System
-									<ul class="menu-bar-menu">
-										<li class="menu-bar-menu-item submenu">
-											<button type="button" class="menu-bar-item-button submenu-trigger">
-												<span>Look and Feel</span>
-												<span class="submenu-arrow">&gt;</span>
-											</button>
-											<ul class="menu-bar-menu">
-												{#each LOOK_AND_FEEL_OPTIONS as option}
-													<li class="menu-bar-menu-item">
-														<MenuBarButton
-															onclick={(evt) => {
-																evt.preventDefault();
-																lookAndFeel.value = setLookAndFeel(option.id);
-															}}
-														>
-															{lookAndFeel.value === option.id ? '* ' : ''}{option.label}
-														</MenuBarButton>
-													</li>
-												{/each}
-											</ul>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={simulationMenuHref('health', '/health')}
-												target="_blank"
-											>
-												Health
-											</a>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href={simulationMenuHref('system', '/system')}
-												target="_blank"
-											>
-												System
-											</a>
-										</li>
-										<li class="menu-bar-menu-item">
-											<button
-												class="menu-bar-item-button"
-												type="button"
-												onclick={() => data.authState.reconnectSocket()}>Reconnect</button
-											>
-										</li>
-									</ul>
-								</li>
-								<li class="menu-bar-item" tabindex="-1">
-									Windows
-									<ul class="menu-bar-menu">
-										<li class="menu-bar-menu-item">Open Simulations</li>
-										{#each simulationTabs(simulation.value) as tab (tab.id)}
-											<li class="menu-bar-menu-item simulation-window-menu-entry">
-												<a
-													class={{
-														'menu-bar-item-button': true,
-														active: tab.id === data.simulation.id
-													}}
-													href={tab.href}
-													data-sveltekit-preload-data="off"
-													title={tab.name}
-												>
-													<span>{tab.id === data.simulation.id ? '* ' : ''}{tab.name}</span>
-												</a>
-												<button
-													type="button"
-													class="menu-bar-item-icon-button"
-													title="Close simulation"
-													aria-label="Close simulation"
-													onclick={(evt) => {
-														evt.preventDefault();
-														evt.stopPropagation();
-														closeSimulationWindow(tab, simulation.value);
-													}}>x</button
+														call((c) => {
+															c && c.resetCamera();
+														}, cameraScroller);
+													}}>Navigator</MenuBarButton
 												>
 											</li>
-										{/each}
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showMinimap.value} />
-												Minimap</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showInstances.value} />
-												Net Instances</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showLog.value} />
-												Log</label
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<label>
-												<input type="checkbox" bind:checked={showDebug.value} />
-												Debug</label
-											>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													showMinimap.value = true;
-													showInstances.value = true;
-													showLog.value = true;
-												}}>Show All Panels</MenuBarButton
-											>
-										</li>
-									</ul>
-								</li>
-								<li class="menu-bar-item" tabindex="-1">
-									Help
-									<ul class="menu-bar-menu">
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												href="https://tgipm.informatik.uni-hamburg.de/confluence/x/BwAdJQ"
-												target="_blank">Confluence</a
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a class="menu-bar-item-button" target="_blank" href="http://www.renew.de"
-												>renew.de</a
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												target="_blank"
-												href="https://www.petristation.net/">petristation.net</a
-											>
-										</li>
-										<li class="menu-bar-menu-item">
-											<a
-												class="menu-bar-item-button"
-												target="_blank"
-												href="https://www.youtube.com/@petristation">youtube/@petristation</a
-											>
-										</li>
-										<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
-										<li class="menu-bar-menu-item">
-											<MenuBarButton
-												onclick={(evt) => {
-													evt.preventDefault();
-													showAbout.value = true;
-												}}>About...</MenuBarButton
-											>
-										</li>
-									</ul>
-								</li>
-							</ol>
-						</menu>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationWorkbenchHref(data.simulation.id, simulation.value)}
+													data-sveltekit-preload-data="off">Inspect Simulation</a
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												{#await data.shadow_net_system then sns}
+													<MenuBarButton
+														onclick={(evt) => {
+															evt.preventDefault();
+															openEditableSimulationDrawing(sns, current_net_id.value);
+														}}>Open Drawing Copy</MenuBarButton
+													>
+												{:catch}
+													<MenuBarButton disabled>Open Drawing Copy</MenuBarButton>
+												{/await}
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														openSimulationConsole();
+													}}>Command Console...</MenuBarButton
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														discardAllLiveErrors();
+													}}>Clear Messages</MenuBarButton
+												>
+											</li>
+										</ul>
+									</li>
+									<li class="menu-bar-item" tabindex="-1">
+										System
+										<ul class="menu-bar-menu">
+											<li class="menu-bar-menu-item submenu">
+												<button type="button" class="menu-bar-item-button submenu-trigger">
+													<span>Look and Feel</span>
+													<span class="submenu-arrow">&gt;</span>
+												</button>
+												<ul class="menu-bar-menu">
+													{#each LOOK_AND_FEEL_OPTIONS as option}
+														<li class="menu-bar-menu-item">
+															<MenuBarButton
+																onclick={(evt) => {
+																	evt.preventDefault();
+																	lookAndFeel.value = setLookAndFeel(option.id);
+																}}
+															>
+																{lookAndFeel.value === option.id ? '* ' : ''}{option.label}
+															</MenuBarButton>
+														</li>
+													{/each}
+												</ul>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationMenuHref('health', '/health')}
+													target="_blank"
+												>
+													Health
+												</a>
+											</li>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href={simulationMenuHref('system', '/system')}
+													target="_blank"
+												>
+													System
+												</a>
+											</li>
+											<li class="menu-bar-menu-item">
+												<button
+													class="menu-bar-item-button"
+													type="button"
+													onclick={() => data.authState.reconnectSocket()}>Reconnect</button
+												>
+											</li>
+										</ul>
+									</li>
+									<li class="menu-bar-item" tabindex="-1">
+										Windows
+										<ul class="menu-bar-menu">
+											<li class="menu-bar-menu-item">Open Drawings</li>
+											{#each documentTabs() as tab (tab.id)}
+												<li class="menu-bar-menu-item simulation-window-menu-entry">
+													<a
+														class="menu-bar-item-button"
+														href={tab.href}
+														data-sveltekit-preload-data="off"
+														title={tab.name}
+													>
+														<span>{tab.name}</span>
+													</a>
+													<button
+														type="button"
+														class="menu-bar-item-icon-button"
+														title="Close drawing"
+														aria-label="Close drawing"
+														onclick={(evt) => {
+															evt.preventDefault();
+															evt.stopPropagation();
+															removeRecentDocument(tab.id);
+														}}>x</button
+													>
+												</li>
+											{:else}
+												<li class="menu-bar-menu-item disabled-menu-item">No open drawings</li>
+											{/each}
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">Open Simulations</li>
+											{#each simulationTabs(simulation.value) as tab (tab.id)}
+												<li class="menu-bar-menu-item simulation-window-menu-entry">
+													<a
+														class={{
+															'menu-bar-item-button': true,
+															active: tab.id === data.simulation.id
+														}}
+														href={tab.href}
+														data-sveltekit-preload-data="off"
+														title={tab.name}
+													>
+														<span>{tab.id === data.simulation.id ? '* ' : ''}{tab.name}</span>
+													</a>
+													<button
+														type="button"
+														class="menu-bar-item-icon-button"
+														title="Close simulation"
+														aria-label="Close simulation"
+														onclick={(evt) => {
+															evt.preventDefault();
+															evt.stopPropagation();
+															closeSimulationWindow(tab, simulation.value);
+														}}>x</button
+													>
+												</li>
+											{/each}
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showMinimap.value} />
+													Minimap</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showInstances.value} />
+													Net Instances</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showLog.value} />
+													Log</label
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<label>
+													<input type="checkbox" bind:checked={showDebug.value} />
+													Debug</label
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														showMinimap.value = true;
+														showInstances.value = true;
+														showLog.value = true;
+													}}>Show All Panels</MenuBarButton
+												>
+											</li>
+										</ul>
+									</li>
+									<li class="menu-bar-item" tabindex="-1">
+										Help
+										<ul class="menu-bar-menu">
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													href="https://tgipm.informatik.uni-hamburg.de/confluence/x/BwAdJQ"
+													target="_blank">Confluence</a
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<a class="menu-bar-item-button" target="_blank" href="http://www.renew.de"
+													>renew.de</a
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													target="_blank"
+													href="https://www.petristation.net/">petristation.net</a
+												>
+											</li>
+											<li class="menu-bar-menu-item">
+												<a
+													class="menu-bar-item-button"
+													target="_blank"
+													href="https://www.youtube.com/@petristation">youtube/@petristation</a
+												>
+											</li>
+											<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+											<li class="menu-bar-menu-item">
+												<MenuBarButton
+													onclick={(evt) => {
+														evt.preventDefault();
+														showAbout.value = true;
+													}}>About...</MenuBarButton
+												>
+											</li>
+										</ul>
+									</li>
+								</ol>
+							</menu>
 
-						<nav class="simulation-tabs" aria-label="Open simulations">
-							{#each simulationTabs(simulation.value) as tab (tab.id)}
-								<a
-									class={{ 'simulation-tab': true, active: tab.id === data.simulation.id }}
-									href={tab.href}
-									data-sveltekit-preload-data="off"
-									title={tab.name}
-								>
-									<span class="simulation-tab-label">{tab.name}</span>
-									{#if tab.id !== data.simulation.id}
+							<nav class="simulation-tabs" aria-label="Open drawings and simulations">
+								{#each documentTabs() as tab (tab.id)}
+									<a
+										class="simulation-tab document-tab"
+										href={tab.href}
+										data-sveltekit-preload-data="off"
+										title={tab.name}
+									>
+										<span class="simulation-tab-label">{tab.name}</span>
 										<button
 											type="button"
 											class="simulation-tab-close"
@@ -2876,36 +3064,58 @@
 											onclick={(evt) => {
 												evt.preventDefault();
 												evt.stopPropagation();
-												removeRecentSimulation(tab.id);
+												removeRecentDocument(tab.id);
 											}}>x</button
 										>
-									{/if}
-								</a>
-							{/each}
-						</nav>
+									</a>
+								{/each}
+								{#each simulationTabs(simulation.value) as tab (tab.id)}
+									<a
+										class={{ 'simulation-tab': true, active: tab.id === data.simulation.id }}
+										href={tab.href}
+										data-sveltekit-preload-data="off"
+										title={tab.name}
+									>
+										<span class="simulation-tab-label">{tab.name}</span>
+										{#if tab.id !== data.simulation.id}
+											<button
+												type="button"
+												class="simulation-tab-close"
+												aria-label="Remove from tabs"
+												onclick={(evt) => {
+													evt.preventDefault();
+													evt.stopPropagation();
+													removeRecentSimulation(tab.id);
+												}}>x</button
+											>
+										{/if}
+									</a>
+								{/each}
+							</nav>
 
-						<ul class="presence-list">
-							<!--<li class="presence-list-total">{presence.length}</li>-->
-							{#each presence.value as p (p.data.username)}
-								<li>
-									<svg viewBox="-4 -4 40 40" width="32">
-										<title>{p.data.username} ({p.count})</title>
-										<circle
-											fill={p.data.color}
-											cx="16"
-											cy="16"
-											r="16"
-											stroke="#fff"
-											stroke-width="2"
-										/>
-										<text x="16" y="22" text-anchor="middle" font-size="20" fill="#fff"
-											>{p.data.username.substr(0, 1)}</text
-										>
-									</svg>
-								</li>
-							{/each}
-						</ul>
-					</header>
+							<ul class="presence-list">
+								<!--<li class="presence-list-total">{presence.length}</li>-->
+								{#each presence.value as p (p.data.username)}
+									<li>
+										<svg viewBox="-4 -4 40 40" width="32">
+											<title>{p.data.username} ({p.count})</title>
+											<circle
+												fill={p.data.color}
+												cx="16"
+												cy="16"
+												r="16"
+												stroke="#fff"
+												stroke-width="2"
+											/>
+											<text x="16" y="22" text-anchor="middle" font-size="20" fill="#fff"
+												>{p.data.username.substr(0, 1)}</text
+											>
+										</svg>
+									</li>
+								{/each}
+							</ul>
+						</header>
+					{/if}
 					{#if liveErrors.value.length}
 						<section class="simulation-errors" aria-label="Simulation messages" aria-live="polite">
 							<div class="simulation-errors-header">
@@ -3093,136 +3303,150 @@
 							</div>
 						</section>
 					{/if}
-					<div class="overlay">
-						<div
-							role="toolbar"
-							tabindex="-1"
-							class={{
-								topbar: true,
-								'simulation-controls': true,
-								'drop-target': simulationDraggingFiles
-							}}
-							ondragenter={onSimulationDragEnter}
-							ondragover={onSimulationDragOver}
-							ondragleave={onSimulationDragLeave}
-							ondrop={onSimulationDrop}
-						>
-							<div class="toolbar">
-								{#each simulationTools as tool}
-									<button
-										class={{ 'tool-button': true, active: activeSimulationTool.value === tool.id }}
-										title={tool.name}
-										data-tooltip={tool.name}
-										type="button"
-										onclick={(evt) => {
-											evt.preventDefault();
-											activeSimulationTool.value = tool.id;
-										}}>{tool.name}</button
-									>
-								{/each}
-								<span class="toolbar-separator"></span>
-								{#if simulation.value.running}
-									<button
-										class="tool-button"
-										title="Terminate the current simulation"
-										data-tooltip="Terminate"
-										disabled={!online}
-										type="button"
-										onclick={(evt) => {
-											evt.preventDefault();
-
-											cast('terminate');
-										}}>terminate</button
-									>
-
-									{#await data.shadow_net_system then sns}
+					<div
+						class="overlay"
+						use:embeddedSimulationCommandBridge={{
+							cast,
+							dispatch,
+							simulation,
+							current_instance,
+							current_net_id
+						}}
+					>
+						{#if !embeddedMode}
+							<div
+								role="toolbar"
+								tabindex="-1"
+								class={{
+									topbar: true,
+									'simulation-controls': true,
+									'drop-target': simulationDraggingFiles
+								}}
+								ondragenter={onSimulationDragEnter}
+								ondragover={onSimulationDragOver}
+								ondragleave={onSimulationDragLeave}
+								ondrop={onSimulationDrop}
+							>
+								<div class="toolbar">
+									{#each simulationTools as tool}
 										<button
-											class="tool-button"
-											title="Open the current net drawing as an editable document copy"
-											data-tooltip="Open Drawing Copy"
+											class={{
+												'tool-button': true,
+												active: activeSimulationTool.value === tool.id
+											}}
+											title={tool.name}
+											data-tooltip={tool.name}
 											type="button"
 											onclick={(evt) => {
 												evt.preventDefault();
-												openEditableSimulationDrawing(sns, current_net_id.value);
-											}}>Drawing Copy</button
+												activeSimulationTool.value = tool.id;
+											}}>{tool.name}</button
 										>
-									{:catch}
-										<button class="tool-button" type="button" disabled>Drawing Copy</button>
-									{/await}
-
-									{#if simulation.value.timestep > 0}
+									{/each}
+									<span class="toolbar-separator"></span>
+									{#if simulation.value.running}
 										<button
 											class="tool-button"
-											title="Execute one simulation step"
-											data-tooltip="Step"
-											disabled={!online || simulation.value.is_playing}
+											title="Terminate the current simulation"
+											data-tooltip="Terminate"
+											disabled={!online}
 											type="button"
 											onclick={(evt) => {
 												evt.preventDefault();
 
-												cast('step');
-											}}>Step</button
+												cast('terminate');
+											}}>terminate</button
 										>
 
-										<button
-											class="tool-button"
-											title="Execute one step in the selected net instance"
-											data-tooltip="Net Step"
-											disabled={!online ||
-												simulation.value.is_playing ||
-												!current_instance.value?.label}
-											type="button"
-											onclick={(evt) => {
-												evt.preventDefault();
+										{#await data.shadow_net_system then sns}
+											<button
+												class="tool-button"
+												title="Open the current net drawing as an editable document copy"
+												data-tooltip="Open Drawing Copy"
+												type="button"
+												onclick={(evt) => {
+													evt.preventDefault();
+													openEditableSimulationDrawing(sns, current_net_id.value);
+												}}>Drawing Copy</button
+											>
+										{:catch}
+											<button class="tool-button" type="button" disabled>Drawing Copy</button>
+										{/await}
 
-												void performNetStep(cast, current_instance.value);
-											}}>Net Step</button
-										>
+										{#if simulation.value.timestep > 0}
+											<button
+												class="tool-button"
+												title="Execute one simulation step"
+												data-tooltip="Step"
+												disabled={!online || simulation.value.is_playing}
+												type="button"
+												onclick={(evt) => {
+													evt.preventDefault();
 
-										<button
-											class="tool-button"
-											title="Run the simulation continuously"
-											data-tooltip="Play"
-											disabled={!online || simulation.value.is_playing !== false}
-											type="button"
-											onclick={(evt) => {
-												evt.preventDefault();
+													cast('step');
+												}}>Step</button
+											>
 
-												cast('play');
-											}}>play</button
-										>
+											<button
+												class="tool-button"
+												title="Execute one step in the selected net instance"
+												data-tooltip="Net Step"
+												disabled={!online ||
+													simulation.value.is_playing ||
+													!current_instance.value?.label}
+												type="button"
+												onclick={(evt) => {
+													evt.preventDefault();
 
-										<button
-											class="tool-button"
-											title="Pause the running simulation"
-											data-tooltip="Pause"
-											disabled={!online || simulation.value.is_playing !== true}
-											type="button"
-											onclick={(evt) => {
-												evt.preventDefault();
+													void performNetStep(cast, current_instance.value);
+												}}>Net Step</button
+											>
 
-												cast('pause');
-											}}>pause</button
-										>
+											<button
+												class="tool-button"
+												title="Run the simulation continuously"
+												data-tooltip="Play"
+												disabled={!online || simulation.value.is_playing !== false}
+												type="button"
+												onclick={(evt) => {
+													evt.preventDefault();
+
+													cast('play');
+												}}>play</button
+											>
+
+											<button
+												class="tool-button"
+												title="Pause the running simulation"
+												data-tooltip="Pause"
+												disabled={!online || simulation.value.is_playing !== true}
+												type="button"
+												onclick={(evt) => {
+													evt.preventDefault();
+
+													cast('pause');
+												}}>pause</button
+											>
+										{:else}
+											Starting...
+										{/if}
 									{:else}
-										Starting...
-									{/if}
-								{:else}
-									<button
-										class="tool-button"
-										title="Initialize the simulation"
-										data-tooltip="Initialize"
-										disabled={!online}
-										type="button"
-										onclick={(evt) => {
-											evt.preventDefault();
+										<button
+											class="tool-button"
+											title="Initialize the simulation"
+											data-tooltip="Initialize"
+											disabled={!online}
+											type="button"
+											onclick={(evt) => {
+												evt.preventDefault();
 
-											cast('init');
-										}}>Initialize</button
-									>
-								{/if}
+												cast('init');
+											}}>Initialize</button
+										>
+									{/if}
+								</div>
 							</div>
-						</div>
+						{/if}
 						{#await data.shadow_net_system then sns}
 							{@const doc = view(
 								(id) => R.find((n) => n.id === id, sns.nets)?.document,
@@ -3253,248 +3477,250 @@
 							{@const selectedAttributes = selectedAnnotation
 								? simulationAnnotationAttributeItems(selectedAnnotation)
 								: simulationAttributeItems(selectedLayer)}
-							<div
-								role="toolbar"
-								tabindex="-1"
-								class={{
-									topbar: true,
-									'simulation-attributes': true,
-									'drop-target': simulationDraggingFiles
-								}}
-								ondragenter={onSimulationDragEnter}
-								ondragover={onSimulationDragOver}
-								ondragleave={onSimulationDragLeave}
-								ondrop={onSimulationDrop}
-							>
-								<div class="toolbar simulation-attribute-toolbar">
-									<span class="simulation-attribute-label">Attributes</span>
-									<span>{simulationSelectionKind(doc.value) || 'Selection'}:</span>
-									<strong>{simulationSelectionLabel(doc.value)}</strong>
-									<span>{current_instance.value?.label ?? 'No instance'}</span>
-									{#if selectedAttributes.length}
-										<span class="simulation-attribute-separator"></span>
-										{#each selectedAttributes as attribute}
-											<span
-												class="simulation-attribute-chip"
-												title={`${attribute.label}: ${attribute.value}`}
-											>
-												{#if attribute.color}
-													<span
-														class="simulation-attribute-swatch"
-														style:background-color={attribute.color}
-													></span>
-												{/if}
-												<span>{attribute.label}: {attribute.value}</span>
-											</span>
-										{/each}
-									{/if}
-									{#if selectedAnnotation}
-										<span class="simulation-attribute-separator"></span>
-										{#if selectedAnnotation.type !== 'text' && selectedAnnotation.type !== 'line'}
-											<label class="simulation-attribute-control">
-												Fill
-												<input
-													type="color"
-													value={annotationFillColor(selectedAnnotation)}
-													onchange={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															fill_color: evt.currentTarget.value
-														})}
-												/>
-											</label>
-											<label class="simulation-attribute-control">
-												Fill opacity
-												<input
-													type="range"
-													min="0"
-													max="1"
-													step="0.05"
-													value={annotationFillOpacity(selectedAnnotation)}
-													oninput={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															fill_opacity: Number(evt.currentTarget.value)
-														})}
-												/>
-											</label>
-										{/if}
-										{#if selectedAnnotation.type === 'text'}
-											<label class="simulation-attribute-control">
-												Text
-												<input
-													type="color"
-													value={annotationTextColor(selectedAnnotation)}
-													onchange={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															text_color: evt.currentTarget.value
-														})}
-												/>
-											</label>
-											<label class="simulation-attribute-control">
-												Opacity
-												<input
-													type="range"
-													min="0"
-													max="1"
-													step="0.05"
-													value={annotationTextOpacity(selectedAnnotation)}
-													oninput={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															text_opacity: Number(evt.currentTarget.value)
-														})}
-												/>
-											</label>
-											<label class="simulation-attribute-control">
-												Font
-												<select
-													value={annotationFontFamily(selectedAnnotation)}
-													onchange={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															font_family: evt.currentTarget.value
-														})}
+							{#if !embeddedMode}
+								<div
+									role="toolbar"
+									tabindex="-1"
+									class={{
+										topbar: true,
+										'simulation-attributes': true,
+										'drop-target': simulationDraggingFiles
+									}}
+									ondragenter={onSimulationDragEnter}
+									ondragover={onSimulationDragOver}
+									ondragleave={onSimulationDragLeave}
+									ondrop={onSimulationDrop}
+								>
+									<div class="toolbar simulation-attribute-toolbar">
+										<span class="simulation-attribute-label">Attributes</span>
+										<span>{simulationSelectionKind(doc.value) || 'Selection'}:</span>
+										<strong>{simulationSelectionLabel(doc.value)}</strong>
+										<span>{current_instance.value?.label ?? 'No instance'}</span>
+										{#if selectedAttributes.length}
+											<span class="simulation-attribute-separator"></span>
+											{#each selectedAttributes as attribute}
+												<span
+													class="simulation-attribute-chip"
+													title={`${attribute.label}: ${attribute.value}`}
 												>
-													{#each simulationAnnotationFonts as font}
-														<option value={font.value}>{font.label}</option>
-													{/each}
-												</select>
-											</label>
-											<label class="simulation-attribute-control">
-												Size
-												<input
-													type="number"
-													min="6"
-													max="72"
-													step="1"
-													value={annotationFontSize(selectedAnnotation)}
-													onchange={(evt) =>
+													{#if attribute.color}
+														<span
+															class="simulation-attribute-swatch"
+															style:background-color={attribute.color}
+														></span>
+													{/if}
+													<span>{attribute.label}: {attribute.value}</span>
+												</span>
+											{/each}
+										{/if}
+										{#if selectedAnnotation}
+											<span class="simulation-attribute-separator"></span>
+											{#if selectedAnnotation.type !== 'text' && selectedAnnotation.type !== 'line'}
+												<label class="simulation-attribute-control">
+													Fill
+													<input
+														type="color"
+														value={annotationFillColor(selectedAnnotation)}
+														onchange={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																fill_color: evt.currentTarget.value
+															})}
+													/>
+												</label>
+												<label class="simulation-attribute-control">
+													Fill opacity
+													<input
+														type="range"
+														min="0"
+														max="1"
+														step="0.05"
+														value={annotationFillOpacity(selectedAnnotation)}
+														oninput={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																fill_opacity: Number(evt.currentTarget.value)
+															})}
+													/>
+												</label>
+											{/if}
+											{#if selectedAnnotation.type === 'text'}
+												<label class="simulation-attribute-control">
+													Text
+													<input
+														type="color"
+														value={annotationTextColor(selectedAnnotation)}
+														onchange={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																text_color: evt.currentTarget.value
+															})}
+													/>
+												</label>
+												<label class="simulation-attribute-control">
+													Opacity
+													<input
+														type="range"
+														min="0"
+														max="1"
+														step="0.05"
+														value={annotationTextOpacity(selectedAnnotation)}
+														oninput={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																text_opacity: Number(evt.currentTarget.value)
+															})}
+													/>
+												</label>
+												<label class="simulation-attribute-control">
+													Font
+													<select
+														value={annotationFontFamily(selectedAnnotation)}
+														onchange={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																font_family: evt.currentTarget.value
+															})}
+													>
+														{#each simulationAnnotationFonts as font}
+															<option value={font.value}>{font.label}</option>
+														{/each}
+													</select>
+												</label>
+												<label class="simulation-attribute-control">
+													Size
+													<input
+														type="number"
+														min="6"
+														max="72"
+														step="1"
+														value={annotationFontSize(selectedAnnotation)}
+														onchange={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																font_size: Math.max(6, Number(evt.currentTarget.value) || 14)
+															})}
+													/>
+												</label>
+												<button
+													class="tool-button"
+													type="button"
+													class:active={annotationStyle(selectedAnnotation).font_weight === 'bold'}
+													onclick={(evt) => {
+														evt.preventDefault();
 														updateSelectedSimulationAnnotationStyle({
-															font_size: Math.max(6, Number(evt.currentTarget.value) || 14)
-														})}
-												/>
-											</label>
+															font_weight:
+																annotationStyle(selectedAnnotation).font_weight === 'bold'
+																	? 'normal'
+																	: 'bold'
+														});
+													}}>B</button
+												>
+												<button
+													class="tool-button"
+													type="button"
+													class:active={annotationStyle(selectedAnnotation).font_style === 'italic'}
+													onclick={(evt) => {
+														evt.preventDefault();
+														updateSelectedSimulationAnnotationStyle({
+															font_style:
+																annotationStyle(selectedAnnotation).font_style === 'italic'
+																	? 'normal'
+																	: 'italic'
+														});
+													}}>I</button
+												>
+											{:else}
+												<label class="simulation-attribute-control">
+													Pen
+													<input
+														type="color"
+														value={annotationStrokeColor(selectedAnnotation)}
+														onchange={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																stroke_color: evt.currentTarget.value
+															})}
+													/>
+												</label>
+												<label class="simulation-attribute-control">
+													Pen opacity
+													<input
+														type="range"
+														min="0"
+														max="1"
+														step="0.05"
+														value={annotationStrokeOpacity(selectedAnnotation)}
+														oninput={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																stroke_opacity: Number(evt.currentTarget.value)
+															})}
+													/>
+												</label>
+												<label class="simulation-attribute-control">
+													Width
+													<input
+														type="number"
+														min="1"
+														max="20"
+														step="1"
+														value={annotationStrokeWidth(selectedAnnotation)}
+														onchange={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																stroke_width: Math.max(1, Number(evt.currentTarget.value) || 1)
+															})}
+													/>
+												</label>
+												<label class="simulation-attribute-control">
+													Line
+													<select
+														value={annotationStrokeDashArray(selectedAnnotation)}
+														onchange={(evt) =>
+															updateSelectedSimulationAnnotationStyle({
+																stroke_dash_array: evt.currentTarget.value
+															})}
+													>
+														{#each simulationAnnotationLineStyles as lineStyle}
+															<option value={lineStyle.value}>{lineStyle.label}</option>
+														{/each}
+													</select>
+												</label>
+											{/if}
+										{/if}
+										{#if selectedTransitionId.value}
 											<button
 												class="tool-button"
+												title="Show possible transition bindings"
+												data-tooltip="Bindings"
 												type="button"
-												class:active={annotationStyle(selectedAnnotation).font_weight === 'bold'}
+												disabled={!simulation.value.running || !current_instance.value?.label}
 												onclick={(evt) => {
 													evt.preventDefault();
-													updateSelectedSimulationAnnotationStyle({
-														font_weight:
-															annotationStyle(selectedAnnotation).font_weight === 'bold'
-																? 'normal'
-																: 'bold'
-													});
-												}}>B</button
-											>
-											<button
-												class="tool-button"
-												type="button"
-												class:active={annotationStyle(selectedAnnotation).font_style === 'italic'}
-												onclick={(evt) => {
-													evt.preventDefault();
-													updateSelectedSimulationAnnotationStyle({
-														font_style:
-															annotationStyle(selectedAnnotation).font_style === 'italic'
-																? 'normal'
-																: 'italic'
-													});
-												}}>I</button
-											>
-										{:else}
-											<label class="simulation-attribute-control">
-												Pen
-												<input
-													type="color"
-													value={annotationStrokeColor(selectedAnnotation)}
-													onchange={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															stroke_color: evt.currentTarget.value
-														})}
-												/>
-											</label>
-											<label class="simulation-attribute-control">
-												Pen opacity
-												<input
-													type="range"
-													min="0"
-													max="1"
-													step="0.05"
-													value={annotationStrokeOpacity(selectedAnnotation)}
-													oninput={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															stroke_opacity: Number(evt.currentTarget.value)
-														})}
-												/>
-											</label>
-											<label class="simulation-attribute-control">
-												Width
-												<input
-													type="number"
-													min="1"
-													max="20"
-													step="1"
-													value={annotationStrokeWidth(selectedAnnotation)}
-													onchange={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															stroke_width: Math.max(1, Number(evt.currentTarget.value) || 1)
-														})}
-												/>
-											</label>
-											<label class="simulation-attribute-control">
-												Line
-												<select
-													value={annotationStrokeDashArray(selectedAnnotation)}
-													onchange={(evt) =>
-														updateSelectedSimulationAnnotationStyle({
-															stroke_dash_array: evt.currentTarget.value
-														})}
-												>
-													{#each simulationAnnotationLineStyles as lineStyle}
-														<option value={lineStyle.value}>{lineStyle.label}</option>
-													{/each}
-												</select>
-											</label>
-										{/if}
-									{/if}
-									{#if selectedTransitionId.value}
-										<button
-											class="tool-button"
-											title="Show possible transition bindings"
-											data-tooltip="Bindings"
-											type="button"
-											disabled={!simulation.value.running || !current_instance.value?.label}
-											onclick={(evt) => {
-												evt.preventDefault();
 
-												void openBindingSelection(
-													bindingSelectionDispatch(
-														dispatch,
-														bindingSelection.value,
-														simulation.value
-													),
-													simulation.value,
-													current_instance.value,
-													selectedLayer
-												);
-											}}>Bindings</button
-										>
-									{:else if selectedPlaceId.value}
-										{@const selectedLayer = selectedSimulationLayer(doc.value)}
-										<button
-											class="tool-button"
-											title="Show the current marking for this place"
-											data-tooltip="Marking"
-											type="button"
-											disabled={!current_instance.value?.label}
-											onclick={(evt) =>
-												openMarkingDialog(
-													evt,
-													selectedLayer,
-													placeTokens(current_instance.value, selectedPlaceId.value)
-												)}>Marking</button
-										>
-									{/if}
+													void openBindingSelection(
+														bindingSelectionDispatch(
+															dispatch,
+															bindingSelection.value,
+															simulation.value
+														),
+														simulation.value,
+														current_instance.value,
+														selectedLayer
+													);
+												}}>Bindings</button
+											>
+										{:else if selectedPlaceId.value}
+											{@const selectedLayer = selectedSimulationLayer(doc.value)}
+											<button
+												class="tool-button"
+												title="Show the current marking for this place"
+												data-tooltip="Marking"
+												type="button"
+												disabled={!current_instance.value?.label}
+												onclick={(evt) =>
+													openMarkingDialog(
+														evt,
+														selectedLayer,
+														placeTokens(current_instance.value, selectedPlaceId.value)
+													)}>Marking</button
+											>
+										{/if}
+									</div>
 								</div>
-							</div>
+							{/if}
 							<div
 								role="main"
 								class={{
@@ -4464,150 +4690,156 @@
 									</div>
 								{/if}
 							</div>
-							<div class="sidebar right">
-								{#if doc.value}
-									<div class="minimap">
-										<Minimap
-											visible={showMinimap}
-											{extension}
-											{frameBoxPath}
-											{rotationInverseTransform}
-											{cameraFocus}
-										>
-											<rect
-												x={doc.value.viewbox.x}
-												y={doc.value.viewbox.y}
-												width={doc.value.viewbox.width}
-												height={doc.value.viewbox.height}
-												fill="white"
-												opacity="0.8"
-											/>
-
-											<use href="#full-document-{current_net_id}" opacity="0.8" />
-
-											<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
-										</Minimap>
-									</div>
-								{/if}
-								{#if showInstances.value}
-									<div class="toolbar vertical net-instance-panel">
-										<label>
-											Net Instances:
-											<select class="net-instances" bind:value={currentInstance.value} size="10">
-												{#each nets.value as nt}
-													{@const this_instances = view(
-														L.filter(R.pathEq(nt.id, ['links', 'shadow_net', 'id'])),
-														net_instances
-													)}
-													<optgroup label={nt.name}>
-														{#each this_instances.value as ni}
-															<option value={ni.id}>{ni.label}</option>
-														{/each}
-													</optgroup>
-												{/each}
-											</select>
-										</label>
-									</div>
-								{/if}
-								{#if showDebug.value}
-									<div class="toolbar vertical">
-										<details>
-											<summary>Debug Simulation </summary>
-											<textarea>{JSON.stringify(simulation.value, null, '  ')}</textarea>
-										</details>
-
-										<details>
-											<summary>Debug SNS </summary>
-
-											{#await data.shadow_net_system then sns}
-												{@const currentDoc = view(
-													(id) => R.find((n) => n.id === id, sns.nets)?.document,
-													current_net_id
-												)}
-												<textarea> {JSON.stringify(currentDoc.value, null, '  ')}</textarea>
-											{/await}
-										</details>
-									</div>
-								{/if}
-								{#if showLog.value}
-									<div class="toolbar vertical log">
-										<form
-											class="simulation-console-command"
-											onsubmit={(evt) => submitConsoleCommand(dispatch, evt)}
-										>
-											<label>
-												<span>Renew &gt;</span>
-												<input
-													type="text"
-													spellcheck="false"
-													autocomplete="off"
-													bind:this={consoleCommandInput}
-													bind:value={consoleCommandText.value}
+							{#if !embeddedMode}
+								<div class="sidebar right">
+									{#if doc.value}
+										<div class="minimap">
+											<Minimap
+												visible={showMinimap}
+												{extension}
+												{frameBoxPath}
+												{rotationInverseTransform}
+												{cameraFocus}
+											>
+												<rect
+													x={doc.value.viewbox.x}
+													y={doc.value.viewbox.y}
+													width={doc.value.viewbox.width}
+													height={doc.value.viewbox.height}
+													fill="white"
+													opacity="0.8"
 												/>
+
+												<use href="#full-document-{current_net_id}" opacity="0.8" />
+
+												<rect stroke="#0af" stroke-width="5" fill="#0af" fill-opacity="0.1" />
+											</Minimap>
+										</div>
+									{/if}
+									{#if showInstances.value}
+										<div class="toolbar vertical net-instance-panel">
+											<label>
+												Net Instances:
+												<select class="net-instances" bind:value={currentInstance.value} size="10">
+													{#each nets.value as nt}
+														{@const this_instances = view(
+															L.filter(R.pathEq(nt.id, ['links', 'shadow_net', 'id'])),
+															net_instances
+														)}
+														<optgroup label={nt.name}>
+															{#each this_instances.value as ni}
+																<option value={ni.id}>{ni.label}</option>
+															{/each}
+														</optgroup>
+													{/each}
+												</select>
 											</label>
-											<button type="submit">Send</button>
-										</form>
-										{#if consoleResponses.value.length}
-											<ol class="simulation-console-responses">
-												{#each consoleResponses.value as response (response.id)}
-													<li>
-														<div class="simulation-console-request">
-															Renew &gt; {response.command}
-														</div>
-														<pre>{response.output || '<no output>'}</pre>
-													</li>
-												{/each}
-											</ol>
-										{/if}
-										{#await data.log_entries}
-											Loading log...
-										{:then entries}
-											<LiveResource socket={data.live_socket} resource={entries}>
-												{#snippet children(log)}
-													<ol
-														style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1ex;"
-													>
-														{#each log.value.log_entries as l}
-															<li>{l.content}</li>
-														{/each}
-													</ol>
-												{/snippet}
-											</LiveResource>
-										{:catch e}
-											Error loading log
-										{/await}
-									</div>
-								{/if}
-							</div>
-						{/await}
-						<div class="sidebar left">
-							<div class="toolbar vertical">
-								Time: {simulation.value.timestep}
-							</div>
-						</div>
-					</div>
-					<footer class="statusbar" aria-live="polite">
-						<span>{simulation.value.running ? 'running' : 'not running'}</span>
-						<span>Time: {simulation.value.timestep}</span>
-						<span>
-							{#if selectedLayerId.value}
-								Figure selected
-							{:else if selectedAnnotationId.value}
-								Annotation selected
-							{:else}
-								Nothing Selected
+										</div>
+									{/if}
+									{#if showDebug.value}
+										<div class="toolbar vertical">
+											<details>
+												<summary>Debug Simulation </summary>
+												<textarea>{JSON.stringify(simulation.value, null, '  ')}</textarea>
+											</details>
+
+											<details>
+												<summary>Debug SNS </summary>
+
+												{#await data.shadow_net_system then sns}
+													{@const currentDoc = view(
+														(id) => R.find((n) => n.id === id, sns.nets)?.document,
+														current_net_id
+													)}
+													<textarea> {JSON.stringify(currentDoc.value, null, '  ')}</textarea>
+												{/await}
+											</details>
+										</div>
+									{/if}
+									{#if showLog.value}
+										<div class="toolbar vertical log">
+											<form
+												class="simulation-console-command"
+												onsubmit={(evt) => submitConsoleCommand(dispatch, evt)}
+											>
+												<label>
+													<span>Renew &gt;</span>
+													<input
+														type="text"
+														spellcheck="false"
+														autocomplete="off"
+														bind:this={consoleCommandInput}
+														bind:value={consoleCommandText.value}
+													/>
+												</label>
+												<button type="submit">Send</button>
+											</form>
+											{#if consoleResponses.value.length}
+												<ol class="simulation-console-responses">
+													{#each consoleResponses.value as response (response.id)}
+														<li>
+															<div class="simulation-console-request">
+																Renew &gt; {response.command}
+															</div>
+															<pre>{response.output || '<no output>'}</pre>
+														</li>
+													{/each}
+												</ol>
+											{/if}
+											{#await data.log_entries}
+												Loading log...
+											{:then entries}
+												<LiveResource socket={data.live_socket} resource={entries}>
+													{#snippet children(log)}
+														<ol
+															style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1ex;"
+														>
+															{#each log.value.log_entries as l}
+																<li>{l.content}</li>
+															{/each}
+														</ol>
+													{/snippet}
+												</LiveResource>
+											{:catch e}
+												Error loading log
+											{/await}
+										</div>
+									{/if}
+								</div>
 							{/if}
-						</span>
-						<span>{currentInstance.value ? 'Instance selected' : 'No instance'}</span>
-						<span>{data.connectionState.value === false ? 'offline' : 'online'}</span>
-						{#if queuedActions.value > 0}
-							<span
-								>{queuedActions.value} queued offline action{queuedActions.value === 1
-									? ''
-									: 's'}</span
-							>
+						{/await}
+						{#if !embeddedMode}
+							<div class="sidebar left">
+								<div class="toolbar vertical">
+									Time: {simulation.value.timestep}
+								</div>
+							</div>
 						{/if}
-					</footer>
+					</div>
+					{#if !embeddedMode}
+						<footer class="statusbar" aria-live="polite">
+							<span>{simulation.value.running ? 'running' : 'not running'}</span>
+							<span>Time: {simulation.value.timestep}</span>
+							<span>
+								{#if selectedLayerId.value}
+									Figure selected
+								{:else if selectedAnnotationId.value}
+									Annotation selected
+								{:else}
+									Nothing Selected
+								{/if}
+							</span>
+							<span>{currentInstance.value ? 'Instance selected' : 'No instance'}</span>
+							<span>{data.connectionState.value === false ? 'offline' : 'online'}</span>
+							{#if queuedActions.value > 0}
+								<span
+									>{queuedActions.value} queued offline action{queuedActions.value === 1
+										? ''
+										: 's'}</span
+								>
+							{/if}
+						</footer>
+					{/if}
 				{/snippet}
 			</LiveResource>
 		{/snippet}
@@ -4792,6 +5024,16 @@
 		grid-template-rows: auto auto;
 		grid-auto-rows: 1fr;
 		overflow: hidden;
+	}
+
+	.full-page.embedded {
+		position: relative;
+		inset: auto;
+		width: 100%;
+		height: 100%;
+		min-height: 100%;
+		grid-template-rows: 1fr;
+		background: #fff;
 	}
 
 	.binding-dialog-backdrop {
@@ -5331,6 +5573,10 @@
 		font-weight: bold;
 	}
 
+	.simulation-tab.document-tab {
+		background: #f4fbf8;
+	}
+
 	.simulation-tab-label {
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -5450,6 +5696,48 @@
 		width: 100vw;
 
 		contain: strict;
+	}
+
+	.full-page.embedded .overlay {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		overflow: hidden;
+		grid-template-columns:
+			[body-start top-start bottom-start left-start] 0
+			[left-end] minmax(0, 1fr)
+			[right-start right-end top-end] 0 [body-end];
+		grid-template-rows:
+			[body-start top-start simulation-controls-start simulation-controls-end simulation-attributes-start simulation-attributes-end top-end left-start right-start] minmax(
+				0,
+				1fr
+			)
+			[bottom-start] auto [bottom-end left-end right-end body-end];
+		gap: 0;
+	}
+
+	.full-page.embedded .body {
+		min-height: 0;
+		margin: 0;
+		padding: 0;
+		grid-area: body;
+	}
+
+	.full-page.embedded .topbar,
+	.full-page.embedded .simulation-tabs,
+	.full-page.embedded .statusbar {
+		display: none;
+	}
+
+	.full-page.embedded .sidebar.right {
+		margin: 0.5rem;
+	}
+
+	.full-page.embedded .toolbar.log {
+		max-height: min(24rem, 46vh);
+		max-width: min(36rem, 42vw);
+		margin: 0.5rem;
 	}
 
 	.topbar {

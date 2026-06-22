@@ -43,7 +43,7 @@
 
 	function scheduleEditorPreload() {
 		const preloadEditor = () => {
-			preloadCode('/documents/__editor_preload__/editor').catch(() => {
+			preloadCode('/projects/__project_preload__/workspace/__editor_preload__').catch(() => {
 				// Best-effort warm-up for the large editor route.
 			});
 		};
@@ -129,23 +129,16 @@
 			</a>
 			{#if projectId}
 				<a
-					href={resolve(`/projects/${projectId}/documents`)}
-					class={['nav-button', active == 'documents' && 'active']}
-					title="Documents List"
+					href={resolve(`/projects/${projectId}/workspace`)}
+					class={['nav-button', (active == 'documents' || active == 'simulations') && 'active']}
+					title="Documents and Simulations"
 					data-sveltekit-preload-data="off"
-					><span class="long-label">Documents</span><span class="short-label">/Docs</span></a
-				>
-				<a
-					href={resolve(`/projects/${projectId}/simulations`)}
-					class={['nav-button', active == 'simulations' && 'active']}
-					title="Simulations List"
-					data-sveltekit-preload-data="off"
-					><span class="long-label">Simulations</span><span class="short-label">/Sims</span></a
+					><span class="long-label">Workspace</span><span class="short-label">/Work</span></a
 				>
 				<a
 					href={resolve(`/projects/${projectId}/settings`)}
 					class={['nav-button', active == 'settings' && 'active']}
-					title="Simulations List"
+					title="Project Settings"
 					data-sveltekit-preload-data="off"
 					><span class="long-label">Settings</span><span class="short-label">/Ctrl</span></a
 				>

@@ -32,6 +32,53 @@ export function readOfflineCache(key) {
 	}
 }
 
+function cacheStorageKey(key) {
+	return `${CACHE_PREFIX}${key}`;
+}
+
+function isQuotaExceeded(error) {
+	return (
+		error?.name === 'QuotaExceededError' ||
+		error?.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+		error?.code === 22 ||
+		error?.code === 1014
+	);
+}
+
+function offlineCacheEntries(currentStorage) {
+	const entries = [];
+
+	for (let i = 0; i < currentStorage.length; i += 1) {
+		const key = currentStorage.key(i);
+
+		if (!key?.startsWith(CACHE_PREFIX)) {
+			continue;
+		}
+
+		let savedAt = 0;
+
+		try {
+			const entry = JSON.parse(currentStorage.getItem(key) ?? '{}');
+			savedAt = Date.parse(entry?.savedAt ?? '') || 0;
+		} catch {
+			// Broken cache entries are good candidates for pruning.
+		}
+
+		entries.push({ key, savedAt });
+	}
+
+	return entries.sort((a, b) => a.savedAt - b.savedAt);
+}
+
+function pruneOfflineCache(currentStorage, keepKey) {
+	const entries = offlineCacheEntries(currentStorage).filter((entry) => entry.key !== keepKey);
+	const count = Math.max(1, Math.ceil(entries.length / 2));
+
+	for (const entry of entries.slice(0, count)) {
+		currentStorage.removeItem(entry.key);
+	}
+}
+
 export function writeOfflineCache(key, value) {
 	const currentStorage = storage();
 
@@ -39,16 +86,30 @@ export function writeOfflineCache(key, value) {
 		return;
 	}
 
+	const storageKey = cacheStorageKey(key);
+	const payload = JSON.stringify({
+		version: CACHE_VERSION,
+		savedAt: new Date().toISOString(),
+		value
+	});
+
 	try {
-		currentStorage.setItem(
-			`${CACHE_PREFIX}${key}`,
-			JSON.stringify({
-				version: CACHE_VERSION,
-				savedAt: new Date().toISOString(),
-				value
-			})
-		);
+		currentStorage.setItem(storageKey, payload);
 	} catch (error) {
+		if (isQuotaExceeded(error)) {
+			pruneOfflineCache(currentStorage, storageKey);
+
+			try {
+				currentStorage.setItem(storageKey, payload);
+			} catch (retryError) {
+				if (!isQuotaExceeded(retryError)) {
+					console.warn('Could not write offline cache', key, retryError);
+				}
+			}
+
+			return;
+		}
+
 		console.warn('Could not write offline cache', key, error);
 	}
 }

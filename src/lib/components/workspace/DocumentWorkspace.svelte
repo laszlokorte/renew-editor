@@ -2,6 +2,7 @@
 	// @ts-nocheck
 
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import {
 		view,
 		storedAtom,
@@ -19,10 +20,11 @@
 		polyfillDragDrop
 	} from '$lib/reactivity/bindings.svelte.js';
 	import { numberSvgFormat } from '$lib/svg/formatter';
-	import AppBar from '../../../AppBar.svelte';
+	import AppBar from '../../../routes/AppBar.svelte';
 	import AttributeInput from './AttributeInput.svelte';
 
 	import Modal from '$lib/components/modal/Modal.svelte';
+	import SimulationWorkspace from './SimulationWorkspace.svelte';
 	import SVGViewport from '$lib/components/viewport/SVGViewport.svelte';
 	import CameraScroller from '$lib/components/viewport/CameraScroller.svelte';
 	import CanvasDropper from '$lib/components/dragdrop/CanvasDropper.svelte';
@@ -44,6 +46,7 @@
 	import {
 		edgeAngle,
 		edgePath,
+		elbowControlPoint,
 		elbowPoints,
 		elbowHandlePoints,
 		tipColor
@@ -68,6 +71,7 @@
 	import Navigator from '$lib/components/camera/Navigator.svelte';
 	import MountTrigger from '$lib/components/camera/MountTrigger.svelte';
 	import { describeError } from '$lib/errors';
+	import { loadSimulationWorkbenchData } from '$lib/api/simulation_workbench_data.js';
 	import { downloadFile } from '$lib/io/download';
 	import {
 		LOOK_AND_FEEL_OPTIONS,
@@ -77,6 +81,28 @@
 
 	const { data } = $props();
 	const lookAndFeel = atom(loadLookAndFeel());
+	const initialSimulationWorkspace = data.initialSimulation?.id
+		? {
+				id: data.initialSimulation.id,
+				name: data.initialSimulation.name ?? data.initialSimulation.id,
+				href: data.initialSimulation.href,
+				savedAt: Date.now()
+			}
+		: null;
+	const simulationWorkbenchData = atom(
+		initialSimulationWorkspace
+			? loadSimulationWorkbenchData(fetch, initialSimulationWorkspace.id)
+			: null
+	);
+
+	function embeddedSimulationWorkspaceData(simulationData) {
+		return {
+			...simulationData,
+			authState: data.authState,
+			connectionState: data.connectionState,
+			live_socket: data.live_socket
+		};
+	}
 
 	function backendUrl(path) {
 		const base = data.authState?.value?.url ?? window.location.origin;
@@ -207,6 +233,8 @@
 	const showToolOptions = atom(false);
 	const toolOptions = atom(null);
 	const recentDocuments = atom([]);
+	const recentSimulations = atom([]);
+	const activeSimulationWorkspace = atom(initialSimulationWorkspace);
 	const toolbarLayouts = atom(loadToolbarLayouts());
 	const createToolbarOrder = atom(loadCreateToolbarOrder());
 	const collapsedCreateToolGroups = atom(loadCollapsedCreateToolGroups());
@@ -383,23 +411,81 @@
 		evt.preventDefault();
 		evt.stopPropagation();
 
-		const nextLocation = window.prompt('Target location', layer?.style?.target_location ?? '');
-		if (nextLocation === null) {
-			return true;
+		// Open an inline field directly on the canvas (like Renew) instead of a
+		// native browser prompt. The value is committed on Enter / blur / click-away
+		// via commitTargetLocationEdit.
+		if (inlineTextEdit.value?.id) {
+			commitInlineTextEdit(cast);
+		}
+		targetLocationEdit.value = {
+			id: layer.id,
+			value: layer?.style?.target_location ?? ''
+		};
+		return true;
+	}
+
+	function updateTargetLocationEdit(value) {
+		if (!targetLocationEdit.value) {
+			return;
+		}
+
+		targetLocationEdit.value = { ...targetLocationEdit.value, value };
+	}
+
+	function finishTargetLocationEdit() {
+		// blur and the outside-pointer handler can both fire for the same gesture;
+		// only act once.
+		if (!targetLocationEdit.value) {
+			return;
+		}
+
+		targetLocationEdit.value = undefined;
+		if (!activeCreateTool.value?.persistent) {
+			resetToSelectTool();
+		}
+	}
+
+	function commitTargetLocationEdit(cast) {
+		const edit = targetLocationEdit.value;
+		if (!edit?.id || !cast) {
+			finishTargetLocationEdit();
+			return;
 		}
 
 		cast('change_style', {
 			type: 'layer',
-			layer_ids: [layer.id],
+			layer_ids: [edit.id],
 			attr: 'target_location',
-			val: nextLocation.trim()
+			val: (edit.value ?? '').trim()
 		});
 
-		if (!activeCreateTool.value?.persistent) {
-			resetToSelectTool();
+		finishTargetLocationEdit();
+	}
+
+	function cancelTargetLocationEdit() {
+		finishTargetLocationEdit();
+	}
+
+	function commitTargetLocationEditOnOutsidePointer(node, cast) {
+		function onPointerDown(evt) {
+			if (!targetLocationEdit.value || !evt.isPrimary || !E.isLeftButton(evt)) {
+				return;
+			}
+
+			if (node.contains(evt.target)) {
+				return;
+			}
+
+			commitTargetLocationEdit(cast);
 		}
 
-		return true;
+		window.addEventListener('pointerdown', onPointerDown, true);
+
+		return {
+			destroy() {
+				window.removeEventListener('pointerdown', onPointerDown, true);
+			}
+		};
 	}
 
 	function openTargetLocation(evt, layer, cast = undefined) {
@@ -652,6 +738,7 @@
 	let primitiveCreation = atom(undefined);
 	let linkedPrimitiveCreation = atom(undefined);
 	let inlineTextEdit = atom(undefined);
+	let targetLocationEdit = atom(undefined);
 	let suppressNextLinkedPrimitiveClick = $state(false);
 	const selectionHandleDescriptors = [
 		{ type: 'topLeft', dx: -1, dy: -1 },
@@ -750,6 +837,7 @@
 	const PETRISTATION_CLIPBOARD_STORAGE_KEY = 'petristation:layer-clipboard';
 	const PETRISTATION_CLIPBOARD_RNW_STORAGE_KEY = 'petristation:layer-clipboard-rnw';
 	const RECENT_DOCUMENTS_STORAGE_KEY = 'petristation:recent-documents';
+	const RECENT_SIMULATIONS_STORAGE_KEY = 'petristation:recent-simulations';
 	const RENEW_RNW_CLIPBOARD_FORMAT = 'renew/rnw';
 	const CLIPBOARD_RNW_TEXT = globalThis.Symbol('clipboardRnwText');
 	const SYSTEM_CLIPBOARD_WITHOUT_LAYERS = {};
@@ -842,12 +930,26 @@
 		}
 	}
 
+	function loadRecentSimulations() {
+		try {
+			const parsed = JSON.parse(localStorage.getItem(RECENT_SIMULATIONS_STORAGE_KEY) ?? '[]');
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
+	}
+
+	function publicSimulationHref(simulationId) {
+		const projectId = data.document.links.project.id;
+		return resolve(`/projects/${projectId}/workspace/${simulationId}`);
+	}
+
 	function rememberCurrentDocument() {
 		const documentId = data.document.id;
 		const entry = {
 			id: documentId,
 			name: data.document.content?.name ?? 'Untitled',
-			href: resolve(`/documents/${documentId}/editor`),
+			href: resolve(`/projects/${data.document.links.project.id}/workspace/${documentId}`),
 			savedAt: Date.now()
 		};
 		const next = [entry, ...loadRecentDocuments().filter((recent) => recent?.id !== documentId)]
@@ -862,6 +964,240 @@
 		recentDocuments.value = [];
 	}
 
+	function rememberSimulation(simulation) {
+		if (!simulation?.id) {
+			return null;
+		}
+
+		const simulationId = simulation.id;
+		const entry = {
+			id: simulationId,
+			name:
+				simulation.content?.name ??
+				simulation.name ??
+				simulation.label ??
+				simulation.content?.label ??
+				simulationId,
+			href: publicSimulationHref(simulationId),
+			savedAt: Date.now()
+		};
+		const next = [entry, ...loadRecentSimulations().filter((recent) => recent?.id !== simulationId)]
+			.filter((recent) => recent?.id && recent?.href)
+			.slice(0, 12);
+		localStorage.setItem(RECENT_SIMULATIONS_STORAGE_KEY, JSON.stringify(next));
+		recentSimulations.value = next;
+		return entry;
+	}
+
+	function simulationEntryFromId(simulationId, name = simulationId) {
+		if (!simulationId) {
+			return null;
+		}
+
+		return {
+			id: simulationId,
+			name,
+			href: publicSimulationHref(simulationId),
+			savedAt: Date.now()
+		};
+	}
+
+	function rememberSimulationEntry(entry) {
+		if (!entry?.id || !entry?.href) {
+			return null;
+		}
+
+		const next = [entry, ...loadRecentSimulations().filter((recent) => recent?.id !== entry.id)]
+			.filter((recent) => recent?.id && recent?.href)
+			.slice(0, 12);
+		localStorage.setItem(RECENT_SIMULATIONS_STORAGE_KEY, JSON.stringify(next));
+		recentSimulations.value = next;
+		return entry;
+	}
+
+	let rememberedInitialSimulationId = undefined;
+	$effect(() => {
+		if (
+			!initialSimulationWorkspace?.id ||
+			rememberedInitialSimulationId === initialSimulationWorkspace.id
+		) {
+			return;
+		}
+
+		rememberedInitialSimulationId = initialSimulationWorkspace.id;
+		rememberSimulationEntry(initialSimulationWorkspace);
+		activeSimulationWorkspace.value = initialSimulationWorkspace;
+	});
+
+	let openedSimulationQueryId = undefined;
+	$effect(() => {
+		const simulationId = page.url.searchParams.get('simulation');
+		if (!simulationId || simulationId === openedSimulationQueryId) {
+			return;
+		}
+
+		openedSimulationQueryId = simulationId;
+		openSimulationWorkspace(rememberSimulationEntry(simulationEntryFromId(simulationId)));
+	});
+
+	function removeRecentSimulation(simulationId) {
+		const next = loadRecentSimulations().filter((recent) => recent?.id !== simulationId);
+		localStorage.setItem(RECENT_SIMULATIONS_STORAGE_KEY, JSON.stringify(next));
+		recentSimulations.value = next;
+		if (activeSimulationWorkspace.value?.id === simulationId) {
+			activeSimulationWorkspace.value = null;
+		}
+	}
+
+	function clearRecentSimulations() {
+		localStorage.removeItem(RECENT_SIMULATIONS_STORAGE_KEY);
+		recentSimulations.value = [];
+		activeSimulationWorkspace.value = null;
+	}
+
+	function simulationTabs() {
+		return recentSimulations.value
+			.filter((recent) => recent?.id)
+			.map((recent) => ({
+				...recent,
+				href: publicSimulationHref(recent.id)
+			}))
+			.slice(0, 8);
+	}
+
+	function openSimulationWorkspace(tab) {
+		if (!tab?.id || !tab?.href) {
+			return;
+		}
+
+		activeSimulationWorkspace.value = tab;
+		simulationWorkbenchData.value = loadSimulationWorkbenchData(fetch, tab.id);
+	}
+
+	function activeSimulationBackendHref(path = '') {
+		const simulationId = activeSimulationWorkspace.value?.id;
+		return simulationId
+			? backendUrl(`/simulations/${simulationId}${path}`)
+			: backendUrl('/simulations');
+	}
+
+	function postSimulationCommand(command, payload = {}) {
+		const simulationId = activeSimulationWorkspace.value?.id;
+		if (!simulationId) {
+			return;
+		}
+
+		window.dispatchEvent(
+			new CustomEvent('petristation:simulation-command', {
+				detail: {
+					simulationId,
+					command,
+					payload
+				}
+			})
+		);
+	}
+
+	function simulationCommand(evt, command, payload = {}) {
+		evt?.preventDefault?.();
+		postSimulationCommand(command, payload);
+	}
+
+	function simulationCommandButton(evt, command, payload = {}) {
+		simulationCommand(evt, command, payload);
+	}
+
+	function selectSimulationTool(tool) {
+		if (!activeSimulationWorkspace.value || !tool) {
+			return;
+		}
+
+		postSimulationCommand('tool', { tool });
+	}
+
+	function simulationToolForEditorTool(toolId) {
+		return (
+			{
+				select: 'select',
+				magnifier: 'magnifier',
+				paner: 'paner',
+				zoomer: 'zoomer'
+			}[toolId] ?? undefined
+		);
+	}
+
+	function simulationToolForCreatePrimitive(item) {
+		const name = `${item?.name ?? ''}`.toLowerCase();
+		const shape =
+			`${item?.data?.content?.box?.shape ?? item?.data?.content?.shape ?? ''}`.toLowerCase();
+		const semantic = `${item?.data?.content?.semantic_tag ?? ''}`.toLowerCase();
+
+		if (name.includes('text') || semantic.includes('text')) {
+			return 'text';
+		}
+
+		if (name.includes('line') || shape.includes('line')) {
+			return 'line';
+		}
+
+		if (name.includes('ellipse') || name.includes('circle') || shape.includes('ellipse')) {
+			return 'ellipse';
+		}
+
+		if (name.includes('rectangle') || name.includes('rect') || shape.includes('rect')) {
+			return 'rectangle';
+		}
+
+		return undefined;
+	}
+
+	function runSimulationMenuCommand(evt) {
+		evt?.preventDefault?.();
+		if (activeSimulationWorkspace.value) {
+			postSimulationCommand('init');
+			return;
+		}
+
+		simulateThisDocument(evt);
+	}
+
+	function openLinkedSimulationWorkspace(evt, simulation) {
+		evt?.preventDefault?.();
+		const simulationId = simulation?.id ?? simulation?.simulation_id;
+		const existingTab = loadRecentSimulations().find((recent) => recent?.id === simulationId);
+
+		if (existingTab) {
+			openSimulationWorkspace(existingTab);
+			return;
+		}
+
+		const fallbackTab = simulationEntryFromId(
+			simulationId,
+			simulation?.name ?? simulation?.label ?? simulation?.content?.name ?? simulationId
+		);
+
+		openSimulationWorkspace(rememberSimulationEntry(fallbackTab));
+
+		if (simulation?.href && data.loadJson) {
+			data
+				.loadJson(simulation.href)
+				.then((loadedSimulation) => {
+					const tab = rememberSimulation(loadedSimulation);
+					if (tab && activeSimulationWorkspace.value?.id === simulationId) {
+						openSimulationWorkspace(tab);
+					}
+				})
+				.catch((error) => {
+					console.warn('Could not load linked simulation details', error);
+				});
+		}
+	}
+
+	function openDrawingWorkspace() {
+		activeSimulationWorkspace.value = null;
+		simulationWorkbenchData.value = null;
+	}
+
 	function removeRecentDocument(documentId) {
 		const next = loadRecentDocuments().filter((recent) => recent?.id !== documentId);
 		localStorage.setItem(RECENT_DOCUMENTS_STORAGE_KEY, JSON.stringify(next));
@@ -873,7 +1209,7 @@
 		const current = {
 			id: currentId,
 			name: documentValue?.name ?? data.document.content?.name ?? 'Untitled',
-			href: resolve(`/documents/${currentId}/editor`)
+			href: resolve(`/projects/${data.document.links.project.id}/workspace/${currentId}`)
 		};
 		return [
 			current,
@@ -894,7 +1230,7 @@
 
 		const next = tabs.find((candidate) => candidate.id !== tab.id);
 		removeRecentDocument(tab.id);
-		location.href = next?.href ?? resolve(`/projects/${data.document.links.project.id}/documents`);
+		location.href = next?.href ?? resolve(`/projects/${data.document.links.project.id}/workspace`);
 	}
 
 	function closeOtherDrawings() {
@@ -2034,6 +2370,86 @@
 		};
 	}
 
+	function polygonBounds(points) {
+		if (!Array.isArray(points) || points.length < 2) {
+			return undefined;
+		}
+
+		const xs = points.map((point) => point.x);
+		const ys = points.map((point) => point.y);
+		const minX = Math.min(...xs);
+		const maxX = Math.max(...xs);
+		const minY = Math.min(...ys);
+		const maxY = Math.max(...ys);
+
+		if (![minX, maxX, minY, maxY].every(Number.isFinite)) {
+			return undefined;
+		}
+
+		return {
+			x: minX,
+			y: minY,
+			width: Math.max(1, maxX - minX),
+			height: Math.max(1, maxY - minY)
+		};
+	}
+
+	function layerSocketBox(layer, layerId, layersInOrderValue, dragState, delta) {
+		if (layer?.box) {
+			return movedSocketBox(
+				{
+					x: layer.box.position_x,
+					y: layer.box.position_y,
+					width: layer.box.width,
+					height: layer.box.height,
+					shape: layer.box.shape,
+					semantic_tag: layer.semantic_tag
+				},
+				layerId,
+				layersInOrderValue,
+				dragState,
+				delta
+			);
+		}
+
+		if (layer?.text?.hint) {
+			return movedSocketBox(
+				{
+					x: layer.text.hint.x,
+					y: layer.text.hint.y,
+					width: layer.text.hint.width,
+					height: layer.text.hint.height,
+					semantic_tag: layer.semantic_tag
+				},
+				layerId,
+				layersInOrderValue,
+				dragState,
+				delta
+			);
+		}
+
+		if (isPolygonLayer(layer)) {
+			const bounds = polygonBounds(polygonEditablePoints(layer.edge));
+			if (!bounds) {
+				return undefined;
+			}
+
+			return movedSocketBox(
+				{
+					...bounds,
+					shape: 'polygon',
+					semantic_tag: layer.semantic_tag
+				},
+				layerId,
+				layersInOrderValue,
+				dragState,
+				delta
+			);
+		}
+
+		return undefined;
+	}
+
 	function documentSocketEntries(docValue, layersInOrderValue, socketSchemas, dragState, delta) {
 		const byId = layerMap(docValue);
 
@@ -2049,24 +2465,10 @@
 
 				return (socketSchema.sockets ?? [])
 					.map((socket) => {
-						if (!layer?.box) {
+						const socketBox = layerSocketBox(layer, id, layersInOrderValue, dragState, delta);
+						if (!socketBox) {
 							return null;
 						}
-
-						const socketBox = movedSocketBox(
-							{
-								x: layer.box.position_x,
-								y: layer.box.position_y,
-								width: layer.box.width,
-								height: layer.box.height,
-								shape: layer.box.shape,
-								semantic_tag: layer.semantic_tag
-							},
-							id,
-							layersInOrderValue,
-							dragState,
-							delta
-						);
 
 						return {
 							id: {
@@ -2171,6 +2573,10 @@
 	function isPolygonLayer(layer) {
 		const tag = layer?.semantic_tag ?? '';
 		return !!layer?.edge && (tag.includes('PolygonFigure') || layer.edge.cyclic === true);
+	}
+
+	function layerHasFillStyle(layer) {
+		return !!(layer?.box || layer?.text || isPolygonLayer(layer));
 	}
 
 	function polygonEditablePoints(edge) {
@@ -2486,20 +2892,25 @@
 		cast,
 		docValue,
 		layersInOrderValue,
-		socketPosition = position
+		socketPosition = position,
+		candidateSocket = undefined
 	}) {
 		const edge = layer?.edge;
 		const edgeId = edge?.id ?? layer?.id;
 		const oldBond = endpointBond(edge, endpoint);
 		const oldPoint = originalPosition ?? edgeEndpointPoint(edge, endpoint);
-		const socket = compatibleSocketAt(
-			socketPosition,
-			docValue,
-			layersInOrderValue,
-			socketSchemas,
-			(candidate) => edgeEndpointCanReconnect(layer, endpoint, candidate, docValue, syntax),
-			{ excludeLayerId: layer?.id, allowNearby: false }
-		);
+		const canReconnect = (candidate) =>
+			edgeEndpointCanReconnect(layer, endpoint, candidate, docValue, syntax);
+		const socket = canReconnect(candidateSocket)
+			? candidateSocket
+			: compatibleSocketAt(
+					socketPosition,
+					docValue,
+					layersInOrderValue,
+					socketSchemas,
+					canReconnect,
+					{ excludeLayerId: layer?.id, allowNearby: false }
+				);
 		const positionValue = edgeEndpointPositionValue(endpoint, position);
 
 		if (socket && edgeId) {
@@ -2698,10 +3109,8 @@
 		}
 
 		const position =
-			(socket.box ? edgeBoxCenter(socket.box) : undefined) ??
-			(Number.isFinite(socket.x) && Number.isFinite(socket.y)
-				? { x: socket.x, y: socket.y }
-				: oldPoint);
+			socketAnchorPoint(socket) ??
+			(Number.isFinite(oldPoint?.x) && Number.isFinite(oldPoint?.y) ? oldPoint : dragPosition);
 
 		return { position, socket };
 	}
@@ -2722,12 +3131,21 @@
 		evt.currentTarget.setPointerCapture(evt.pointerId);
 		evt.currentTarget.currentPointerId = evt.pointerId;
 
+		const startWaypoints = copyEdgeWaypoints(
+			L.get(localProp('waypoints'), layer.edge) ?? layer.edge.waypoints ?? []
+		);
+
 		edgeEndpointDrag.value = {
 			pointerId: evt.pointerId,
 			layerId: layer.id,
 			endpoint,
 			originalPosition,
 			currentPosition: originalPosition,
+			startEdge: {
+				...layer.edge,
+				waypoints: startWaypoints
+			},
+			startWaypoints,
 			pointerOffset: Geo.diff2d(
 				originalPosition,
 				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
@@ -2746,7 +3164,8 @@
 		socketSchemas,
 		syntax,
 		docValue,
-		layersInOrderValue
+		layersInOrderValue,
+		waypointsLens = undefined
 	) {
 		const drag = edgeEndpointDrag.value;
 		if (
@@ -2776,6 +3195,28 @@
 		});
 
 		positionLens.value = preview.position;
+		if (layer?.edge?.style?.smoothness === 'elbow' && waypointsLens) {
+			const previewEdge = preview.socket
+				? elbowEndpointSnappedPreviewEdge(
+						layer.edge,
+						endpoint,
+						preview.socket,
+						docValue,
+						layersInOrderValue
+					)
+				: {
+						...layer.edge,
+						...edgeEndpointPositionValue(endpoint, preview.position)
+					};
+			waypointsLens.value = elbowEndpointActiveWaypoints(
+				drag.startEdge ?? layer.edge,
+				drag.startWaypoints ?? layer.edge.waypoints ?? [],
+				preview.socket,
+				endpoint,
+				edgeEndpointPoint(previewEdge, endpoint),
+				previewEdge
+			);
+		}
 		edgeEndpointDrag.value = {
 			...drag,
 			currentPosition: preview.position,
@@ -2809,7 +3250,8 @@
 		layersInOrderValue,
 		docAtom,
 		dispatch,
-		cast
+		cast,
+		waypointsLens = undefined
 	) {
 		const drag = edgeEndpointDrag.value;
 		if (
@@ -2837,15 +3279,53 @@
 			docValue,
 			layersInOrderValue
 		});
+		const releaseSocket =
+			preview.socket ??
+			(drag.candidateSocket && pointInsideSocket(pointerPosition, drag.candidateSocket, 0)
+				? drag.candidateSocket
+				: undefined);
+		const releasePosition = releaseSocket
+			? (socketAnchorPoint(releaseSocket, preview.position) ?? preview.position)
+			: preview.position;
 
-		positionLens.value = preview.position;
+		positionLens.value = releasePosition;
+		const isElbowEndpointDrag = layer.edge?.style?.smoothness === 'elbow';
+		const initialEdgeBase =
+			isElbowEndpointDrag && releaseSocket
+				? elbowEndpointSnappedPreviewEdge(
+						layer.edge,
+						endpoint,
+						releaseSocket,
+						docValue,
+						layersInOrderValue
+					)
+				: {
+						...layer.edge,
+						...edgeEndpointPositionValue(endpoint, releasePosition)
+					};
+		const initialPreviewWaypoints = isElbowEndpointDrag
+			? elbowEndpointActiveWaypoints(
+					drag.startEdge ?? initialEdgeBase,
+					drag.startWaypoints ?? layer.edge.waypoints ?? [],
+					releaseSocket,
+					endpoint,
+					edgeEndpointPoint(initialEdgeBase, endpoint),
+					initialEdgeBase
+				)
+			: copyEdgeWaypoints(layer.edge.waypoints);
 		const initialPreviewEdge = {
-			...layer.edge,
-			...edgeEndpointPositionValue(endpoint, preview.position)
+			...initialEdgeBase,
+			waypoints: initialPreviewWaypoints
 		};
 		const previousEdge = documentEdgeByLayerId(docAtom?.value, layer.id);
 		setCommittedEdgePreview(layer.id, initialPreviewEdge);
-		patchDocumentEdge(docAtom, layer.id, initialPreviewEdge);
+		if (isElbowEndpointDrag) {
+			if (waypointsLens) {
+				waypointsLens.value = initialPreviewWaypoints;
+			}
+			setCommittedEdgeWaypointPreview(layer.id, initialPreviewWaypoints);
+			setDocumentEdgeWaypointDraft(docAtom, layer.id, initialPreviewWaypoints);
+		}
 
 		Promise.resolve(
 			reconnectOrMoveEdgeEndpoint({
@@ -2853,6 +3333,7 @@
 				endpoint,
 				position: dragPosition,
 				socketPosition: pointerPosition,
+				candidateSocket: releaseSocket,
 				originalPosition: drag.originalPosition,
 				socketSchemas,
 				syntax,
@@ -2866,21 +3347,54 @@
 				const xKey = endpoint === 'source' ? 'source_x' : 'target_x';
 				const yKey = endpoint === 'source' ? 'source_y' : 'target_y';
 				let committedPreviewEdge = initialPreviewEdge;
+				let resultPoint = edgeEndpointPoint(committedPreviewEdge, endpoint);
 				if (result?.[xKey] !== undefined) {
-					const resultPoint = { x: result[xKey], y: result[yKey] };
+					resultPoint = { x: result[xKey], y: result[yKey] };
 					positionLens.value = resultPoint;
 					committedPreviewEdge = {
-						...layer.edge,
+						...committedPreviewEdge,
 						...edgeEndpointPositionValue(endpoint, resultPoint)
 					};
 					setCommittedEdgePreview(layer.id, committedPreviewEdge);
-					patchDocumentEdge(docAtom, layer.id, committedPreviewEdge);
+				}
+				if (isElbowEndpointDrag) {
+					const committedPreviewWaypoints = elbowEndpointReleaseWaypoints(
+						drag.startEdge ?? layer.edge,
+						drag.startWaypoints ?? layer.edge.waypoints ?? [],
+						committedPreviewEdge,
+						drag.originalPosition,
+						resultPoint,
+						endpoint
+					);
+					committedPreviewEdge = {
+						...committedPreviewEdge,
+						waypoints: committedPreviewWaypoints
+					};
+					if (waypointsLens) {
+						waypointsLens.value = committedPreviewWaypoints;
+					}
+					setCommittedEdgeWaypointPreview(layer.id, committedPreviewWaypoints);
+					setDocumentEdgeWaypointDraft(docAtom, layer.id, committedPreviewWaypoints);
+					setCommittedEdgePreview(layer.id, committedPreviewEdge);
+					return commitElbowEndpointWaypoints(
+						layer.id,
+						committedPreviewEdge,
+						committedPreviewWaypoints,
+						dispatch,
+						cast
+					).then(() =>
+						clearCommittedEdgePreviewAfterSync(layer.id, committedPreviewEdge, docAtom, true)
+					);
 				}
 				clearCommittedEdgePreviewAfterSync(layer.id, committedPreviewEdge, docAtom);
 			})
 			.catch((error) => {
 				positionLens.value = drag.originalPosition;
+				if (waypointsLens) {
+					waypointsLens.value = localProp.reset;
+				}
 				patchDocumentEdge(docAtom, layer.id, previousEdge);
+				clearCommittedEdgeWaypointPreview(layer.id);
 				clearCommittedEdgePreview(layer.id);
 				queueError(error, 'Edge endpoint could not be changed');
 			})
@@ -2896,7 +3410,7 @@
 		return true;
 	}
 
-	function cancelEdgeEndpointHandle(evt, positionLens) {
+	function cancelEdgeEndpointHandle(evt, positionLens, waypointsLens = undefined) {
 		const pointerId = eventPointerId(evt);
 		const drag = edgeEndpointDrag.value;
 		if (!drag || (pointerId !== undefined && drag.pointerId !== pointerId)) {
@@ -2909,6 +3423,9 @@
 		evt?.stopPropagation?.();
 		evt?.preventDefault?.();
 		positionLens.value = drag.originalPosition;
+		if (waypointsLens) {
+			waypointsLens.value = localProp.reset;
+		}
 		edgeEndpointDrag.value = undefined;
 		backoffValue.value = undefined;
 		if (evt?.currentTarget?.hasPointerCapture?.(drag.pointerId)) {
@@ -3163,6 +3680,15 @@
 		};
 	}
 
+	function socketAnchorPoint(socket, fallback = undefined) {
+		return (
+			(socket?.box ? edgeBoxCenter(socket.box) : undefined) ??
+			(Number.isFinite(socket?.x) && Number.isFinite(socket?.y)
+				? { x: socket.x, y: socket.y }
+				: fallback)
+		);
+	}
+
 	function edgeBoxBoundaryPoint(box, toward) {
 		if (!box || !toward) {
 			return undefined;
@@ -3362,12 +3888,53 @@
 		dragState = groupDrag.value,
 		delta = groupDragDelta.value
 	) {
+		const endpointPreview = activeEdgeEndpointDragPreview(layer, docValue, layersInOrderValue);
+		if (endpointPreview) {
+			return endpointPreview;
+		}
+
 		return (
 			polygonScalePreviewEdges.value.get(layer?.id) ??
 			committedEdgePreviewOverrides.value.get(layer?.id) ??
 			connectedEdgePreviewOverrides.value.get(layer?.id) ??
 			previewMovedEdge(layer, docValue, layersInOrderValue, dragState, delta)
 		);
+	}
+
+	function activeEdgeEndpointDragPreview(layer, docValue, layersInOrderValue) {
+		const drag = edgeEndpointDrag.value;
+		if (!drag || drag.layerId !== layer?.id || !layer?.edge) {
+			return undefined;
+		}
+
+		const startEdge = drag.startEdge ?? layer.edge;
+		const previewPosition = drag.currentPosition ?? drag.originalPosition;
+		const previewEdge =
+			startEdge.style?.smoothness === 'elbow' && drag.candidateSocket
+				? elbowEndpointSnappedPreviewEdge(
+						startEdge,
+						drag.endpoint,
+						drag.candidateSocket,
+						docValue,
+						layersInOrderValue
+					)
+				: {
+						...startEdge,
+						...edgeEndpointPositionValue(drag.endpoint, previewPosition)
+					};
+
+		if (previewEdge.style?.smoothness === 'elbow') {
+			previewEdge.waypoints = elbowEndpointActiveWaypoints(
+				startEdge,
+				drag.startWaypoints ?? startEdge.waypoints ?? [],
+				drag.candidateSocket,
+				drag.endpoint,
+				edgeEndpointPoint(previewEdge, drag.endpoint),
+				previewEdge
+			);
+		}
+
+		return previewEdge;
 	}
 
 	function edgePreviewTransform(layerId, layersInOrderValue, edge, previewEdge) {
@@ -3395,8 +3962,17 @@
 		return typeof id === 'string' && !id.startsWith('__') ? id : null;
 	}
 
+	function isInternalElbowWaypoint(waypoint) {
+		return !!(waypoint?.__elbow_bend || waypoint?.__elbow_straight_drag);
+	}
+
 	function waypointHandleVisible(waypoint) {
-		return !!(waypoint?.id && Number.isFinite(waypoint?.x) && Number.isFinite(waypoint?.y));
+		return !!(
+			waypoint?.id &&
+			!isInternalElbowWaypoint(waypoint) &&
+			Number.isFinite(waypoint?.x) &&
+			Number.isFinite(waypoint?.y)
+		);
 	}
 
 	function waypointPositionPayload(waypoint) {
@@ -3407,7 +3983,13 @@
 	}
 
 	function edgeWaypointProposals(edge) {
-		const waypoints = L.get(localProp('waypoints'), edge) ?? edge?.waypoints ?? [];
+		if (edge?.style?.smoothness === 'elbow') {
+			return [];
+		}
+
+		const waypoints = (L.get(localProp('waypoints'), edge) ?? edge?.waypoints ?? []).filter(
+			(waypoint) => !isInternalElbowWaypoint(waypoint)
+		);
 		const points = [
 			{ x: edge?.source_x, y: edge?.source_y, id: '__source' },
 			...waypoints,
@@ -6364,7 +6946,10 @@
 		return Array.isArray(waypoints)
 			? waypoints.findIndex(
 					(waypoint) =>
-						waypoint && Number.isFinite(waypoint.x) && Number.isFinite(waypoint.y)
+						waypoint &&
+						!waypoint.__elbow_bend &&
+						Number.isFinite(waypoint.x) &&
+						Number.isFinite(waypoint.y)
 				)
 			: -1;
 	}
@@ -6390,6 +6975,197 @@
 		return horizontalDominant
 			? { ...waypoint, y: (edge.source_y + edge.target_y) / 2 }
 			: { ...waypoint, x: (edge.source_x + edge.target_x) / 2 };
+	}
+
+	function sameCanvasPoint(a, b) {
+		return (
+			Number.isFinite(a?.x) &&
+			Number.isFinite(a?.y) &&
+			Number.isFinite(b?.x) &&
+			Number.isFinite(b?.y) &&
+			samePosition(a.x, b.x) &&
+			samePosition(a.y, b.y)
+		);
+	}
+
+	function elbowEndpointPreviewWaypoints(edge, waypoints) {
+		if (edge?.style?.smoothness !== 'elbow') {
+			return copyEdgeWaypoints(waypoints);
+		}
+
+		const previewWaypoints = copyEdgeWaypoints(waypoints);
+		const controlIndex = firstFiniteWaypointIndex(previewWaypoints);
+		const existingControl = controlIndex >= 0 ? previewWaypoints[controlIndex] : undefined;
+
+		if (existingControl) {
+			previewWaypoints[controlIndex] = normalizeElbowControlWaypoint(edge, existingControl);
+			return previewWaypoints;
+		}
+
+		return previewWaypoints;
+	}
+
+	function elbowEndpointReleaseWaypoints(
+		startEdge,
+		startWaypoints,
+		edge,
+		originalPosition,
+		resultPoint,
+		endpoint
+	) {
+		if (edge?.style?.smoothness !== 'elbow' || startEdge?.style?.smoothness !== 'elbow') {
+			return copyEdgeWaypoints(startWaypoints);
+		}
+
+		if (sameCanvasPoint(resultPoint, originalPosition)) {
+			return copyEdgeWaypoints(startWaypoints);
+		}
+
+		return elbowEndpointDragWaypoints(startEdge, startWaypoints, endpoint, resultPoint, edge);
+	}
+
+	function elbowEndpointDragWaypoints(
+		startEdge,
+		startWaypoints,
+		endpoint,
+		endpointPosition,
+		previewEdge = undefined
+	) {
+		if (startEdge?.style?.smoothness !== 'elbow') {
+			return copyEdgeWaypoints(startWaypoints);
+		}
+
+		const edge = previewEdge ?? {
+			...startEdge,
+			...edgeEndpointPositionValue(
+				endpoint,
+				endpointPosition ?? edgeEndpointPoint(startEdge, endpoint)
+			)
+		};
+		const currentControl = elbowControlPoint(startEdge, startWaypoints);
+		const fallbackControl = elbowControlPoint(edge, []);
+		const control = currentControl ?? fallbackControl;
+
+		if (!control) {
+			return [];
+		}
+
+		const horizontalDominant =
+			Math.abs(edge.target_x - edge.source_x) >= Math.abs(edge.target_y - edge.source_y);
+		const existingControl = startWaypoints[firstFiniteWaypointIndex(startWaypoints)];
+		const waypoint = {
+			...(existingControl?.id ? { id: existingControl.id } : { id: '__pending' }),
+			x: horizontalDominant ? control.x : (edge.source_x + edge.target_x) / 2,
+			y: horizontalDominant ? (edge.source_y + edge.target_y) / 2 : control.y
+		};
+
+		if (!Number.isFinite(waypoint.x) || !Number.isFinite(waypoint.y)) {
+			return [];
+		}
+
+		return [waypoint];
+	}
+
+	function elbowEndpointActiveWaypoints(
+		startEdge,
+		startWaypoints,
+		candidateSocket,
+		endpoint,
+		position,
+		previewEdge = undefined
+	) {
+		if (startEdge?.style?.smoothness !== 'elbow') {
+			return copyEdgeWaypoints(startWaypoints);
+		}
+
+		return elbowEndpointDragWaypoints(startEdge, startWaypoints, endpoint, position, previewEdge);
+	}
+
+	function elbowEndpointSnappedPreviewEdge(edge, endpoint, socket, docValue, layersInOrderValue) {
+		if (!edge || !socket) {
+			return edge;
+		}
+
+		const sourceBox =
+			endpoint === 'source'
+				? socket.box
+				: edgeBondLayerBox(edge, 'source', docValue, layersInOrderValue, undefined, {
+						x: 0,
+						y: 0
+					});
+		const targetBox =
+			endpoint === 'target'
+				? socket.box
+				: edgeBondLayerBox(edge, 'target', docValue, layersInOrderValue, undefined, {
+						x: 0,
+						y: 0
+					});
+		const socketPoint =
+			Number.isFinite(socket.x) && Number.isFinite(socket.y)
+				? { x: socket.x, y: socket.y }
+				: undefined;
+		const sourceFallback =
+			endpoint === 'source'
+				? (socketPoint ?? { x: edge.source_x, y: edge.source_y })
+				: { x: edge.source_x, y: edge.source_y };
+		const targetFallback =
+			endpoint === 'target'
+				? (socketPoint ?? { x: edge.target_x, y: edge.target_y })
+				: { x: edge.target_x, y: edge.target_y };
+		const sourcePoint = sourceBox
+			? edgeBoxBoundaryPoint(sourceBox, targetBox ? edgeBoxCenter(targetBox) : targetFallback)
+			: sourceFallback;
+		const targetPoint = targetBox
+			? edgeBoxBoundaryPoint(targetBox, sourceBox ? edgeBoxCenter(sourceBox) : sourceFallback)
+			: targetFallback;
+
+		return {
+			...edge,
+			source_x: sourcePoint?.x ?? edge.source_x,
+			source_y: sourcePoint?.y ?? edge.source_y,
+			target_x: targetPoint?.x ?? edge.target_x,
+			target_y: targetPoint?.y ?? edge.target_y,
+			waypoints: []
+		};
+	}
+
+	function commitElbowEndpointWaypoints(layerId, edge, waypoints, dispatch, cast) {
+		const controlIndex = firstFiniteWaypointIndex(waypoints);
+		const control = controlIndex >= 0 ? waypoints[controlIndex] : undefined;
+		const endpointValue = {
+			source_x: edge.source_x,
+			source_y: edge.source_y,
+			target_x: edge.target_x,
+			target_y: edge.target_y
+		};
+
+		if (control?.id && !isPendingWaypointId(control.id)) {
+			return dispatch('update_edge_points', {
+				layer_id: layerId,
+				value: endpointValue,
+				waypoints: commandWaypoints(waypoints)
+			});
+		}
+
+		if (control && Number.isFinite(control.x) && Number.isFinite(control.y)) {
+			return Promise.all([
+				dispatch('update_edge_points', {
+					layer_id: layerId,
+					value: endpointValue,
+					waypoints: []
+				}),
+				cast('create_waypoint', {
+					layer_id: layerId,
+					position: { x: control.x, y: control.y }
+				})
+			]);
+		}
+
+		return dispatch('update_edge_points', {
+			layer_id: layerId,
+			value: endpointValue,
+			waypoints: []
+		});
 	}
 
 	function clampElbowEndpointValue(edge, handle, value, docValue, layersInOrderValue) {
@@ -6434,8 +7210,7 @@
 			layersInOrderValue
 		);
 		const controlIndex = firstFiniteWaypointIndex(previewWaypoints);
-		const existingControl =
-			controlIndex >= 0 ? previewWaypoints[controlIndex] : undefined;
+		const existingControl = controlIndex >= 0 ? previewWaypoints[controlIndex] : undefined;
 		let controlWaypoint;
 
 		if (handle.segment === 0) {
@@ -6472,10 +7247,7 @@
 		}
 
 		if (handle.segment !== 1 && existingControl) {
-			previewWaypoints[controlIndex] = normalizeElbowControlWaypoint(
-				previewEdge,
-				existingControl
-			);
+			previewWaypoints[controlIndex] = normalizeElbowControlWaypoint(previewEdge, existingControl);
 		}
 
 		previewEdge.waypoints = previewWaypoints;
@@ -6572,13 +7344,7 @@
 				});
 			}
 
-			holdCommittedEdgeWaypointPreview(
-				layerId,
-				preview.edge,
-				preview.waypoints,
-				action,
-				docAtom
-			);
+			holdCommittedEdgeWaypointPreview(layerId, preview.edge, preview.waypoints, action, docAtom);
 		};
 
 		window.addEventListener('pointermove', onMove);
@@ -6911,81 +7677,51 @@
 	const targetTextIcon = `${lineIcon(8, 23, 24, 7, { end: true, width: 1.5 })}<path d="M6 25 H13 V18" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.7" stroke-linecap="butt" />`;
 
 	const toolbarIconOverrides = {
-		select:
-			`<path d="M7 5 L7 27 L14 20 L18 29 L21 28 L17 19 L26 19 Z" fill="#fff" stroke="${toolbarIconStroke}" stroke-width="1.5" stroke-linejoin="miter" />`,
-		magnifier:
-			`<circle cx="13" cy="13" r="7.2" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><path d="M18.2 18.2 L27 27" fill="none" stroke="${toolbarIconStroke}" stroke-width="2.1" stroke-linecap="butt" />`,
-		zoomer:
-			`<circle cx="13" cy="13" r="7.2" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><path d="M13 9 V17 M9 13 H17 M18.2 18.2 L27 27" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />`,
-		paner:
-			`<path d="M10 20 L7 17 L7 25 L15 25 L12 22 C18 21 23 16 25 10" fill="none" stroke="${toolbarIconStroke}" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" />`,
-		rotator:
-			`<path d="M24 13 C23 8 19 5 14 6 C9 7 6 11 7 16 C8 22 14 25 20 22" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.9" stroke-linecap="butt" />${arrowHead(24, 13, -20, 4.2)}`,
-		pen:
-			`<path d="M5 24 C8 12 13 28 17 15 C20 6 24 17 28 8" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.9" stroke-linecap="round" />`,
-		polygon:
-			`<path d="M6 20 L11 7 L24 10 L27 22 L14 26 Z" fill="${toolbarIconGreen}" stroke="${toolbarIconStroke}" stroke-width="1.5" stroke-linejoin="miter" />`,
-		spline:
-			`<path d="M5 24 C10 5 20 29 28 8" fill="none" stroke="${toolbarIconStroke}" stroke-width="2" stroke-linecap="round" />`,
-		spacer:
-			`<path d="M8 8 H24 M8 24 H24 M12 10 V22 M20 10 V22" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />`,
-		'Rectangle Tool':
-			`<rect x="5" y="9" width="22" height="14" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
-		'Round Rectangle Tool':
-			`<rect x="5" y="9" width="22" height="14" rx="5" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
-		'Ellipse Tool':
-			`<circle cx="16" cy="16" r="11.2" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
-		'Elliptical Arc/Pie Tool':
-			`<path d="M16 16 L16 5 A11 11 0 1 1 7.6 23.2 L16 23.2 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" stroke-linejoin="round" />`,
-		'Diamond Tool':
-			`<path d="M16 4 L28 16 L16 28 L4 16 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
-		'Triangle Tool':
-			`<path d="M16 5 L28 27 H4 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" stroke-linejoin="miter" />`,
+		select: `<path d="M7 5 L7 27 L14 20 L18 29 L21 28 L17 19 L26 19 Z" fill="#fff" stroke="${toolbarIconStroke}" stroke-width="1.5" stroke-linejoin="miter" />`,
+		magnifier: `<circle cx="13" cy="13" r="7.2" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><path d="M18.2 18.2 L27 27" fill="none" stroke="${toolbarIconStroke}" stroke-width="2.1" stroke-linecap="butt" />`,
+		zoomer: `<circle cx="13" cy="13" r="7.2" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><path d="M13 9 V17 M9 13 H17 M18.2 18.2 L27 27" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />`,
+		paner: `<path d="M10 20 L7 17 L7 25 L15 25 L12 22 C18 21 23 16 25 10" fill="none" stroke="${toolbarIconStroke}" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" />`,
+		rotator: `<path d="M24 13 C23 8 19 5 14 6 C9 7 6 11 7 16 C8 22 14 25 20 22" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.9" stroke-linecap="butt" />${arrowHead(24, 13, -20, 4.2)}`,
+		pen: `<path d="M5 24 C8 12 13 28 17 15 C20 6 24 17 28 8" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.9" stroke-linecap="round" />`,
+		polygon: `<path d="M6 20 L11 7 L24 10 L27 22 L14 26 Z" fill="${toolbarIconGreen}" stroke="${toolbarIconStroke}" stroke-width="1.5" stroke-linejoin="miter" />`,
+		spline: `<path d="M5 24 C10 5 20 29 28 8" fill="none" stroke="${toolbarIconStroke}" stroke-width="2" stroke-linecap="round" />`,
+		spacer: `<path d="M8 8 H24 M8 24 H24 M12 10 V22 M20 10 V22" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />`,
+		'Rectangle Tool': `<rect x="5" y="9" width="22" height="14" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
+		'Round Rectangle Tool': `<rect x="5" y="9" width="22" height="14" rx="5" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
+		'Ellipse Tool': `<circle cx="16" cy="16" r="11.2" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
+		'Elliptical Arc/Pie Tool': `<path d="M16 16 L16 5 A11 11 0 1 1 7.6 23.2 L16 23.2 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" stroke-linejoin="round" />`,
+		'Diamond Tool': `<path d="M16 4 L28 16 L16 28 L4 16 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
+		'Triangle Tool': `<path d="M16 5 L28 27 H4 Z" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.6" stroke-linejoin="miter" />`,
 		'Line Tool': lineIcon(6, 25, 26, 7),
 		'Connection Tool': lineIcon(6, 25, 26, 7, { start: true, end: true }),
-		'Elbow Connection Tool':
-			`<path d="M6 25 H15 V7 H26" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="miter" />${arrowHead(6, 25, 180, 4.2)}${arrowHead(26, 7, 0, 4.2)}`,
+		'Elbow Connection Tool': `<path d="M6 25 H15 V7 H26" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" stroke-linejoin="miter" />${arrowHead(6, 25, 180, 4.2)}${arrowHead(26, 7, 0, 4.2)}`,
 		'Target Tool': targetTextIcon,
-		'Image Tool':
-			`<rect x="6" y="7" width="20" height="18" fill="#eee" stroke="#aaa" stroke-width="1.5" /><path d="M8 23 L14 15 L18 19 L21 14 L25 23 Z" fill="#cfcfcf" stroke="#aaa" stroke-width="1" />`,
+		'Image Tool': `<rect x="6" y="7" width="20" height="18" fill="#eee" stroke="#aaa" stroke-width="1.5" /><path d="M8 23 L14 15 L18 19 L21 14 L25 23 Z" fill="#cfcfcf" stroke="#aaa" stroke-width="1" />`,
 		'Text Tool': textToolIcon('A', { size: 24 }),
 		'Connected Text Tool': connectedTextIcon,
-		'Transition Tool':
-			`<rect x="6" y="10" width="20" height="13" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><text x="16" y="20" text-anchor="middle" font-size="10" font-family="serif" font-weight="700" fill="${toolbarIconBlue}">T</text>`,
-		'Virtual Transition Tool':
-			`<rect x="5" y="9" width="22" height="15" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><rect x="9" y="12" width="14" height="9" fill="none" stroke="${toolbarIconBlue}" stroke-width="1.4" />`,
-		'Place Tool':
-			`<circle cx="16" cy="16" r="10.8" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><text x="16" y="20" text-anchor="middle" font-size="10" font-family="serif" font-weight="700" fill="${toolbarIconBlue}">P</text>`,
-		'Virtual Place Tool':
-			`<circle cx="16" cy="16" r="10.8" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><circle cx="16" cy="16" r="6.8" fill="none" stroke="${toolbarIconBlue}" stroke-width="1.4" />`,
+		'Transition Tool': `<rect x="6" y="10" width="20" height="13" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><text x="16" y="20" text-anchor="middle" font-size="10" font-family="serif" font-weight="700" fill="${toolbarIconBlue}">T</text>`,
+		'Virtual Transition Tool': `<rect x="5" y="9" width="22" height="15" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><rect x="9" y="12" width="14" height="9" fill="none" stroke="${toolbarIconBlue}" stroke-width="1.4" />`,
+		'Place Tool': `<circle cx="16" cy="16" r="10.8" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><text x="16" y="20" text-anchor="middle" font-size="10" font-family="serif" font-weight="700" fill="${toolbarIconBlue}">P</text>`,
+		'Virtual Place Tool': `<circle cx="16" cy="16" r="10.8" fill="${toolbarIconFill}" stroke="${toolbarIconStroke}" stroke-width="1.5" /><circle cx="16" cy="16" r="6.8" fill="none" stroke="${toolbarIconBlue}" stroke-width="1.4" />`,
 		'Arc Tool': lineIcon(6, 25, 26, 7, { end: true }),
 		'Test Arc Tool': lineIcon(6, 25, 26, 7),
 		'Reserve Arc Tool': lineIcon(6, 25, 26, 7, { start: true, end: true }),
-		'Flexible Arc Tool':
-			`${lineIcon(6, 25, 26, 7, { end: true })}<path d="M15 18 L18 21" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.4" />`,
-		'Inhibitor Arc Tool':
-			`<path d="M6 25 L22 9" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><circle cx="24" cy="7" r="3" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.5" />`,
-		'Clear Arc Tool':
-			`${lineIcon(6, 25, 26, 7, { end: true })}<path d="M8 27 L28 9" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.2" stroke-linecap="butt" />`,
+		'Flexible Arc Tool': `${lineIcon(6, 25, 26, 7, { end: true })}<path d="M15 18 L18 21" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.4" />`,
+		'Inhibitor Arc Tool': `<path d="M6 25 L22 9" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" /><circle cx="24" cy="7" r="3" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.5" />`,
+		'Clear Arc Tool': `${lineIcon(6, 25, 26, 7, { end: true })}<path d="M8 27 L28 9" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.2" stroke-linecap="butt" />`,
 		'Inscription Tool': textToolIcon('i', { size: 22 }),
 		'Name Tool': textToolIcon('n', { size: 22 }),
 		'Declaration Tool': textToolIcon('d', { size: 22 }),
 		'Comment Tool': textToolIcon('@', { size: 22, italic: true }),
-		'FA Start State Tool':
-			`<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" />${incomingStateArrow()}`,
-		'FA State Tool':
-			`<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
-		'FA End State Tool':
-			`<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" /><circle fill="none" cx="16" cy="16" r="8" stroke="${toolbarIconStroke}" stroke-width="1.2" />`,
-		'FA Start End State Tool':
-			`<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" /><circle fill="none" cx="16" cy="16" r="8" stroke="${toolbarIconStroke}" stroke-width="1.2" />${incomingStateArrow()}`,
+		'FA Start State Tool': `<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" />${incomingStateArrow()}`,
+		'FA State Tool': `<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" />`,
+		'FA End State Tool': `<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" /><circle fill="none" cx="16" cy="16" r="8" stroke="${toolbarIconStroke}" stroke-width="1.2" />`,
+		'FA Start End State Tool': `<circle fill="#fff" cx="16" cy="16" r="11.5" stroke="${toolbarIconStroke}" stroke-width="1.6" /><circle fill="none" cx="16" cy="16" r="8" stroke="${toolbarIconStroke}" stroke-width="1.2" />${incomingStateArrow()}`,
 		'FA Name Tool': textToolIcon('n', { size: 22 }),
 		'FA Inscription Tool': textToolIcon('i', { size: 22 }),
-		'FA Word Placement Tool':
-			textToolIcon('w', { size: 21, italic: true }),
+		'FA Word Placement Tool': textToolIcon('w', { size: 21, italic: true }),
 		'FA ArcConnection Tool': lineIcon(6, 25, 26, 7, { end: true }),
-		'FA Loop ArcConnection Tool':
-			`<path d="M9 20 C3 12 7 5 15 5 C23 5 27 12 22 19" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />${arrowHead(22, 19, 45, 4.2)}`
+		'FA Loop ArcConnection Tool': `<path d="M9 20 C3 12 7 5 15 5 C23 5 27 12 22 19" fill="none" stroke="${toolbarIconStroke}" stroke-width="1.8" stroke-linecap="butt" />${arrowHead(22, 19, 45, 4.2)}`
 	};
 	Object.assign(toolbarIconOverrides, {
 		Place: toolbarIconOverrides['Place Tool'],
@@ -7392,6 +8128,7 @@
 			return false;
 		}
 
+		selectSimulationTool(simulationToolForCreatePrimitive(item));
 		clearSelectionForNonSelectTool(CREATE_TOOL_ID, cast);
 		if (isTargetToolItem(item)) {
 			activeCreateTool.value = {
@@ -7468,6 +8205,7 @@
 	}
 
 	function selectEditorTool(toolId, cast = undefined, persistent = false) {
+		selectSimulationTool(simulationToolForEditorTool(toolId));
 		clearSelectionForNonSelectTool(toolId, cast);
 		activeCreateTool.value = undefined;
 		activeEdgeTool.value = undefined;
@@ -8815,6 +9553,11 @@
 		startingSimulation = true;
 		data.commands
 			.simulateDocument(currentFormalism.value)
+			.then((simulation) => {
+				const tab = rememberSimulation(simulation);
+				openSimulationWorkspace(tab);
+				statusMessage.value = `Simulation ${simulation?.content?.name ?? simulation?.id ?? ''} created`;
+			})
 			.catch((e) => {
 				console.error(e);
 				queueError(e, 'Simulation could not be started');
@@ -8891,7 +9634,7 @@
 	}
 
 	function closeAllDrawings() {
-		location.href = resolve(`/projects/${data.document.links.project.id}/documents`);
+		location.href = resolve(`/projects/${data.document.links.project.id}/workspace`);
 	}
 
 	function exitEditor() {
@@ -9574,13 +10317,19 @@
 			<header class="header" use:editorDropZone={{ dispatch, cast }}>
 				<div class="header-titel">
 					<a
-						href={resolve(`/projects/${data.document.links.project.id}/documents`)}
+						href={resolve(`/projects/${data.document.links.project.id}/workspace`)}
 						data-sveltekit-preload-data="off"
 						title="Back"
 						class="nav-link">Back</a
 					>
 
-					<h2>Document: {doc.value.name}</h2>
+					<h2>
+						{#if activeSimulationWorkspace.value}
+							Simulation: {activeSimulationWorkspace.value.name}
+						{:else}
+							Document: {doc.value.name}
+						{/if}
+					</h2>
 				</div>
 
 				<menu class="header-menu">
@@ -11133,12 +11882,12 @@
 											shortcut={{ ctrlKey: true, key: 'i' }}
 											disabled={startingSimulation}
 											class="menu-bar-item-button new-sim-action"
-											onclick={simulateThisDocument}
+											onclick={runSimulationMenuCommand}
 										>
 											{#if startingSimulation}
-												Compiling…
+												Compiling...
 											{:else}
-												New Simulation
+												Run simulation
 											{/if}
 										</MenuBarButton>
 									</li>
@@ -11157,11 +11906,178 @@
 									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								{/await}
 								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'step')}
+										>Simulation Step</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'net_step')}
+										>Simulation Net Step</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'pause')}
+										>Halt simulation</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'terminate')}
+										>Terminate simulation</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'configure')}
+										>Configure Simulation...</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item submenu" tabindex="-1">
+									<button class="menu-bar-item-button submenu-button" type="button">
+										Breakpoints
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu">
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={!activeSimulationWorkspace.value}
+												onclick={(evt) =>
+													simulationCommandButton(evt, 'set_breakpoint_at_selection')}
+												>Set BP at selection</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={!activeSimulationWorkspace.value}
+												onclick={(evt) =>
+													simulationCommandButton(evt, 'clear_breakpoint_at_selection')}
+												>Clear BP at selection</MenuBarButton
+											>
+										</li>
+										<li class="menu-bar-menu-item">
+											<MenuBarButton
+												disabled={!activeSimulationWorkspace.value}
+												onclick={(evt) => simulationCommandButton(evt, 'clear_all_breakpoints')}
+												>Clear all BPs in current simulation</MenuBarButton
+											>
+										</li>
+									</ul>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'save_state')}
+										>Save simulation state</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'load_state')}
+										>Load simulation state...</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
 									<a
 										class="menu-bar-item-button"
-										href={resolve(`/projects/${data.document.links.project.id}/simulations`)}
-										target="_blank">Show all Simulations</a
+										href={documentMenuHref('simulator_health', '/health/simulator')}
+										target="_blank">Remote Server...</a
 									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<a
+										class="menu-bar-item-button"
+										href={resolve(`/projects/${data.document.links.project.id}/workspace`)}
+										data-sveltekit-preload-data="off">Show Workspace</a
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'init')}
+										>Initialize</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'drawing_copy')}
+										>Open Drawing Copy</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'toggle_log')}
+										>Show simulation trace</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'console')}
+										>Console...</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'clear_messages')}
+										>Clear Messages</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={!activeSimulationWorkspace.value}
+										onclick={(evt) => simulationCommandButton(evt, 'clear_annotations')}
+										>Clear Annotations</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item submenu" tabindex="-1">
+									<button class="menu-bar-item-button submenu-button" type="button">
+										Formalisms
+										<span class="submenu-arrow">&gt;</span>
+									</button>
+									<ul class="menu-bar-menu">
+										{#await data.formalisms}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton disabled>Loading...</MenuBarButton>
+											</li>
+										{:then formalisms}
+											{#each formalisms as formalism (formalism.id)}
+												<li class="menu-bar-menu-item">
+													<MenuBarButton
+														onclick={(evt) =>
+															simulationCommandButton(evt, 'explain_formalism', {
+																formalism
+															})}>{formalism.label}</MenuBarButton
+													>
+												</li>
+											{:else}
+												<li class="menu-bar-menu-item">
+													<MenuBarButton disabled>No formalisms available</MenuBarButton>
+												</li>
+											{/each}
+										{:catch}
+											<li class="menu-bar-menu-item">
+												<MenuBarButton disabled>Error loading formalisms</MenuBarButton>
+											</li>
+										{/await}
+									</ul>
 								</li>
 								{#await data.linked_simulations then links}
 									<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
@@ -11171,10 +12087,11 @@
 											<li class="menu-bar-menu-item">Latest simulations</li>
 											{#each ls.value.items.slice(0, 5) as l}
 												<li class="menu-bar-menu-item">
-													<a
+													<button
+														type="button"
 														class="menu-bar-item-button"
-														href={resolve(`/simulations/${l.id}/observer`)}
-														target="_blank">{l.id}</a
+														onclick={(evt) => openLinkedSimulationWorkspace(evt, l)}
+														>{l.name ?? l.id}</button
 													>
 												</li>
 											{:else}
@@ -11353,6 +12270,45 @@
 									</li>
 								{/each}
 								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
+								<li class="menu-bar-menu-item">Open Simulations</li>
+								{#each simulationTabs() as tab (tab.id)}
+									<li class="menu-bar-menu-item document-window-menu-entry">
+										<button
+											class="menu-bar-item-button"
+											title={tab.name}
+											type="button"
+											onclick={(evt) => {
+												evt.preventDefault();
+												openSimulationWorkspace(tab);
+											}}
+										>
+											<span>{tab.name}</span>
+										</button>
+										<button
+											type="button"
+											class="menu-bar-item-icon-button"
+											title="Close simulation"
+											aria-label="Close simulation"
+											onclick={(evt) => {
+												evt.preventDefault();
+												evt.stopPropagation();
+												removeRecentSimulation(tab.id);
+											}}>x</button
+										>
+									</li>
+								{:else}
+									<li class="menu-bar-menu-item disabled-menu-item">No open simulations</li>
+								{/each}
+								<li class="menu-bar-menu-item">
+									<MenuBarButton
+										disabled={simulationTabs().length === 0}
+										onclick={(evt) => {
+											evt.preventDefault();
+											clearRecentSimulations();
+										}}>Close All Simulations</MenuBarButton
+									>
+								</li>
+								<li class="menu-bar-menu-item"><hr class="menu-bar-menu-ruler" /></li>
 								<li class="menu-bar-menu-item">
 									<label>
 										<input type="checkbox" bind:checked={showCreateToolbar.value} />
@@ -11422,11 +12378,19 @@
 				<nav class="document-tabs" aria-label="Open documents">
 					{#each documentTabs(doc.value) as tab (tab.id)}
 						<a
-							class={{ 'document-tab': true, active: tab.id === data.document.id }}
+							class={{
+								'document-tab': true,
+								active: tab.id === data.document.id && !activeSimulationWorkspace.value
+							}}
 							href={tab.href}
 							data-sveltekit-preload-data="off"
 							data-sveltekit-preload-code="eager"
 							title={tab.name}
+							onclick={() => {
+								if (tab.id === data.document.id) {
+									openDrawingWorkspace();
+								}
+							}}
 						>
 							<span class="document-tab-label">{tab.name}</span>
 							{#if tab.id !== data.document.id}
@@ -11442,6 +12406,34 @@
 								>
 							{/if}
 						</a>
+					{/each}
+					{#each simulationTabs() as tab (tab.id)}
+						<span
+							class={{
+								'document-tab': true,
+								'simulation-tab': true,
+								active: activeSimulationWorkspace.value?.id === tab.id
+							}}
+							title={tab.name}
+						>
+							<button
+								type="button"
+								class="document-tab-main"
+								onclick={() => openSimulationWorkspace(tab)}
+							>
+								<span class="document-tab-label">{tab.name}</span>
+							</button>
+							<button
+								type="button"
+								class="document-tab-close"
+								aria-label="Remove simulation from tabs"
+								onclick={(evt) => {
+									evt.preventDefault();
+									evt.stopPropagation();
+									removeRecentSimulation(tab.id);
+								}}>x</button
+							>
+						</span>
 					{/each}
 				</nav>
 
@@ -11463,285 +12455,185 @@
 
 			<div class="overlay">
 				<div class="body">
-					<CanvasDropper
-						{camera}
-						domElement={dropperDomElement}
-						onDrop={(mime, content, pos) => {
-							handleDroppedContent(mime, content, pos, dispatch, cast);
-						}}
-						onDropFile={(file, pos) => {
-							handleDroppedFile(file, pos, dispatch, cast);
-						}}
-					>
-						<CameraScroller bind:this={cameraScroller.value} {camera} {extension}>
-							<SVGViewport
-								{camera}
-								onclick={(evt) => {
-									evt.preventDefault();
-									if (backoffValue.value === undefined) {
-										if (!evt.shiftKey) {
+					{#if activeSimulationWorkspace.value}
+						<section class="embedded-simulation-workspace">
+							{#await simulationWorkbenchData.value}
+								<div class="embedded-simulation-loading">Loading simulation...</div>
+							{:then simulationData}
+								<SimulationWorkspace
+									data={embeddedSimulationWorkspaceData(simulationData)}
+									embedded={true}
+								/>
+							{:catch error}
+								<div class="embedded-simulation-loading simulation-error">
+									<strong>Simulation could not be loaded</strong>
+									<span>{describeError(error, error?.message).message}</span>
+								</div>
+							{/await}
+						</section>
+					{:else}
+						<CanvasDropper
+							{camera}
+							domElement={dropperDomElement}
+							onDrop={(mime, content, pos) => {
+								handleDroppedContent(mime, content, pos, dispatch, cast);
+							}}
+							onDropFile={(file, pos) => {
+								handleDroppedFile(file, pos, dispatch, cast);
+							}}
+						>
+							<CameraScroller bind:this={cameraScroller.value} {camera} {extension}>
+								<SVGViewport
+									{camera}
+									onclick={(evt) => {
+										evt.preventDefault();
+										if (backoffValue.value === undefined) {
+											if (!evt.shiftKey) {
+												clearSelection(cast);
+											}
+										} else {
+											backoffValue.value = undefined;
+										}
+									}}
+									ontouchend={(evt) => {
+										evt.preventDefault();
+									}}
+									onkeydown={(evt) => {
+										if (evt.key == 'Escape') {
 											clearSelection(cast);
 										}
-									} else {
-										backoffValue.value = undefined;
-									}
-								}}
-								ontouchend={(evt) => {
-									evt.preventDefault();
-								}}
-								onkeydown={(evt) => {
-									if (evt.key == 'Escape') {
-										clearSelection(cast);
-									}
-								}}
-							>
-								<Navigator
-									onworldcursor={(pos) => {
-										if (showCursors.value) {
-											moveCursor(pos);
-										}
 									}}
-									onpointerleave={(evt) => {
-										if (showCursors.value) {
-											stopCursor();
-										}
-									}}
-									{camera}
-									{lockRotation}
-									{frameBoxPath}
 								>
-									{#snippet children(liveLenses, navigationActions)}
-										<!-- svelte-ignore a11y_no_static_element_interactions -->
-										<rect
-											transform={rotationTransform.value}
-											fill="#fff"
-											stroke="#eee"
-											stroke-width="5"
-											{...documentDisplayRect.value}
-										/>
-										<!-- svelte-ignore a11y_no_static_element_interactions -->
-										<path
-											class="inline-text-editor-canvas-dismiss"
-											d={frameBoxPath.value}
-											fill="#ffffff00"
-											stroke="none"
-											cursor={canvasInteractionCursor()}
-											pointer-events="all"
-											onpointerdown={(evt) => {
-												if (dismissInlineTextEditFromCanvasPointer(evt, cast)) {
-													return;
-												}
-												if (
-													primitiveNeedsLinkedTarget(activeCreateTool.value) ||
-													primitiveCreatesText(activeCreateTool.value)
-												) {
-													beginPrimitiveCreation(evt, liveLenses);
-												} else {
-													beginAreaSelection(evt, liveLenses);
-												}
-											}}
-											onpointermove={(evt) => {
-												if (!updatePrimitiveCreation(evt, liveLenses)) {
-													updateAreaSelection(evt, liveLenses);
-												}
-											}}
-											onpointerup={(evt) => {
-												if (
-													!finishPrimitiveCreation(
-														evt,
-														liveLenses,
-														dispatch,
-														cast,
-														L.get('id', singleSelectedLayer.value)
-													)
-												) {
-													finishAreaSelection(
-														evt,
-														liveLenses,
-														cast,
-														layersInOrder.value,
-														doc.value
-													);
-												}
-											}}
-											onpointercancel={(evt) => {
-												cancelPrimitiveCreation(evt);
-												cancelAreaSelection(evt);
-											}}
-											onlostpointercapture={(evt) => {
-												cancelPrimitiveCreation(evt);
-												cancelAreaSelection(evt);
-											}}
-											oncontextmenu={resetToolFromCanvas}
-										/>
-										{#if showGrid.value}
-											<Grid {rotationTransform} {frameBoxObject} {cameraScale} {gridDistance} />
-										{/if}
+									<Navigator
+										onworldcursor={(pos) => {
+											if (showCursors.value) {
+												moveCursor(pos);
+											}
+										}}
+										onpointerleave={(evt) => {
+											if (showCursors.value) {
+												stopCursor();
+											}
+										}}
+										{camera}
+										{lockRotation}
+										{frameBoxPath}
+									>
+										{#snippet children(liveLenses, navigationActions)}
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
+											<rect
+												transform={rotationTransform.value}
+												fill="#fff"
+												stroke="#eee"
+												stroke-width="5"
+												{...documentDisplayRect.value}
+											/>
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
+											<path
+												class="inline-text-editor-canvas-dismiss"
+												d={frameBoxPath.value}
+												fill="#ffffff00"
+												stroke="none"
+												cursor={canvasInteractionCursor()}
+												pointer-events="all"
+												onpointerdown={(evt) => {
+													if (dismissInlineTextEditFromCanvasPointer(evt, cast)) {
+														return;
+													}
+													if (
+														primitiveNeedsLinkedTarget(activeCreateTool.value) ||
+														primitiveCreatesText(activeCreateTool.value)
+													) {
+														beginPrimitiveCreation(evt, liveLenses);
+													} else {
+														beginAreaSelection(evt, liveLenses);
+													}
+												}}
+												onpointermove={(evt) => {
+													if (!updatePrimitiveCreation(evt, liveLenses)) {
+														updateAreaSelection(evt, liveLenses);
+													}
+												}}
+												onpointerup={(evt) => {
+													if (
+														!finishPrimitiveCreation(
+															evt,
+															liveLenses,
+															dispatch,
+															cast,
+															L.get('id', singleSelectedLayer.value)
+														)
+													) {
+														finishAreaSelection(
+															evt,
+															liveLenses,
+															cast,
+															layersInOrder.value,
+															doc.value
+														);
+													}
+												}}
+												onpointercancel={(evt) => {
+													cancelPrimitiveCreation(evt);
+													cancelAreaSelection(evt);
+												}}
+												onlostpointercapture={(evt) => {
+													cancelPrimitiveCreation(evt);
+													cancelAreaSelection(evt);
+												}}
+												oncontextmenu={resetToolFromCanvas}
+											/>
+											{#if showGrid.value}
+												<Grid {rotationTransform} {frameBoxObject} {cameraScale} {gridDistance} />
+											{/if}
 
-										<g transform={rotationTransform.value}>
-											<g id="full-document-{data.document.id}">
-												{#each layersInOrder.value as { index, id, depth, hidden } (id)}
-													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-													{#if layerVisibleInDrawing(el.value, hidden)}
-														{#if el.value?.box}
-															<g
-																role="button"
-																data-editor-layer-id={el.value?.id}
-																transform={layerMoveTransform(id, layersInOrder.value)}
-																cursor={canvasInteractionCursor()}
-																oncontextmenu={(evt) => {
-																	if (
-																		beginDirectInscriptionEdit(
-																			evt,
-																			el.value,
-																			liveLenses,
-																			dispatch,
-																			cast,
-																			doc.value,
-																			{
-																				x: el.value?.box?.position_x,
-																				y: el.value?.box?.position_y,
-																				width: el.value?.box?.width,
-																				height: el.value?.box?.height
-																			}
-																		)
-																	) {
-																		return;
-																	}
-																	openTargetLocationOrDirectModification(evt, el.value, cast);
-																}}
-																ondblclick={(evt) => inspectLayer(evt, el.value)}
-																onpointerdown={(evt) => {
-																	if (
-																		beginLinkedPrimitiveCreation(
-																			evt,
-																			liveLenses,
-																			doc.value,
-																			el.value
-																		)
-																	) {
-																		return;
-																	}
-																	if (
-																		activeTool.value === 'select' &&
-																		!evt.shiftKey &&
-																		beginLayerMove(
-																			evt,
-																			liveLenses,
-																			el.value.id,
-																			layersInOrder.value,
-																			doc.value,
-																			el.value.id
-																		)
-																	) {
-																		return;
-																	}
-																	rememberPointerPasteLocation(evt, liveLenses);
-																}}
-																onpointermove={(evt) => {
-																	updateLayerMove(evt, liveLenses, doc, layersInOrder.value);
-																	updateLinkedPrimitiveCreation(evt, liveLenses);
-																}}
-																onpointerup={(evt) => {
-																	if (groupDrag.value?.pointerId === evt.pointerId) {
-																		finishLayerMove(evt, dispatch, doc, layersInOrder.value);
-																		return;
-																	}
-																	finishLinkedPrimitiveCreation(evt, dispatch, cast);
-																}}
-																onpointercancel={(evt) => {
-																	cancelLayerMove(evt);
-																	cancelLinkedPrimitiveCreation(evt);
-																}}
-																onlostpointercapture={(evt) => {
-																	cancelLayerMove(evt);
-																	cancelLinkedPrimitiveCreation(evt);
-																}}
-																onclick={(evt) => {
-																	if (consumeSuppressedEdgeWaypointClick(evt, el.value?.id)) {
-																		return;
-																	}
-																	if (
-																		createLinkedPrimitiveOnLayer(
-																			evt,
-																			liveLenses,
-																			dispatch,
-																			cast,
-																			doc.value,
-																			el.value
-																		)
-																	) {
-																		return;
-																	}
-																	if (
-																		createUnlinkedTextPrimitiveAtEvent(
-																			evt,
-																			liveLenses,
-																			dispatch,
-																			el.value?.id
-																		)
-																	) {
-																		return;
-																	}
-																	if (openTargetLocation(evt, el.value, cast)) {
-																		return;
-																	}
-																	evt.stopPropagation();
-																	if (groupDrag.value === undefined) {
-																		if (el.value?.id) {
-																			evt.preventDefault();
-																			selectLayer(cast, el.value.id, evt);
-																		}
-																	}
-																}}
-																tabindex="-1"
-																onkeydown={(evt) => {
-																	if (evt.key === ' ' || evt.key === 'Enter') {
-																		evt.preventDefault();
-																		if (el.value?.id) {
-																			selectLayer(cast, el.value.id, evt);
-																		}
-																	}
-																}}
-																fill={el.value?.style?.background_color ?? '#70DB93'}
-																fill-opacity={el.value?.style?.background_opacity ?? '1'}
-																stroke={el.value?.style?.border_color ?? 'black'}
-																stroke-opacity={el.value?.style?.border_opacity ?? '1'}
-																stroke-dasharray={el.value?.style?.border_dash_array ?? 'none'}
-																stroke-width={el.value?.style?.border_width ?? '1'}
-																opacity={el.value?.style?.opacity ?? '1'}
-															>
-																<Symbol
-																	symbols={data.symbols}
-																	symbolId={el.value?.box.shape}
-																	shapeAttributes={symbolShapeAttributes(el.value?.box)}
-																	background_url={el.value?.style?.background_url}
-																	box={{
-																		x: el.value?.box.position_x,
-																		y: el.value?.box.position_y,
-																		width: el.value?.box.width,
-																		height: el.value?.box.height
-																	}}
-																/>
-															</g>
-														{/if}
-														{#if el.value?.text}
-															{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
-															{#key el.value?.id}
+											<g transform={rotationTransform.value}>
+												<g id="full-document-{data.document.id}">
+													{#each layersInOrder.value as { index, id, depth, hidden } (id)}
+														{@const el = view(
+															['layers', 'items', L.find((el) => el.id == id)],
+															doc
+														)}
+														{#if layerVisibleInDrawing(el.value, hidden)}
+															{#if el.value?.box}
 																<g
 																	role="button"
-																	class="editor-text-layer"
 																	data-editor-layer-id={el.value?.id}
 																	transform={layerMoveTransform(id, layersInOrder.value)}
 																	cursor={canvasInteractionCursor()}
 																	oncontextmenu={(evt) => {
-																		if (beginContextTextEdit(evt, el.value, thisbbox.value, cast)) {
+																		if (
+																			beginDirectInscriptionEdit(
+																				evt,
+																				el.value,
+																				liveLenses,
+																				dispatch,
+																				cast,
+																				doc.value,
+																				{
+																					x: el.value?.box?.position_x,
+																					y: el.value?.box?.position_y,
+																					width: el.value?.box?.width,
+																					height: el.value?.box?.height
+																				}
+																			)
+																		) {
 																			return;
 																		}
 																		openTargetLocationOrDirectModification(evt, el.value, cast);
 																	}}
 																	ondblclick={(evt) => inspectLayer(evt, el.value)}
 																	onpointerdown={(evt) => {
+																		if (
+																			beginLinkedPrimitiveCreation(
+																				evt,
+																				liveLenses,
+																				doc.value,
+																				el.value
+																			)
+																		) {
+																			return;
+																		}
 																		if (
 																			activeTool.value === 'select' &&
 																			!evt.shiftKey &&
@@ -11758,14 +12650,39 @@
 																		}
 																		rememberPointerPasteLocation(evt, liveLenses);
 																	}}
-																	onpointermove={(evt) =>
-																		updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
-																	onpointerup={(evt) =>
-																		finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
-																	onpointercancel={cancelLayerMove}
-																	onlostpointercapture={cancelLayerMove}
+																	onpointermove={(evt) => {
+																		updateLayerMove(evt, liveLenses, doc, layersInOrder.value);
+																		updateLinkedPrimitiveCreation(evt, liveLenses);
+																	}}
+																	onpointerup={(evt) => {
+																		if (groupDrag.value?.pointerId === evt.pointerId) {
+																			finishLayerMove(evt, dispatch, doc, layersInOrder.value);
+																			return;
+																		}
+																		finishLinkedPrimitiveCreation(evt, dispatch, cast);
+																	}}
+																	onpointercancel={(evt) => {
+																		cancelLayerMove(evt);
+																		cancelLinkedPrimitiveCreation(evt);
+																	}}
+																	onlostpointercapture={(evt) => {
+																		cancelLayerMove(evt);
+																		cancelLinkedPrimitiveCreation(evt);
+																	}}
 																	onclick={(evt) => {
-																		if (beginInlineTextEdit(evt, el.value, thisbbox.value, cast)) {
+																		if (consumeSuppressedEdgeWaypointClick(evt, el.value?.id)) {
+																			return;
+																		}
+																		if (
+																			createLinkedPrimitiveOnLayer(
+																				evt,
+																				liveLenses,
+																				dispatch,
+																				cast,
+																				doc.value,
+																				el.value
+																			)
+																		) {
 																			return;
 																		}
 																		if (
@@ -11798,348 +12715,680 @@
 																			}
 																		}
 																	}}
+																	fill={el.value?.style?.background_color ?? '#70DB93'}
+																	fill-opacity={el.value?.style?.background_opacity ?? '1'}
+																	stroke={el.value?.style?.border_color ?? 'black'}
+																	stroke-opacity={el.value?.style?.border_opacity ?? '1'}
+																	stroke-dasharray={el.value?.style?.border_dash_array ?? 'none'}
+																	stroke-width={el.value?.style?.border_width ?? '1'}
+																	opacity={el.value?.style?.opacity ?? '1'}
 																>
-																	<TextElement
-																		optimisticValue={optimisticValue.value}
-																		bbox={thisbbox}
-																		el={el.value}
-																		showVisibleText={inlineTextEdit.value?.id !== el.value?.id}
+																	<Symbol
+																		symbols={data.symbols}
+																		symbolId={el.value?.box.shape}
+																		shapeAttributes={symbolShapeAttributes(el.value?.box)}
+																		background_url={el.value?.style?.background_url}
+																		box={{
+																			x: el.value?.box.position_x,
+																			y: el.value?.box.position_y,
+																			width: el.value?.box.width,
+																			height: el.value?.box.height
+																		}}
 																	/>
 																</g>
-															{/key}
+															{/if}
+															{#if el.value?.text}
+																{@const thisbbox = view(L.prop(el.value?.id), textBounds)}
+																{#key el.value?.id}
+																	<g
+																		role="button"
+																		class="editor-text-layer"
+																		data-editor-layer-id={el.value?.id}
+																		transform={layerMoveTransform(id, layersInOrder.value)}
+																		cursor={canvasInteractionCursor()}
+																		oncontextmenu={(evt) => {
+																			if (
+																				beginContextTextEdit(evt, el.value, thisbbox.value, cast)
+																			) {
+																				return;
+																			}
+																			openTargetLocationOrDirectModification(evt, el.value, cast);
+																		}}
+																		ondblclick={(evt) => inspectLayer(evt, el.value)}
+																		onpointerdown={(evt) => {
+																			if (
+																				activeTool.value === 'select' &&
+																				!evt.shiftKey &&
+																				beginLayerMove(
+																					evt,
+																					liveLenses,
+																					el.value.id,
+																					layersInOrder.value,
+																					doc.value,
+																					el.value.id
+																				)
+																			) {
+																				return;
+																			}
+																			rememberPointerPasteLocation(evt, liveLenses);
+																		}}
+																		onpointermove={(evt) =>
+																			updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
+																		onpointerup={(evt) =>
+																			finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
+																		onpointercancel={cancelLayerMove}
+																		onlostpointercapture={cancelLayerMove}
+																		onclick={(evt) => {
+																			if (
+																				beginInlineTextEdit(evt, el.value, thisbbox.value, cast)
+																			) {
+																				return;
+																			}
+																			if (
+																				createUnlinkedTextPrimitiveAtEvent(
+																					evt,
+																					liveLenses,
+																					dispatch,
+																					el.value?.id
+																				)
+																			) {
+																				return;
+																			}
+																			if (openTargetLocation(evt, el.value, cast)) {
+																				return;
+																			}
+																			evt.stopPropagation();
+																			if (groupDrag.value === undefined) {
+																				if (el.value?.id) {
+																					evt.preventDefault();
+																					selectLayer(cast, el.value.id, evt);
+																				}
+																			}
+																		}}
+																		tabindex="-1"
+																		onkeydown={(evt) => {
+																			if (evt.key === ' ' || evt.key === 'Enter') {
+																				evt.preventDefault();
+																				if (el.value?.id) {
+																					selectLayer(cast, el.value.id, evt);
+																				}
+																			}
+																		}}
+																	>
+																		<TextElement
+																			optimisticValue={optimisticValue.value}
+																			bbox={thisbbox}
+																			el={el.value}
+																			showVisibleText={inlineTextEdit.value?.id !== el.value?.id}
+																		/>
+																	</g>
+																{/key}
+															{/if}
+															{#if el.value?.edge}
+																{@const previewEdge = renderedEdgePreview(
+																	el.value,
+																	doc.value,
+																	layersInOrder.value,
+																	groupDrag.value,
+																	groupDragDelta.value
+																)}
+																{@const basePreviewWaypoints =
+																	(edgeEndpointDrag.value?.layerId === el.value?.id
+																		? (L.get(localProp('waypoints'), previewEdge) ??
+																			previewEdge?.waypoints)
+																		: undefined) ??
+																	committedEdgeWaypointPreviews.value.get(el.value?.id) ??
+																	L.get(localProp('waypoints'), previewEdge) ??
+																	previewEdge?.waypoints ??
+																	[]}
+																{@const previewWaypoints = pendingWaypointPreview(
+																	basePreviewWaypoints,
+																	edgeWaypointDrag.value,
+																	el.value?.id
+																)}
+																<g
+																	role="button"
+																	data-editor-layer-id={el.value?.id}
+																	transform={edgePreviewTransform(
+																		id,
+																		layersInOrder.value,
+																		el.value.edge,
+																		previewEdge
+																	)}
+																	cursor={canvasInteractionCursor()}
+																	oncontextmenu={(evt) => {
+																		if (
+																			beginDirectInscriptionEdit(
+																				evt,
+																				el.value,
+																				liveLenses,
+																				dispatch,
+																				cast,
+																				doc.value
+																			)
+																		) {
+																			return;
+																		}
+																		openTargetLocationOrDirectModification(evt, el.value, cast);
+																	}}
+																	ondblclick={(evt) => inspectLayer(evt, el.value)}
+																	onpointerdown={(evt) => {
+																		if (
+																			beginUnselectedEdgeWaypointDrag(
+																				evt,
+																				el.value,
+																				previewEdge,
+																				liveLenses
+																			)
+																		) {
+																			return;
+																		}
+																		if (
+																			beginLinkedPrimitiveCreation(
+																				evt,
+																				liveLenses,
+																				doc.value,
+																				el.value
+																			)
+																		) {
+																			return;
+																		}
+																		if (
+																			activeTool.value === 'select' &&
+																			!evt.shiftKey &&
+																			beginLayerMove(
+																				evt,
+																				liveLenses,
+																				el.value.id,
+																				layersInOrder.value,
+																				doc.value,
+																				el.value.id
+																			)
+																		) {
+																			return;
+																		}
+																		rememberPointerPasteLocation(evt, liveLenses);
+																	}}
+																	onpointermove={(evt) => {
+																		if (updateUnselectedEdgeWaypointDrag(evt, liveLenses)) {
+																			return;
+																		}
+																		updateLayerMove(evt, liveLenses, doc, layersInOrder.value);
+																		updateLinkedPrimitiveCreation(evt, liveLenses);
+																	}}
+																	onpointerup={(evt) => {
+																		if (finishUnselectedEdgeWaypointDrag(evt, cast, doc)) {
+																			return;
+																		}
+																		if (groupDrag.value?.pointerId === evt.pointerId) {
+																			finishLayerMove(evt, dispatch, doc, layersInOrder.value);
+																			return;
+																		}
+																		finishLinkedPrimitiveCreation(evt, dispatch, cast);
+																	}}
+																	onpointercancel={(evt) => {
+																		cancelUnselectedEdgeWaypointDrag(evt);
+																		cancelLayerMove(evt);
+																		cancelLinkedPrimitiveCreation(evt);
+																	}}
+																	onlostpointercapture={(evt) => {
+																		cancelUnselectedEdgeWaypointDrag(evt);
+																		cancelLayerMove(evt);
+																		cancelLinkedPrimitiveCreation(evt);
+																	}}
+																	onclick={(evt) => {
+																		if (consumeSuppressedEdgeWaypointClick(evt, el.value?.id)) {
+																			return;
+																		}
+																		if (
+																			createLinkedPrimitiveOnLayer(
+																				evt,
+																				liveLenses,
+																				dispatch,
+																				cast,
+																				doc.value,
+																				el.value
+																			)
+																		) {
+																			return;
+																		}
+																		if (
+																			createUnlinkedTextPrimitiveAtEvent(
+																				evt,
+																				liveLenses,
+																				dispatch,
+																				el.value?.id
+																			)
+																		) {
+																			return;
+																		}
+																		if (openTargetLocation(evt, el.value, cast)) {
+																			return;
+																		}
+																		evt.stopPropagation();
+																		if (groupDrag.value === undefined) {
+																			if (el.value?.id) {
+																				evt.preventDefault();
+																				selectLayer(cast, el.value.id, evt);
+																			}
+																		}
+																	}}
+																	tabindex="-1"
+																	onkeydown={(evt) => {
+																		if (evt.key === ' ' || evt.key === 'Enter') {
+																			evt.preventDefault();
+																			if (el.value?.id) {
+																				selectLayer(cast, el.value.id, evt);
+																			}
+																		}
+																	}}
+																	opacity={el.value?.style?.opacity ?? '1'}
+																	stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
+																	stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
+																	stroke-opacity={el.value?.edge?.style?.stroke_opacity ?? '1'}
+																	fill-opacity={el.value?.edge?.style?.stroke_opacity ?? '1'}
+																	stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
+																	stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
+																>
+																	<path
+																		d={edgePath[previewEdge?.style?.smoothness ?? 'linear'](
+																			previewEdge,
+																			previewWaypoints
+																		)}
+																		pointer-events="stroke"
+																		fill={previewEdge?.cyclic
+																			? (el.value?.style?.background_color ?? 'none')
+																			: 'none'}
+																		stroke="transparent"
+																		stroke-width={(previewEdge?.style?.stroke_width ?? 1) * 1 +
+																			10 * cameraScale.value}
+																	/>
+																	<path
+																		d={edgePath[previewEdge?.style?.smoothness ?? 'linear'](
+																			previewEdge,
+																			previewWaypoints
+																		)}
+																		stroke-dasharray={previewEdge?.style?.stroke_dash_array ??
+																			'none'}
+																		fill={previewEdge?.cyclic
+																			? (el.value?.style?.background_color ?? 'none')
+																			: 'none'}
+																		vector-effect="non-scaling-stroke"
+																	/>
+
+																	{#if previewEdge?.style?.source_tip_symbol_shape_id}
+																		{@const source_angle = edgeAngle['source'](
+																			previewEdge,
+																			previewWaypoints
+																		)}
+																		{@const size =
+																			(previewEdge?.style?.stroke_width ?? 1) *
+																			(previewEdge?.style?.source_tip_size ?? 1)}
+
+																		<g
+																			fill={tipColor(
+																				el.value?.style?.background_color,
+																				previewEdge?.style?.stroke_color,
+																				'black'
+																			)}
+																			stroke={tipColor(
+																				el.value?.style?.background_color,
+																				previewEdge?.style?.stroke_color,
+																				'black'
+																			)}
+																			transform="rotate({source_angle} {previewEdge.source_x} {previewEdge.source_y})"
+																		>
+																			<Symbol
+																				symbols={data.symbols}
+																				symbolId={previewEdge?.style?.source_tip_symbol_shape_id}
+																				box={{
+																					x: previewEdge.source_x - size,
+																					y: previewEdge.source_y - size,
+																					width: 2 * size,
+																					height: 2 * size
+																				}}
+																			/>
+																		</g>
+																	{/if}
+
+																	{#if previewEdge?.style?.target_tip_symbol_shape_id}
+																		{@const target_angle = edgeAngle['target'](
+																			previewEdge,
+																			previewWaypoints
+																		)}
+																		{@const size =
+																			(previewEdge?.style?.stroke_width ?? 1) *
+																			(previewEdge?.style?.target_tip_size ?? 1)}
+																		<g
+																			fill={tipColor(
+																				el.value?.style?.background_color,
+																				previewEdge?.style?.stroke_color,
+																				'black'
+																			)}
+																			stroke={tipColor(
+																				el.value?.style?.background_color,
+																				previewEdge?.style?.stroke_color,
+																				'black'
+																			)}
+																			transform="rotate({target_angle} {previewEdge.target_x} {previewEdge.target_y})"
+																		>
+																			<Symbol
+																				symbols={data.symbols}
+																				symbolId={previewEdge?.style?.target_tip_symbol_shape_id}
+																				box={{
+																					x: previewEdge.target_x - size,
+																					y: previewEdge.target_y - size,
+																					width: 2 * size,
+																					height: 2 * size
+																				}}
+																			/>
+																		</g>
+																	{/if}
+																</g>
+															{/if}
 														{/if}
-														{#if el.value?.edge}
-															{@const previewEdge = renderedEdgePreview(
-																el.value,
+													{/each}
+												</g>
+											</g>
+											{#if activeTool.value === 'select'}
+												<g transform={rotationTransform.value}>
+													{#each selectedLayers.value as id (id)}
+														{@const deep_bounding = view(
+															[L.find((el) => el.id == id && el.has_children), 'deep_bounding'],
+															layersInOrder
+														).value}
+
+														{#if deep_bounding}
+															<rect
+																tabindex="-1"
+																cursor="default"
+																x={deep_bounding.minX -
+																	3 * cameraScale.value +
+																	groupDragDelta.value.x}
+																y={deep_bounding.minY -
+																	3 * cameraScale.value +
+																	groupDragDelta.value.y}
+																width={deep_bounding.maxX -
+																	deep_bounding.minX +
+																	6 * cameraScale.value}
+																height={deep_bounding.maxY -
+																	deep_bounding.minY +
+																	6 * cameraScale.value}
+																fill="transparent"
+																pointer-events="all"
+																role="button"
+																onclick={(evt) => clickSelectedLayerHitbox(evt, cast, id)}
+																onpointerdown={(evt) =>
+																	beginLayerMove(
+																		evt,
+																		liveLenses,
+																		id,
+																		layersInOrder.value,
+																		doc.value
+																	)}
+																onpointermove={(evt) =>
+																	updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
+																onpointerup={(evt) =>
+																	finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
+																onpointercancel={cancelLayerMove}
+																onlostpointercapture={cancelLayerMove}
+																onkeydown={(evt) => {
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		cancelLayerMove(evt);
+																	}
+																}}
+															/>
+														{/if}
+													{/each}
+												</g>
+											{/if}
+											<g transform={rotationTransform.value} opacity="0.7">
+												{#each selectedLayers.value as id (id)}
+													{@const els = view(
+														['layers', 'items', L.filter((el) => el.hyperlink == id)],
+														doc
+													)}
+													{#each els.value as el}
+														{#if el.box}
+															<rect
+																class="link-selected"
+																transform={layerMoveTransform(el.id, layersInOrder.value)}
+																x={el.box.position_x - cameraScale.value}
+																y={el.box.position_y - cameraScale.value}
+																width={el.box.width + 2 * cameraScale.value}
+																height={el.box.height + 2 * cameraScale.value}
+																cursor="default"
+															></rect>
+														{/if}
+														{#if el.text}
+															{@const bbox = view(L.prop(el.id), textBounds)}
+
+															{#if bbox.value}
+																<rect
+																	class="link-selected"
+																	transform={layerMoveTransform(el.id, layersInOrder.value)}
+																	x={bbox.value.x}
+																	y={bbox.value.y}
+																	width={bbox.value.width}
+																	height={bbox.value.height}
+																	stroke-width={cameraScale.value * 6}
+																></rect>
+															{/if}
+														{/if}
+														{#if el.edge}
+															{@const linkedPreviewEdge = renderedEdgePreview(
+																el,
 																doc.value,
 																layersInOrder.value,
 																groupDrag.value,
 																groupDragDelta.value
 															)}
-															{@const basePreviewWaypoints =
-																committedEdgeWaypointPreviews.value.get(el.value?.id) ??
-																L.get(localProp('waypoints'), previewEdge) ??
-																previewEdge?.waypoints ??
+															{@const linkedPreviewWaypoints =
+																L.get(localProp('waypoints'), linkedPreviewEdge) ??
+																linkedPreviewEdge?.waypoints ??
 																[]}
-															{@const previewWaypoints = pendingWaypointPreview(
-																basePreviewWaypoints,
-																edgeWaypointDrag.value,
-																el.value?.id
-															)}
-															<g
-																role="button"
-																data-editor-layer-id={el.value?.id}
+															<path
+																class="link-selected"
 																transform={edgePreviewTransform(
-																	id,
+																	el.id,
 																	layersInOrder.value,
-																	el.value.edge,
-																	previewEdge
+																	el.edge,
+																	linkedPreviewEdge
 																)}
-																cursor={canvasInteractionCursor()}
-																oncontextmenu={(evt) => {
-																	if (
-																		beginDirectInscriptionEdit(
-																			evt,
-																			el.value,
-																			liveLenses,
-																			dispatch,
-																			cast,
-																			doc.value
-																		)
-																	) {
-																		return;
-																	}
-																	openTargetLocationOrDirectModification(evt, el.value, cast);
-																}}
-																ondblclick={(evt) => inspectLayer(evt, el.value)}
-																onpointerdown={(evt) => {
-																	if (
-																		beginUnselectedEdgeWaypointDrag(
-																			evt,
-																			el.value,
-																			previewEdge,
-																			liveLenses
-																		)
-																	) {
-																		return;
-																	}
-																	if (
-																		beginLinkedPrimitiveCreation(
-																			evt,
-																			liveLenses,
-																			doc.value,
-																			el.value
-																		)
-																	) {
-																		return;
-																	}
-																	if (
-																		activeTool.value === 'select' &&
-																		!evt.shiftKey &&
-																		beginLayerMove(
-																			evt,
-																			liveLenses,
-																			el.value.id,
-																			layersInOrder.value,
-																			doc.value,
-																			el.value.id
-																		)
-																	) {
-																		return;
-																	}
-																	rememberPointerPasteLocation(evt, liveLenses);
-																}}
-																onpointermove={(evt) => {
-																	if (updateUnselectedEdgeWaypointDrag(evt, liveLenses)) {
-																		return;
-																	}
-																	updateLayerMove(evt, liveLenses, doc, layersInOrder.value);
-																	updateLinkedPrimitiveCreation(evt, liveLenses);
-																}}
-																onpointerup={(evt) => {
-																	if (finishUnselectedEdgeWaypointDrag(evt, cast, doc)) {
-																		return;
-																	}
-																	if (groupDrag.value?.pointerId === evt.pointerId) {
-																		finishLayerMove(evt, dispatch, doc, layersInOrder.value);
-																		return;
-																	}
-																	finishLinkedPrimitiveCreation(evt, dispatch, cast);
-																}}
-																onpointercancel={(evt) => {
-																	cancelUnselectedEdgeWaypointDrag(evt);
-																	cancelLayerMove(evt);
-																	cancelLinkedPrimitiveCreation(evt);
-																}}
-																onlostpointercapture={(evt) => {
-																	cancelUnselectedEdgeWaypointDrag(evt);
-																	cancelLayerMove(evt);
-																	cancelLinkedPrimitiveCreation(evt);
-																}}
-																onclick={(evt) => {
-																	if (consumeSuppressedEdgeWaypointClick(evt, el.value?.id)) {
-																		return;
-																	}
-																	if (
-																		createLinkedPrimitiveOnLayer(
-																			evt,
-																			liveLenses,
-																			dispatch,
-																			cast,
-																			doc.value,
-																			el.value
-																		)
-																	) {
-																		return;
-																	}
-																	if (
-																		createUnlinkedTextPrimitiveAtEvent(
-																			evt,
-																			liveLenses,
-																			dispatch,
-																			el.value?.id
-																		)
-																	) {
-																		return;
-																	}
-																	if (openTargetLocation(evt, el.value, cast)) {
-																		return;
-																	}
-																	evt.stopPropagation();
-																	if (groupDrag.value === undefined) {
-																		if (el.value?.id) {
-																			evt.preventDefault();
-																			selectLayer(cast, el.value.id, evt);
-																		}
-																	}
-																}}
-																tabindex="-1"
-																onkeydown={(evt) => {
-																	if (evt.key === ' ' || evt.key === 'Enter') {
-																		evt.preventDefault();
-																		if (el.value?.id) {
-																			selectLayer(cast, el.value.id, evt);
-																		}
-																	}
-																}}
-																opacity={el.value?.style?.opacity ?? '1'}
-																stroke={el.value?.edge?.style?.stroke_color ?? 'black'}
-																stroke-width={el.value?.edge?.style?.stroke_width ?? '1'}
-																stroke-opacity={el.value?.edge?.style?.stroke_opacity ?? '1'}
-																fill-opacity={el.value?.edge?.style?.stroke_opacity ?? '1'}
-																stroke-linejoin={el.value?.edge?.style?.stroke_join ?? 'miter'}
-																stroke-linecap={el.value?.edge?.style?.stroke_cap ?? 'butt'}
-															>
-																<path
-																	d={edgePath[previewEdge?.style?.smoothness ?? 'linear'](
-																		previewEdge,
-																		previewWaypoints
-																	)}
-																	pointer-events="stroke"
-																	fill={previewEdge?.cyclic
-																		? (el.value?.style?.background_color ?? 'none')
-																		: 'none'}
-																	stroke="transparent"
-																	stroke-width={(previewEdge?.style?.stroke_width ?? 1) * 1 +
-																		10 * cameraScale.value}
-																/>
-																<path
-																	d={edgePath[previewEdge?.style?.smoothness ?? 'linear'](
-																		previewEdge,
-																		previewWaypoints
-																	)}
-																	stroke-dasharray={previewEdge?.style?.stroke_dash_array ?? 'none'}
-																	fill={previewEdge?.cyclic
-																		? (el.value?.style?.background_color ?? 'none')
-																		: 'none'}
-																	vector-effect="non-scaling-stroke"
-																/>
+																d={edgePath[linkedPreviewEdge?.style?.smoothness ?? 'linear'](
+																	linkedPreviewEdge,
+																	linkedPreviewWaypoints
+																)}
+																stroke="black"
+																fill="none"
+																stroke-width={(linkedPreviewEdge?.style?.stroke_width ?? 1) * 1 +
+																	6 * cameraScale.value}
+																stroke-linejoin={linkedPreviewEdge?.style?.stroke_join ?? 'miter'}
+																stroke-linecap={linkedPreviewEdge?.style?.stroke_cap ?? 'butt'}
+															/>
 
-																{#if previewEdge?.style?.source_tip_symbol_shape_id}
-																	{@const source_angle = edgeAngle['source'](
-																		previewEdge,
-																		previewWaypoints
-																	)}
-																	{@const size =
-																		(previewEdge?.style?.stroke_width ?? 1) *
-																		(previewEdge?.style?.source_tip_size ?? 1)}
+															{#if linkedPreviewEdge?.style?.source_tip_symbol_shape_id}
+																{@const source_angle = edgeAngle['source'](
+																	linkedPreviewEdge,
+																	linkedPreviewWaypoints
+																)}
+																<g
+																	class="link-selected"
+																	transform="{edgePreviewTransform(
+																		el.id,
+																		layersInOrder.value,
+																		el.edge,
+																		linkedPreviewEdge
+																	) ??
+																		''} rotate({source_angle} {linkedPreviewEdge.source_x} {linkedPreviewEdge.source_y})"
+																>
+																	{#await data.symbols then symbols}
+																		{@const symbol = symbols.get(
+																			linkedPreviewEdge?.style?.source_tip_symbol_shape_id
+																		)}
+																		{@const size =
+																			(linkedPreviewEdge?.style?.stroke_width ?? 1) *
+																			(linkedPreviewEdge?.style?.source_tip_size ?? 1)}
 
-																	<g
-																		fill={tipColor(
-																			el.value?.style?.background_color,
-																			previewEdge?.style?.stroke_color,
-																			'black'
-																		)}
-																		stroke={tipColor(
-																			el.value?.style?.background_color,
-																			previewEdge?.style?.stroke_color,
-																			'black'
-																		)}
-																		transform="rotate({source_angle} {previewEdge.source_x} {previewEdge.source_y})"
-																	>
-																		<Symbol
-																			symbols={data.symbols}
-																			symbolId={previewEdge?.style?.source_tip_symbol_shape_id}
-																			box={{
-																				x: previewEdge.source_x - size,
-																				y: previewEdge.source_y - size,
-																				width: 2 * size,
-																				height: 2 * size
-																			}}
-																		/>
-																	</g>
-																{/if}
+																		{#if symbol}
+																			{#each symbol.paths as path, i (i)}
+																				<path
+																					fill={path.fill_color ?? 'transparent'}
+																					stroke={path.stroke_color ?? 'transparent'}
+																					d={buildPath(
+																						{
+																							x: linkedPreviewEdge.source_x - size,
+																							y: linkedPreviewEdge.source_y - size,
+																							width: 2 * size,
+																							height: 2 * size
+																						},
+																						path
+																					)}
+																					fill-rule="evenodd"
+																				/>
+																			{/each}
+																		{/if}
+																	{/await}
+																</g>
+															{/if}
 
-																{#if previewEdge?.style?.target_tip_symbol_shape_id}
-																	{@const target_angle = edgeAngle['target'](
-																		previewEdge,
-																		previewWaypoints
-																	)}
-																	{@const size =
-																		(previewEdge?.style?.stroke_width ?? 1) *
-																		(previewEdge?.style?.target_tip_size ?? 1)}
-																	<g
-																		fill={tipColor(
-																			el.value?.style?.background_color,
-																			previewEdge?.style?.stroke_color,
-																			'black'
+															{#if linkedPreviewEdge?.style?.target_tip_symbol_shape_id}
+																{@const target_angle = edgeAngle['target'](
+																	linkedPreviewEdge,
+																	linkedPreviewWaypoints
+																)}
+																<g
+																	class="link-selected"
+																	transform="{edgePreviewTransform(
+																		el.id,
+																		layersInOrder.value,
+																		el.edge,
+																		linkedPreviewEdge
+																	) ??
+																		''} rotate({target_angle} {linkedPreviewEdge.target_x} {linkedPreviewEdge.target_y})"
+																>
+																	{#await data.symbols then symbols}
+																		{@const symbol = symbols.get(
+																			linkedPreviewEdge?.style?.target_tip_symbol_shape_id
 																		)}
-																		stroke={tipColor(
-																			el.value?.style?.background_color,
-																			previewEdge?.style?.stroke_color,
-																			'black'
-																		)}
-																		transform="rotate({target_angle} {previewEdge.target_x} {previewEdge.target_y})"
-																	>
-																		<Symbol
-																			symbols={data.symbols}
-																			symbolId={previewEdge?.style?.target_tip_symbol_shape_id}
-																			box={{
-																				x: previewEdge.target_x - size,
-																				y: previewEdge.target_y - size,
-																				width: 2 * size,
-																				height: 2 * size
-																			}}
-																		/>
-																	</g>
-																{/if}
-															</g>
+																		{@const size =
+																			(linkedPreviewEdge?.style?.stroke_width ?? 1) *
+																			(linkedPreviewEdge?.style?.target_tip_size ?? 1)}
+
+																		{#if symbol}
+																			{#each symbol.paths as path, i (i)}
+																				<path
+																					fill={path.fill_color ?? 'transparent'}
+																					stroke={path.stroke_color ?? 'transparent'}
+																					d={buildPath(
+																						{
+																							x: linkedPreviewEdge.target_x - size,
+																							y: linkedPreviewEdge.target_y - size,
+																							width: 2 * size,
+																							height: 2 * size
+																						},
+																						path
+																					)}
+																					fill-rule="evenodd"
+																				/>
+																			{/each}
+																		{/if}
+																	{/await}
+																</g>
+															{/if}
+														{/if}
+													{/each}
+												{/each}
+												{#each selectedLinkedLayerIds(doc.value, selectedLayers.value) as linkedTargetId (linkedTargetId)}
+													{@const linkedEl = view(
+														['layers', 'items', L.find((el) => el.id == linkedTargetId)],
+														doc
+													)}
+													{#if linkedEl.value?.box}
+														<rect
+															class="link-selected"
+															transform={layerMoveTransform(linkedTargetId, layersInOrder.value)}
+															x={linkedEl.value.box.position_x - cameraScale.value}
+															y={linkedEl.value.box.position_y - cameraScale.value}
+															width={linkedEl.value.box.width + 2 * cameraScale.value}
+															height={linkedEl.value.box.height + 2 * cameraScale.value}
+															cursor="default"
+														></rect>
+													{/if}
+													{#if linkedEl.value?.text}
+														{@const linkedBbox = view(L.prop(linkedEl.value.id), textBounds)}
+
+														{#if linkedBbox.value}
+															<rect
+																class="link-selected"
+																transform={layerMoveTransform(linkedTargetId, layersInOrder.value)}
+																x={linkedBbox.value.x}
+																y={linkedBbox.value.y}
+																width={linkedBbox.value.width}
+																height={linkedBbox.value.height}
+																stroke-width={cameraScale.value * 6}
+															></rect>
 														{/if}
 													{/if}
-												{/each}
-											</g>
-										</g>
-										{#if activeTool.value === 'select'}
-											<g transform={rotationTransform.value}>
-												{#each selectedLayers.value as id (id)}
-													{@const deep_bounding = view(
-														[L.find((el) => el.id == id && el.has_children), 'deep_bounding'],
-														layersInOrder
-													).value}
-
-													{#if deep_bounding}
-														<rect
-															tabindex="-1"
-															cursor="default"
-															x={deep_bounding.minX -
-																3 * cameraScale.value +
-																groupDragDelta.value.x}
-															y={deep_bounding.minY -
-																3 * cameraScale.value +
-																groupDragDelta.value.y}
-															width={deep_bounding.maxX -
-																deep_bounding.minX +
+													{#if linkedEl.value?.edge}
+														{@const linkedTargetPreviewEdge = renderedEdgePreview(
+															linkedEl.value,
+															doc.value,
+															layersInOrder.value,
+															groupDrag.value,
+															groupDragDelta.value
+														)}
+														{@const linkedTargetPreviewWaypoints =
+															L.get(localProp('waypoints'), linkedTargetPreviewEdge) ??
+															linkedTargetPreviewEdge?.waypoints ??
+															[]}
+														<path
+															class="link-selected"
+															transform={edgePreviewTransform(
+																linkedTargetId,
+																layersInOrder.value,
+																linkedEl.value.edge,
+																linkedTargetPreviewEdge
+															)}
+															d={edgePath[linkedTargetPreviewEdge?.style?.smoothness ?? 'linear'](
+																linkedTargetPreviewEdge,
+																linkedTargetPreviewWaypoints
+															)}
+															stroke="black"
+															fill="none"
+															stroke-width={(linkedTargetPreviewEdge?.style?.stroke_width ?? 1) *
+																1 +
 																6 * cameraScale.value}
-															height={deep_bounding.maxY -
-																deep_bounding.minY +
-																6 * cameraScale.value}
-															fill="transparent"
-															pointer-events="all"
-															role="button"
-															onclick={(evt) => clickSelectedLayerHitbox(evt, cast, id)}
-															onpointerdown={(evt) =>
-																beginLayerMove(evt, liveLenses, id, layersInOrder.value, doc.value)}
-															onpointermove={(evt) =>
-																updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
-															onpointerup={(evt) =>
-																finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
-															onpointercancel={cancelLayerMove}
-															onlostpointercapture={cancelLayerMove}
-															onkeydown={(evt) => {
-																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	cancelLayerMove(evt);
-																}
-															}}
+															stroke-linejoin={linkedTargetPreviewEdge?.style?.stroke_join ??
+																'miter'}
+															stroke-linecap={linkedTargetPreviewEdge?.style?.stroke_cap ?? 'butt'}
 														/>
 													{/if}
 												{/each}
 											</g>
-										{/if}
-										<g transform={rotationTransform.value} opacity="0.7">
-											{#each selectedLayers.value as id (id)}
-												{@const els = view(
-													['layers', 'items', L.filter((el) => el.hyperlink == id)],
-													doc
-												)}
-												{#each els.value as el}
-													{#if el.box}
+
+											<g transform={rotationTransform.value} opacity="0.7">
+												{#each selectedLayers.value as id (id)}
+													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
+
+													{#if el.value?.box}
 														<rect
-															class="link-selected"
-															transform={layerMoveTransform(el.id, layersInOrder.value)}
-															x={el.box.position_x - cameraScale.value}
-															y={el.box.position_y - cameraScale.value}
-															width={el.box.width + 2 * cameraScale.value}
-															height={el.box.height + 2 * cameraScale.value}
+															class="selected"
+															transform={layerMoveTransform(id, layersInOrder.value)}
+															x={el.value?.box.position_x - cameraScale.value}
+															y={el.value?.box.position_y - cameraScale.value}
+															width={el.value?.box.width + 2 * cameraScale.value}
+															height={el.value?.box.height + 2 * cameraScale.value}
 															cursor="default"
 														></rect>
 													{/if}
-													{#if el.text}
-														{@const bbox = view(L.prop(el.id), textBounds)}
+													{#if el.value?.text}
+														{@const bbox = view(L.prop(el.value?.id), textBounds)}
 
 														{#if bbox.value}
 															<rect
-																class="link-selected"
-																transform={layerMoveTransform(el.id, layersInOrder.value)}
+																class="selected"
+																transform={layerMoveTransform(id, layersInOrder.value)}
 																x={bbox.value.x}
 																y={bbox.value.y}
 																width={bbox.value.width}
@@ -12148,908 +13397,916 @@
 															></rect>
 														{/if}
 													{/if}
-													{#if el.edge}
-														{@const linkedPreviewEdge = renderedEdgePreview(
-															el,
-															doc.value,
-															layersInOrder.value,
-															groupDrag.value,
-															groupDragDelta.value
-														)}
-														{@const linkedPreviewWaypoints =
-															L.get(localProp('waypoints'), linkedPreviewEdge) ??
-															linkedPreviewEdge?.waypoints ??
-															[]}
-														<path
-															class="link-selected"
-															transform={edgePreviewTransform(
-																el.id,
-																layersInOrder.value,
-																el.edge,
-																linkedPreviewEdge
-															)}
-															d={edgePath[linkedPreviewEdge?.style?.smoothness ?? 'linear'](
-																linkedPreviewEdge,
-																linkedPreviewWaypoints
-															)}
-															stroke="black"
-															fill="none"
-															stroke-width={(linkedPreviewEdge?.style?.stroke_width ?? 1) * 1 +
-																6 * cameraScale.value}
-															stroke-linejoin={linkedPreviewEdge?.style?.stroke_join ?? 'miter'}
-															stroke-linecap={linkedPreviewEdge?.style?.stroke_cap ?? 'butt'}
-														/>
-
-														{#if linkedPreviewEdge?.style?.source_tip_symbol_shape_id}
-															{@const source_angle = edgeAngle['source'](
-																linkedPreviewEdge,
-																linkedPreviewWaypoints
-															)}
-															<g
-																class="link-selected"
-																transform="{edgePreviewTransform(
-																	el.id,
-																	layersInOrder.value,
-																	el.edge,
-																	linkedPreviewEdge
-																) ??
-																	''} rotate({source_angle} {linkedPreviewEdge.source_x} {linkedPreviewEdge.source_y})"
-															>
-																{#await data.symbols then symbols}
-																	{@const symbol = symbols.get(
-																		linkedPreviewEdge?.style?.source_tip_symbol_shape_id
-																	)}
-																	{@const size =
-																		(linkedPreviewEdge?.style?.stroke_width ?? 1) *
-																		(linkedPreviewEdge?.style?.source_tip_size ?? 1)}
-
-																	{#if symbol}
-																		{#each symbol.paths as path, i (i)}
-																			<path
-																				fill={path.fill_color ?? 'transparent'}
-																				stroke={path.stroke_color ?? 'transparent'}
-																				d={buildPath(
-																					{
-																						x: linkedPreviewEdge.source_x - size,
-																						y: linkedPreviewEdge.source_y - size,
-																						width: 2 * size,
-																						height: 2 * size
-																					},
-																					path
-																				)}
-																				fill-rule="evenodd"
-																			/>
-																		{/each}
-																	{/if}
-																{/await}
-															</g>
-														{/if}
-
-														{#if linkedPreviewEdge?.style?.target_tip_symbol_shape_id}
-															{@const target_angle = edgeAngle['target'](
-																linkedPreviewEdge,
-																linkedPreviewWaypoints
-															)}
-															<g
-																class="link-selected"
-																transform="{edgePreviewTransform(
-																	el.id,
-																	layersInOrder.value,
-																	el.edge,
-																	linkedPreviewEdge
-																) ??
-																	''} rotate({target_angle} {linkedPreviewEdge.target_x} {linkedPreviewEdge.target_y})"
-															>
-																{#await data.symbols then symbols}
-																	{@const symbol = symbols.get(
-																		linkedPreviewEdge?.style?.target_tip_symbol_shape_id
-																	)}
-																	{@const size =
-																		(linkedPreviewEdge?.style?.stroke_width ?? 1) *
-																		(linkedPreviewEdge?.style?.target_tip_size ?? 1)}
-
-																	{#if symbol}
-																		{#each symbol.paths as path, i (i)}
-																			<path
-																				fill={path.fill_color ?? 'transparent'}
-																				stroke={path.stroke_color ?? 'transparent'}
-																				d={buildPath(
-																					{
-																						x: linkedPreviewEdge.target_x - size,
-																						y: linkedPreviewEdge.target_y - size,
-																						width: 2 * size,
-																						height: 2 * size
-																					},
-																					path
-																				)}
-																				fill-rule="evenodd"
-																			/>
-																		{/each}
-																	{/if}
-																{/await}
-															</g>
-														{/if}
-													{/if}
-												{/each}
-											{/each}
-											{#each selectedLinkedLayerIds(doc.value, selectedLayers.value) as linkedTargetId (linkedTargetId)}
-												{@const linkedEl = view(
-													['layers', 'items', L.find((el) => el.id == linkedTargetId)],
-													doc
-												)}
-												{#if linkedEl.value?.box}
-													<rect
-														class="link-selected"
-														transform={layerMoveTransform(linkedTargetId, layersInOrder.value)}
-														x={linkedEl.value.box.position_x - cameraScale.value}
-														y={linkedEl.value.box.position_y - cameraScale.value}
-														width={linkedEl.value.box.width + 2 * cameraScale.value}
-														height={linkedEl.value.box.height + 2 * cameraScale.value}
-														cursor="default"
-													></rect>
-												{/if}
-												{#if linkedEl.value?.text}
-													{@const linkedBbox = view(L.prop(linkedEl.value.id), textBounds)}
-
-													{#if linkedBbox.value}
-														<rect
-															class="link-selected"
-															transform={layerMoveTransform(linkedTargetId, layersInOrder.value)}
-															x={linkedBbox.value.x}
-															y={linkedBbox.value.y}
-															width={linkedBbox.value.width}
-															height={linkedBbox.value.height}
-															stroke-width={cameraScale.value * 6}
-														></rect>
-													{/if}
-												{/if}
-												{#if linkedEl.value?.edge}
-													{@const linkedTargetPreviewEdge = renderedEdgePreview(
-														linkedEl.value,
-														doc.value,
-														layersInOrder.value,
-														groupDrag.value,
-														groupDragDelta.value
-													)}
-													{@const linkedTargetPreviewWaypoints =
-														L.get(localProp('waypoints'), linkedTargetPreviewEdge) ??
-														linkedTargetPreviewEdge?.waypoints ??
-														[]}
-													<path
-														class="link-selected"
-														transform={edgePreviewTransform(
-															linkedTargetId,
-															layersInOrder.value,
-															linkedEl.value.edge,
-															linkedTargetPreviewEdge
-														)}
-														d={edgePath[linkedTargetPreviewEdge?.style?.smoothness ?? 'linear'](
-															linkedTargetPreviewEdge,
-															linkedTargetPreviewWaypoints
-														)}
-														stroke="black"
-														fill="none"
-														stroke-width={(linkedTargetPreviewEdge?.style?.stroke_width ?? 1) * 1 +
-															6 * cameraScale.value}
-														stroke-linejoin={linkedTargetPreviewEdge?.style?.stroke_join ?? 'miter'}
-														stroke-linecap={linkedTargetPreviewEdge?.style?.stroke_cap ?? 'butt'}
-													/>
-												{/if}
-											{/each}
-										</g>
-
-										<g transform={rotationTransform.value} opacity="0.7">
-											{#each selectedLayers.value as id (id)}
-												{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-
-												{#if el.value?.box}
-													<rect
-														class="selected"
-														transform={layerMoveTransform(id, layersInOrder.value)}
-														x={el.value?.box.position_x - cameraScale.value}
-														y={el.value?.box.position_y - cameraScale.value}
-														width={el.value?.box.width + 2 * cameraScale.value}
-														height={el.value?.box.height + 2 * cameraScale.value}
-														cursor="default"
-													></rect>
-												{/if}
-												{#if el.value?.text}
-													{@const bbox = view(L.prop(el.value?.id), textBounds)}
-
-													{#if bbox.value}
-														<rect
-															class="selected"
-															transform={layerMoveTransform(id, layersInOrder.value)}
-															x={bbox.value.x}
-															y={bbox.value.y}
-															width={bbox.value.width}
-															height={bbox.value.height}
-															stroke-width={cameraScale.value * 6}
-														></rect>
-													{/if}
-												{/if}
-												{#if el.value?.edge}
-													{@const selectedLayerPreviewEdge = renderedEdgePreview(
-														el.value,
-														doc.value,
-														layersInOrder.value,
-														groupDrag.value,
-														groupDragDelta.value
-													)}
-													{@const selectedLayerPreviewWaypoints =
-														L.get(localProp('waypoints'), selectedLayerPreviewEdge) ??
-														selectedLayerPreviewEdge?.waypoints ??
-														[]}
-													<path
-														class="selected"
-														transform={edgePreviewTransform(
-															id,
-															layersInOrder.value,
-															el.value.edge,
-															selectedLayerPreviewEdge
-														)}
-														d={edgePath[selectedLayerPreviewEdge?.style?.smoothness ?? 'linear'](
-															selectedLayerPreviewEdge,
-															selectedLayerPreviewWaypoints
-														)}
-														stroke="black"
-														fill="none"
-														stroke-width={(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) * 1 +
-															6 * cameraScale.value}
-														stroke-linejoin={selectedLayerPreviewEdge?.style?.stroke_join ??
-															'miter'}
-														stroke-linecap={selectedLayerPreviewEdge?.style?.stroke_cap ?? 'butt'}
-													/>
-
-													{#if selectedLayerPreviewEdge?.style?.source_tip_symbol_shape_id}
-														{@const source_angle = edgeAngle['source'](
-															selectedLayerPreviewEdge,
-															selectedLayerPreviewWaypoints
-														)}
-														<g
-															class="selected"
-															transform="{edgePreviewTransform(
-																id,
-																layersInOrder.value,
-																el.value.edge,
-																selectedLayerPreviewEdge
-															) ??
-																''} rotate({source_angle} {selectedLayerPreviewEdge.source_x} {selectedLayerPreviewEdge.source_y})"
-														>
-															{#await data.symbols then symbols}
-																{@const symbol = symbols.get(
-																	selectedLayerPreviewEdge?.style?.source_tip_symbol_shape_id
-																)}
-																{@const size =
-																	(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) *
-																	(selectedLayerPreviewEdge?.style?.source_tip_size ?? 1)}
-
-																{#if symbol}
-																	{#each symbol.paths as path, i (i)}
-																		<path
-																			fill={path.fill_color ?? 'transparent'}
-																			stroke={path.stroke_color ?? 'transparent'}
-																			d={buildPath(
-																				{
-																					x: selectedLayerPreviewEdge.source_x - size,
-																					y: selectedLayerPreviewEdge.source_y - size,
-																					width: 2 * size,
-																					height: 2 * size
-																				},
-																				path
-																			)}
-																			fill-rule="evenodd"
-																		/>
-																	{/each}
-																{/if}
-															{/await}
-														</g>
-													{/if}
-
-													{#if selectedLayerPreviewEdge?.style?.target_tip_symbol_shape_id}
-														{@const target_angle = edgeAngle['target'](
-															selectedLayerPreviewEdge,
-															selectedLayerPreviewWaypoints
-														)}
-														<g
-															class="selected"
-															transform="{edgePreviewTransform(
-																id,
-																layersInOrder.value,
-																el.value.edge,
-																selectedLayerPreviewEdge
-															) ??
-																''} rotate({target_angle} {selectedLayerPreviewEdge.target_x} {selectedLayerPreviewEdge.target_y})"
-														>
-															{#await data.symbols then symbols}
-																{@const symbol = symbols.get(
-																	selectedLayerPreviewEdge?.style?.target_tip_symbol_shape_id
-																)}
-																{@const size =
-																	(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) *
-																	(selectedLayerPreviewEdge?.style?.target_tip_size ?? 1)}
-
-																{#if symbol}
-																	{#each symbol.paths as path, i (i)}
-																		<path
-																			fill={path.fill_color ?? 'transparent'}
-																			stroke={path.stroke_color ?? 'transparent'}
-																			d={buildPath(
-																				{
-																					x: selectedLayerPreviewEdge.target_x - size,
-																					y: selectedLayerPreviewEdge.target_y - size,
-																					width: 2 * size,
-																					height: 2 * size
-																				},
-																				path
-																			)}
-																			fill-rule="evenodd"
-																		/>
-																	{/each}
-																{/if}
-															{/await}
-														</g>
-													{/if}
-												{/if}
-											{/each}
-										</g>
-
-										<g transform={rotationTransform.value} opacity="0.6" pointer-events="none">
-											{#each presence.value as { data: { cursors, color, username, selections } }}
-												{#if showOtherSelections.value}
-													<g style:--selection-color={color}>
-														{#each selections.filter(({ self }) => !self) as { value: id }}
-															{@const el = view(
-																['layers', 'items', L.find((el) => el.id == id)],
-																doc
-															)}
-															{@const deep_bounding = view(
-																[
-																	L.find((layer) => layer.id == id && layer.has_children),
-																	'deep_bounding'
-																],
-																layersInOrder
-															).value}
-															{#if deep_bounding}
-																<rect
-																	class="selected"
-																	x={deep_bounding.minX - 3 * cameraScale.value}
-																	y={deep_bounding.minY - 3 * cameraScale.value}
-																	width={deep_bounding.maxX -
-																		deep_bounding.minX +
-																		6 * cameraScale.value}
-																	height={deep_bounding.maxY -
-																		deep_bounding.minY +
-																		6 * cameraScale.value}
-																></rect>
-															{/if}
-															{#if el.value?.box}
-																<rect
-																	class="selected"
-																	x={el.value?.box.position_x - 1 * cameraScale.value}
-																	y={el.value?.box.position_y - 1 * cameraScale.value}
-																	width={el.value?.box.width + 2 * cameraScale.value}
-																	height={el.value?.box.height + 2 * cameraScale.value}
-																></rect>
-															{/if}
-															{#if el.value?.text}
-																{@const bbox = view(L.prop(el.value?.id), textBounds)}
-
-																{#if bbox.value}
-																	<rect
-																		class="selected"
-																		x={bbox.value.x}
-																		y={bbox.value.y}
-																		width={bbox.value.width}
-																		height={bbox.value.height}
-																	></rect>
-																{/if}
-															{/if}
-															{#if el.value?.edge}
-																{@const remotePreviewEdge = renderedEdgePreview(
-																	el.value,
-																	doc.value,
-																	layersInOrder.value,
-																	groupDrag.value,
-																	groupDragDelta.value
-																)}
-																{@const remotePreviewWaypoints =
-																	L.get(localProp('waypoints'), remotePreviewEdge) ??
-																	remotePreviewEdge?.waypoints ??
-																	[]}
-																<g>
-																	<path
-																		class="selected"
-																		d={edgePath[remotePreviewEdge?.style?.smoothness ?? 'linear'](
-																			remotePreviewEdge,
-																			remotePreviewWaypoints
-																		)}
-																		stroke="black"
-																		fill="none"
-																		stroke-width={(remotePreviewEdge?.style?.stroke_width ?? 1) *
-																			1 +
-																			4 * cameraScale.value}
-																		stroke-linejoin={remotePreviewEdge?.style?.stroke_join ??
-																			'miter'}
-																		stroke-linecap={remotePreviewEdge?.style?.stroke_cap ?? 'butt'}
-																	/>
-
-																	{#if remotePreviewEdge?.style?.source_tip_symbol_shape_id}
-																		{@const source_angle = edgeAngle['source'](
-																			remotePreviewEdge,
-																			remotePreviewWaypoints
-																		)}
-																		<g
-																			class="selected"
-																			transform="rotate({source_angle} {remotePreviewEdge.source_x} {remotePreviewEdge.source_y})"
-																		>
-																			{#await data.symbols then symbols}
-																				{@const symbol = symbols.get(
-																					remotePreviewEdge?.style?.source_tip_symbol_shape_id
-																				)}
-																				{@const size =
-																					(remotePreviewEdge?.style?.stroke_width ?? 1) *
-																					(remotePreviewEdge?.style?.source_tip_size ?? 1)}
-
-																				{#if symbol}
-																					{#each symbol.paths as path, i (i)}
-																						<path
-																							fill={path.fill_color ?? 'transparent'}
-																							stroke={path.stroke_color ?? 'transparent'}
-																							d={buildPath(
-																								{
-																									x: remotePreviewEdge.source_x - size,
-																									y: remotePreviewEdge.source_y - size,
-																									width: 2 * size,
-																									height: 2 * size
-																								},
-																								path
-																							)}
-																							fill-rule="evenodd"
-																						/>
-																					{/each}
-																				{/if}
-																			{/await}
-																		</g>
-																	{/if}
-
-																	{#if remotePreviewEdge?.style?.target_tip_symbol_shape_id}
-																		{@const target_angle = edgeAngle['target'](
-																			remotePreviewEdge,
-																			remotePreviewWaypoints
-																		)}
-																		<g
-																			class="selected"
-																			transform="rotate({target_angle} {remotePreviewEdge.target_x} {remotePreviewEdge.target_y})"
-																		>
-																			{#await data.symbols then symbols}
-																				{@const symbol = symbols.get(
-																					remotePreviewEdge?.style?.target_tip_symbol_shape_id
-																				)}
-																				{@const size =
-																					(remotePreviewEdge?.style?.stroke_width ?? 1) *
-																					(remotePreviewEdge?.style?.target_tip_size ?? 1)}
-
-																				{#if symbol}
-																					{#each symbol.paths as path, i (i)}
-																						<path
-																							fill={path.fill_color ?? 'transparent'}
-																							stroke={path.stroke_color ?? 'transparent'}
-																							d={buildPath(
-																								{
-																									x: remotePreviewEdge.target_x - size,
-																									y: remotePreviewEdge.target_y - size,
-																									width: 2 * size,
-																									height: 2 * size
-																								},
-																								path
-																							)}
-																							fill-rule="evenodd"
-																						/>
-																					{/each}
-																				{/if}
-																			{/await}
-																		</g>
-																	{/if}</g
-																>
-															{/if}
-														{/each}
-													</g>
-												{/if}
-												{#if showCursors.value}
-													{#each cursors.filter(({ self, value }) => !self && value) as { value: cursor }}
-														<path
-															transform="translate({cursor.x} {cursor.y}) rotate({-camera.value
-																.focus.w} 0 0) {scaleTransform.value}
-												"
-															d="M0 0 v 24 l 6 -6 h 10"
-															fill={color}
-														/>
-													{/each}
-												{/if}
-											{/each}
-										</g>
-
-										{#if areaSelection.value?.active}
-											{@const selectionBox = normalizedBox(areaSelection.value)}
-											<g transform={rotationTransform.value}>
-												<rect
-													class="area-selection"
-													x={selectionBox.x}
-													y={selectionBox.y}
-													width={selectionBox.width}
-													height={selectionBox.height}
-												/>
-											</g>
-										{/if}
-
-										{#if primitiveCreation.value && primitiveSupportsSizedCreation(activeCreateTool.value) && isPrimitiveCreationDrag(primitiveCreation.value)}
-											{@const creationBox = normalizedBox(primitiveCreation.value)}
-											{@const primitiveContent = activeCreateTool.value?.item?.data?.content ?? {}}
-											{@const previewStyle = primitivePreviewStyle(primitiveContent)}
-											{@const roundRadius = primitivePreviewRoundRadius(primitiveContent)}
-											<g transform={rotationTransform.value}>
-												{#if primitivePreviewUsesSymbol(primitiveContent)}
-													<g
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-													>
-														<Symbol
-															symbols={data.symbols}
-															symbolId={primitiveContent.shape_id}
-															box={creationBox}
-															shapeAttributes={primitiveContent.shape_attributes}
-														/>
-													</g>
-												{:else if primitivePreviewIsLine(primitiveContent)}
-													<path
-														class="primitive-creation-preview-shape primitive-creation-preview-line"
-														style:stroke={previewStyle.border}
-														fill="none"
-														d={primitivePreviewLinePath(creationBox, primitiveCreation.value)}
-													/>
-												{:else if primitivePreviewIsEllipse(primitiveContent)}
-													<ellipse
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														cx={creationBox.x + creationBox.width / 2}
-														cy={creationBox.y + creationBox.height / 2}
-														rx={creationBox.width / 2}
-														ry={creationBox.height / 2}
-													/>
-												{:else if primitivePreviewIsTriangle(primitiveContent)}
-													<path
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														d={primitivePreviewTrianglePath(creationBox)}
-													/>
-												{:else if primitivePreviewIsDiamond(primitiveContent)}
-													<path
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														d={primitivePreviewDiamondPath(creationBox)}
-													/>
-												{:else if primitivePreviewIsPie(primitiveContent)}
-													<path
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														d={primitivePreviewPiePath(creationBox)}
-													/>
-												{:else}
-													<rect
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														x={creationBox.x}
-														y={creationBox.y}
-														width={creationBox.width}
-														height={creationBox.height}
-														rx={roundRadius}
-														ry={roundRadius}
-													/>
-												{/if}
-											</g>
-										{/if}
-
-										{#if linkedPrimitiveCreation.value}
-											{@const creation = linkedPrimitiveCreation.value}
-											{@const primitiveContent = creation.tool?.item?.data?.content ?? {}}
-											{@const previewStyle = primitivePreviewStyle(primitiveContent)}
-											{@const previewSize = creation.size ?? {
-												width: primitiveContent.width ?? 20,
-												height: primitiveContent.height ?? 20
-											}}
-											{@const creationBox = {
-												x: creation.current.x - previewSize.width / 2,
-												y: creation.current.y - previewSize.height / 2,
-												width: previewSize.width,
-												height: previewSize.height
-											}}
-											{@const roundRadius = primitivePreviewRoundRadius(primitiveContent)}
-											<g transform={rotationTransform.value}>
-												{#if primitivePreviewUsesSymbol(primitiveContent)}
-													<g
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-													>
-														<Symbol
-															symbols={data.symbols}
-															symbolId={primitiveContent.shape_id}
-															box={creationBox}
-															shapeAttributes={primitiveContent.shape_attributes}
-														/>
-													</g>
-												{:else if primitivePreviewIsLine(primitiveContent)}
-													<path
-														class="primitive-creation-preview-shape primitive-creation-preview-line"
-														style:stroke={previewStyle.border}
-														fill="none"
-														d={primitivePreviewLinePath(creationBox, creation)}
-													/>
-												{:else if primitivePreviewIsEllipse(primitiveContent)}
-													<ellipse
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														cx={creationBox.x + creationBox.width / 2}
-														cy={creationBox.y + creationBox.height / 2}
-														rx={creationBox.width / 2}
-														ry={creationBox.height / 2}
-													/>
-												{:else if primitivePreviewIsTriangle(primitiveContent)}
-													<path
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														d={primitivePreviewTrianglePath(creationBox)}
-													/>
-												{:else if primitivePreviewIsDiamond(primitiveContent)}
-													<path
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														d={primitivePreviewDiamondPath(creationBox)}
-													/>
-												{:else if primitivePreviewIsPie(primitiveContent)}
-													<path
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														d={primitivePreviewPiePath(creationBox)}
-													/>
-												{:else}
-													<rect
-														class="primitive-creation-preview-shape"
-														style:fill={previewStyle.background}
-														style:stroke={previewStyle.border}
-														x={creationBox.x}
-														y={creationBox.y}
-														width={creationBox.width}
-														height={creationBox.height}
-														rx={roundRadius}
-														ry={roundRadius}
-													/>
-												{/if}
-											</g>
-										{/if}
-
-										{#if activeCreateTool.value && !activeTargetTool() && !primitiveNeedsLinkedTarget(activeCreateTool.value) && !primitiveCreatesText(activeCreateTool.value)}
-											<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-											<path
-												class="primitive-creation-hitbox"
-												d={frameBoxPath.value}
-												fill="#ffffff00"
-												stroke="none"
-												pointer-events="all"
-												onpointerdown={(evt) => beginPrimitiveCreation(evt, liveLenses)}
-												onpointermove={(evt) => updatePrimitiveCreation(evt, liveLenses)}
-												onpointerup={(evt) =>
-													finishPrimitiveCreation(
-														evt,
-														liveLenses,
-														dispatch,
-														cast,
-														L.get('id', singleSelectedLayer.value)
-													)}
-												onpointercancel={cancelPrimitiveCreation}
-												onlostpointercapture={cancelPrimitiveCreation}
-												oncontextmenu={resetToolFromCanvas}
-												onclick={(evt) => {
-													evt.preventDefault();
-													evt.stopPropagation();
-												}}
-											/>
-										{/if}
-
-										{#if inlineTextEdit.value}
-											{@const editingLayer = view(
-												['layers', 'items', L.find((el) => el.id === inlineTextEdit.value.id)],
-												doc
-											)}
-											{@const editingBounds = textEditorBounds(
-												editingLayer.value,
-												inlineTextEdit.value.bounds ?? textBounds.value[inlineTextEdit.value.id],
-												cameraScale.value,
-												inlineTextEdit.value.body
-											)}
-											{#if editingLayer.value?.text && editingBounds}
-												<g transform={rotationTransform.value}>
-													<rect
-														class="inline-text-editor-rect"
-														rx="5"
-														ry="5"
-														transform={layerMoveTransform(
-															inlineTextEdit.value.id,
-															layersInOrder.value
-														)}
-														x={editingBounds.x}
-														y={editingBounds.y}
-														width={editingBounds.width}
-														height={editingBounds.height}
-													></rect>
-													<foreignObject
-														class="inline-text-editor-object"
-														transform={layerMoveTransform(
-															inlineTextEdit.value.id,
-															layersInOrder.value
-														)}
-														x={editingBounds.x}
-														y={editingBounds.y}
-														width={editingBounds.width}
-														height={editingBounds.height}
-													>
-														<textarea
-															class="inline-text-editor-control"
-															rows={textEditorRows(inlineTextEdit.value.body)}
-															wrap="off"
-															spellcheck="false"
-															style:font-size={textEditorFontSize(editingLayer.value)}
-															style:font-family={editingLayer.value.text?.style?.font_family ??
-																'sans-serif'}
-															style:font-weight={editingLayer.value.text?.style?.bold
-																? 'bold'
-																: 'normal'}
-															style:font-style={editingLayer.value.text?.style?.italic
-																? 'italic'
-																: 'normal'}
-															style:color={editingLayer.value.text?.style?.text_color ?? 'black'}
-															value={inlineTextEdit.value.body}
-															use:focusInlineTextEditor
-															use:commitInlineTextEditOnOutsidePointer={cast}
-															onpointerdown={(evt) => evt.stopPropagation()}
-															onblur={(evt) => commitInlineTextEdit(cast)}
-															onclick={(evt) => evt.stopPropagation()}
-															oninput={(evt) => {
-																updateInlineTextEdit(evt.currentTarget.value);
-																updateText(editingLayer.value.id, evt.currentTarget.value);
-															}}
-															onkeydown={(evt) => {
-																evt.stopPropagation();
-																if (evt.key === 'Escape') {
-																	evt.preventDefault();
-																	commitInlineTextEdit(cast);
-																}
-																if ((evt.ctrlKey || evt.metaKey) && evt.key === 'Enter') {
-																	evt.preventDefault();
-																	commitInlineTextEdit(cast);
-																}
-															}}
-														></textarea>
-													</foreignObject>
-												</g>
-											{/if}
-										{/if}
-
-										{#if activeTool.value === 'select'}
-											<g transform={rotationTransform.value} opacity="0.7">
-												{#each selectedLayers.value as id (id)}
-													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-
-													{@const deep_bounding = view(
-														[L.find((el) => el.id == id && el.has_children), 'deep_bounding'],
-														layersInOrder
-													).value}
-
-													{#if deep_bounding}
-														<rect
-															stroke="#0af"
-															cursor="default"
-															stroke-dasharray="{cameraScale.value * 2} {cameraScale.value * 2}"
-															stroke-width={cameraScale.value * 2}
-															x={deep_bounding.minX -
-																3 * cameraScale.value +
-																groupDragDelta.value.x}
-															y={deep_bounding.minY -
-																3 * cameraScale.value +
-																groupDragDelta.value.y}
-															width={deep_bounding.maxX -
-																deep_bounding.minX +
-																6 * cameraScale.value}
-															height={deep_bounding.maxY -
-																deep_bounding.minY +
-																6 * cameraScale.value}
-															fill="#0af5"
-															pointer-events="none"
-														/>
-													{/if}
-												{/each}
-											</g>
-										{/if}
-										{#if activeTool.value === 'select'}
-											<g transform={rotationTransform.value}>
-												<!-- svelte-ignore a11y_no_static_element_interactions -->
-												{#each edgeHandleLayerIds(selectedLayers.value) as id (id)}
-													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-													{@const waypoints = view(['edge', localProp('waypoints')], el)}
-													{@const persistentWaypoints = view(
-														L.filter(waypointHandleVisible),
-														waypoints
-													)}
 													{#if el.value?.edge}
-														{@const selectedPreviewEdge = renderedEdgePreview(
+														{@const selectedLayerPreviewEdge = renderedEdgePreview(
 															el.value,
 															doc.value,
 															layersInOrder.value,
 															groupDrag.value,
 															groupDragDelta.value
 														)}
-														{@const selectedPreviewWaypoints =
-															L.get(localProp('waypoints'), selectedPreviewEdge) ??
-															selectedPreviewEdge?.waypoints ??
+														{@const selectedLayerPreviewWaypoints =
+															L.get(localProp('waypoints'), selectedLayerPreviewEdge) ??
+															selectedLayerPreviewEdge?.waypoints ??
 															[]}
-														{@const isElbowEdge =
-															selectedPreviewEdge?.style?.smoothness === 'elbow'}
-														{@const selectedPreviewWaypointProposals = isElbowEdge
-															? []
-															: edgeWaypointProposals(selectedPreviewEdge)}
-														{#if activeTool.value === 'select'}
-															{#if isElbowEdge}
-																{#each elbowPoints(selectedPreviewEdge, selectedPreviewWaypoints) as bend, bi (bi)}
+														<path
+															class="selected"
+															transform={edgePreviewTransform(
+																id,
+																layersInOrder.value,
+																el.value.edge,
+																selectedLayerPreviewEdge
+															)}
+															d={edgePath[selectedLayerPreviewEdge?.style?.smoothness ?? 'linear'](
+																selectedLayerPreviewEdge,
+																selectedLayerPreviewWaypoints
+															)}
+															stroke="black"
+															fill="none"
+															stroke-width={(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) *
+																1 +
+																6 * cameraScale.value}
+															stroke-linejoin={selectedLayerPreviewEdge?.style?.stroke_join ??
+																'miter'}
+															stroke-linecap={selectedLayerPreviewEdge?.style?.stroke_cap ?? 'butt'}
+														/>
+
+														{#if selectedLayerPreviewEdge?.style?.source_tip_symbol_shape_id}
+															{@const source_angle = edgeAngle['source'](
+																selectedLayerPreviewEdge,
+																selectedLayerPreviewWaypoints
+															)}
+															<g
+																class="selected"
+																transform="{edgePreviewTransform(
+																	id,
+																	layersInOrder.value,
+																	el.value.edge,
+																	selectedLayerPreviewEdge
+																) ??
+																	''} rotate({source_angle} {selectedLayerPreviewEdge.source_x} {selectedLayerPreviewEdge.source_y})"
+															>
+																{#await data.symbols then symbols}
+																	{@const symbol = symbols.get(
+																		selectedLayerPreviewEdge?.style?.source_tip_symbol_shape_id
+																	)}
+																	{@const size =
+																		(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) *
+																		(selectedLayerPreviewEdge?.style?.source_tip_size ?? 1)}
+
+																	{#if symbol}
+																		{#each symbol.paths as path, i (i)}
+																			<path
+																				fill={path.fill_color ?? 'transparent'}
+																				stroke={path.stroke_color ?? 'transparent'}
+																				d={buildPath(
+																					{
+																						x: selectedLayerPreviewEdge.source_x - size,
+																						y: selectedLayerPreviewEdge.source_y - size,
+																						width: 2 * size,
+																						height: 2 * size
+																					},
+																					path
+																				)}
+																				fill-rule="evenodd"
+																			/>
+																		{/each}
+																	{/if}
+																{/await}
+															</g>
+														{/if}
+
+														{#if selectedLayerPreviewEdge?.style?.target_tip_symbol_shape_id}
+															{@const target_angle = edgeAngle['target'](
+																selectedLayerPreviewEdge,
+																selectedLayerPreviewWaypoints
+															)}
+															<g
+																class="selected"
+																transform="{edgePreviewTransform(
+																	id,
+																	layersInOrder.value,
+																	el.value.edge,
+																	selectedLayerPreviewEdge
+																) ??
+																	''} rotate({target_angle} {selectedLayerPreviewEdge.target_x} {selectedLayerPreviewEdge.target_y})"
+															>
+																{#await data.symbols then symbols}
+																	{@const symbol = symbols.get(
+																		selectedLayerPreviewEdge?.style?.target_tip_symbol_shape_id
+																	)}
+																	{@const size =
+																		(selectedLayerPreviewEdge?.style?.stroke_width ?? 1) *
+																		(selectedLayerPreviewEdge?.style?.target_tip_size ?? 1)}
+
+																	{#if symbol}
+																		{#each symbol.paths as path, i (i)}
+																			<path
+																				fill={path.fill_color ?? 'transparent'}
+																				stroke={path.stroke_color ?? 'transparent'}
+																				d={buildPath(
+																					{
+																						x: selectedLayerPreviewEdge.target_x - size,
+																						y: selectedLayerPreviewEdge.target_y - size,
+																						width: 2 * size,
+																						height: 2 * size
+																					},
+																					path
+																				)}
+																				fill-rule="evenodd"
+																			/>
+																		{/each}
+																	{/if}
+																{/await}
+															</g>
+														{/if}
+													{/if}
+												{/each}
+											</g>
+
+											<g transform={rotationTransform.value} opacity="0.6" pointer-events="none">
+												{#each presence.value as { data: { cursors, color, username, selections } }}
+													{#if showOtherSelections.value}
+														<g style:--selection-color={color}>
+															{#each selections.filter(({ self }) => !self) as { value: id }}
+																{@const el = view(
+																	['layers', 'items', L.find((el) => el.id == id)],
+																	doc
+																)}
+																{@const deep_bounding = view(
+																	[
+																		L.find((layer) => layer.id == id && layer.has_children),
+																		'deep_bounding'
+																	],
+																	layersInOrder
+																).value}
+																{#if deep_bounding}
 																	<rect
-																		fill="none"
-																		stroke="#111"
-																		stroke-width="1.2"
-																		vector-effect="non-scaling-stroke"
-																		pointer-events="none"
-																		width={7 * cameraScale.value}
-																		height={7 * cameraScale.value}
-																		x={bend.x - 3.5 * cameraScale.value}
-																		y={bend.y - 3.5 * cameraScale.value}
-																	/>
-																{/each}
-																{#each elbowHandlePoints(selectedPreviewEdge, selectedPreviewWaypoints) as handle, hi (hi)}
+																		class="selected"
+																		x={deep_bounding.minX - 3 * cameraScale.value}
+																		y={deep_bounding.minY - 3 * cameraScale.value}
+																		width={deep_bounding.maxX -
+																			deep_bounding.minX +
+																			6 * cameraScale.value}
+																		height={deep_bounding.maxY -
+																			deep_bounding.minY +
+																			6 * cameraScale.value}
+																	></rect>
+																{/if}
+																{#if el.value?.box}
+																	<rect
+																		class="selected"
+																		x={el.value?.box.position_x - 1 * cameraScale.value}
+																		y={el.value?.box.position_y - 1 * cameraScale.value}
+																		width={el.value?.box.width + 2 * cameraScale.value}
+																		height={el.value?.box.height + 2 * cameraScale.value}
+																	></rect>
+																{/if}
+																{#if el.value?.text}
+																	{@const bbox = view(L.prop(el.value?.id), textBounds)}
+
+																	{#if bbox.value}
+																		<rect
+																			class="selected"
+																			x={bbox.value.x}
+																			y={bbox.value.y}
+																			width={bbox.value.width}
+																			height={bbox.value.height}
+																		></rect>
+																	{/if}
+																{/if}
+																{#if el.value?.edge}
+																	{@const remotePreviewEdge = renderedEdgePreview(
+																		el.value,
+																		doc.value,
+																		layersInOrder.value,
+																		groupDrag.value,
+																		groupDragDelta.value
+																	)}
+																	{@const remotePreviewWaypoints =
+																		L.get(localProp('waypoints'), remotePreviewEdge) ??
+																		remotePreviewEdge?.waypoints ??
+																		[]}
+																	<g>
+																		<path
+																			class="selected"
+																			d={edgePath[remotePreviewEdge?.style?.smoothness ?? 'linear'](
+																				remotePreviewEdge,
+																				remotePreviewWaypoints
+																			)}
+																			stroke="black"
+																			fill="none"
+																			stroke-width={(remotePreviewEdge?.style?.stroke_width ?? 1) *
+																				1 +
+																				4 * cameraScale.value}
+																			stroke-linejoin={remotePreviewEdge?.style?.stroke_join ??
+																				'miter'}
+																			stroke-linecap={remotePreviewEdge?.style?.stroke_cap ??
+																				'butt'}
+																		/>
+
+																		{#if remotePreviewEdge?.style?.source_tip_symbol_shape_id}
+																			{@const source_angle = edgeAngle['source'](
+																				remotePreviewEdge,
+																				remotePreviewWaypoints
+																			)}
+																			<g
+																				class="selected"
+																				transform="rotate({source_angle} {remotePreviewEdge.source_x} {remotePreviewEdge.source_y})"
+																			>
+																				{#await data.symbols then symbols}
+																					{@const symbol = symbols.get(
+																						remotePreviewEdge?.style?.source_tip_symbol_shape_id
+																					)}
+																					{@const size =
+																						(remotePreviewEdge?.style?.stroke_width ?? 1) *
+																						(remotePreviewEdge?.style?.source_tip_size ?? 1)}
+
+																					{#if symbol}
+																						{#each symbol.paths as path, i (i)}
+																							<path
+																								fill={path.fill_color ?? 'transparent'}
+																								stroke={path.stroke_color ?? 'transparent'}
+																								d={buildPath(
+																									{
+																										x: remotePreviewEdge.source_x - size,
+																										y: remotePreviewEdge.source_y - size,
+																										width: 2 * size,
+																										height: 2 * size
+																									},
+																									path
+																								)}
+																								fill-rule="evenodd"
+																							/>
+																						{/each}
+																					{/if}
+																				{/await}
+																			</g>
+																		{/if}
+
+																		{#if remotePreviewEdge?.style?.target_tip_symbol_shape_id}
+																			{@const target_angle = edgeAngle['target'](
+																				remotePreviewEdge,
+																				remotePreviewWaypoints
+																			)}
+																			<g
+																				class="selected"
+																				transform="rotate({target_angle} {remotePreviewEdge.target_x} {remotePreviewEdge.target_y})"
+																			>
+																				{#await data.symbols then symbols}
+																					{@const symbol = symbols.get(
+																						remotePreviewEdge?.style?.target_tip_symbol_shape_id
+																					)}
+																					{@const size =
+																						(remotePreviewEdge?.style?.stroke_width ?? 1) *
+																						(remotePreviewEdge?.style?.target_tip_size ?? 1)}
+
+																					{#if symbol}
+																						{#each symbol.paths as path, i (i)}
+																							<path
+																								fill={path.fill_color ?? 'transparent'}
+																								stroke={path.stroke_color ?? 'transparent'}
+																								d={buildPath(
+																									{
+																										x: remotePreviewEdge.target_x - size,
+																										y: remotePreviewEdge.target_y - size,
+																										width: 2 * size,
+																										height: 2 * size
+																									},
+																									path
+																								)}
+																								fill-rule="evenodd"
+																							/>
+																						{/each}
+																					{/if}
+																				{/await}
+																			</g>
+																		{/if}</g
+																	>
+																{/if}
+															{/each}
+														</g>
+													{/if}
+													{#if showCursors.value}
+														{#each cursors.filter(({ self, value }) => !self && value) as { value: cursor }}
+															<path
+																transform="translate({cursor.x} {cursor.y}) rotate({-camera.value
+																	.focus.w} 0 0) {scaleTransform.value}
+												"
+																d="M0 0 v 24 l 6 -6 h 10"
+																fill={color}
+															/>
+														{/each}
+													{/if}
+												{/each}
+											</g>
+
+											{#if areaSelection.value?.active}
+												{@const selectionBox = normalizedBox(areaSelection.value)}
+												<g transform={rotationTransform.value}>
+													<rect
+														class="area-selection"
+														x={selectionBox.x}
+														y={selectionBox.y}
+														width={selectionBox.width}
+														height={selectionBox.height}
+													/>
+												</g>
+											{/if}
+
+											{#if primitiveCreation.value && primitiveSupportsSizedCreation(activeCreateTool.value) && isPrimitiveCreationDrag(primitiveCreation.value)}
+												{@const creationBox = normalizedBox(primitiveCreation.value)}
+												{@const primitiveContent =
+													activeCreateTool.value?.item?.data?.content ?? {}}
+												{@const previewStyle = primitivePreviewStyle(primitiveContent)}
+												{@const roundRadius = primitivePreviewRoundRadius(primitiveContent)}
+												<g transform={rotationTransform.value}>
+													{#if primitivePreviewUsesSymbol(primitiveContent)}
+														<g
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+														>
+															<Symbol
+																symbols={data.symbols}
+																symbolId={primitiveContent.shape_id}
+																box={creationBox}
+																shapeAttributes={primitiveContent.shape_attributes}
+															/>
+														</g>
+													{:else if primitivePreviewIsLine(primitiveContent)}
+														<path
+															class="primitive-creation-preview-shape primitive-creation-preview-line"
+															style:stroke={previewStyle.border}
+															fill="none"
+															d={primitivePreviewLinePath(creationBox, primitiveCreation.value)}
+														/>
+													{:else if primitivePreviewIsEllipse(primitiveContent)}
+														<ellipse
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															cx={creationBox.x + creationBox.width / 2}
+															cy={creationBox.y + creationBox.height / 2}
+															rx={creationBox.width / 2}
+															ry={creationBox.height / 2}
+														/>
+													{:else if primitivePreviewIsTriangle(primitiveContent)}
+														<path
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															d={primitivePreviewTrianglePath(creationBox)}
+														/>
+													{:else if primitivePreviewIsDiamond(primitiveContent)}
+														<path
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															d={primitivePreviewDiamondPath(creationBox)}
+														/>
+													{:else if primitivePreviewIsPie(primitiveContent)}
+														<path
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															d={primitivePreviewPiePath(creationBox)}
+														/>
+													{:else}
+														<rect
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															x={creationBox.x}
+															y={creationBox.y}
+															width={creationBox.width}
+															height={creationBox.height}
+															rx={roundRadius}
+															ry={roundRadius}
+														/>
+													{/if}
+												</g>
+											{/if}
+
+											{#if linkedPrimitiveCreation.value}
+												{@const creation = linkedPrimitiveCreation.value}
+												{@const primitiveContent = creation.tool?.item?.data?.content ?? {}}
+												{@const previewStyle = primitivePreviewStyle(primitiveContent)}
+												{@const previewSize = creation.size ?? {
+													width: primitiveContent.width ?? 20,
+													height: primitiveContent.height ?? 20
+												}}
+												{@const creationBox = {
+													x: creation.current.x - previewSize.width / 2,
+													y: creation.current.y - previewSize.height / 2,
+													width: previewSize.width,
+													height: previewSize.height
+												}}
+												{@const roundRadius = primitivePreviewRoundRadius(primitiveContent)}
+												<g transform={rotationTransform.value}>
+													{#if primitivePreviewUsesSymbol(primitiveContent)}
+														<g
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+														>
+															<Symbol
+																symbols={data.symbols}
+																symbolId={primitiveContent.shape_id}
+																box={creationBox}
+																shapeAttributes={primitiveContent.shape_attributes}
+															/>
+														</g>
+													{:else if primitivePreviewIsLine(primitiveContent)}
+														<path
+															class="primitive-creation-preview-shape primitive-creation-preview-line"
+															style:stroke={previewStyle.border}
+															fill="none"
+															d={primitivePreviewLinePath(creationBox, creation)}
+														/>
+													{:else if primitivePreviewIsEllipse(primitiveContent)}
+														<ellipse
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															cx={creationBox.x + creationBox.width / 2}
+															cy={creationBox.y + creationBox.height / 2}
+															rx={creationBox.width / 2}
+															ry={creationBox.height / 2}
+														/>
+													{:else if primitivePreviewIsTriangle(primitiveContent)}
+														<path
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															d={primitivePreviewTrianglePath(creationBox)}
+														/>
+													{:else if primitivePreviewIsDiamond(primitiveContent)}
+														<path
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															d={primitivePreviewDiamondPath(creationBox)}
+														/>
+													{:else if primitivePreviewIsPie(primitiveContent)}
+														<path
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															d={primitivePreviewPiePath(creationBox)}
+														/>
+													{:else}
+														<rect
+															class="primitive-creation-preview-shape"
+															style:fill={previewStyle.background}
+															style:stroke={previewStyle.border}
+															x={creationBox.x}
+															y={creationBox.y}
+															width={creationBox.width}
+															height={creationBox.height}
+															rx={roundRadius}
+															ry={roundRadius}
+														/>
+													{/if}
+												</g>
+											{/if}
+
+											{#if activeCreateTool.value && !activeTargetTool() && !primitiveNeedsLinkedTarget(activeCreateTool.value) && !primitiveCreatesText(activeCreateTool.value)}
+												<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+												<path
+													class="primitive-creation-hitbox"
+													d={frameBoxPath.value}
+													fill="#ffffff00"
+													stroke="none"
+													pointer-events="all"
+													onpointerdown={(evt) => beginPrimitiveCreation(evt, liveLenses)}
+													onpointermove={(evt) => updatePrimitiveCreation(evt, liveLenses)}
+													onpointerup={(evt) =>
+														finishPrimitiveCreation(
+															evt,
+															liveLenses,
+															dispatch,
+															cast,
+															L.get('id', singleSelectedLayer.value)
+														)}
+													onpointercancel={cancelPrimitiveCreation}
+													onlostpointercapture={cancelPrimitiveCreation}
+													oncontextmenu={resetToolFromCanvas}
+													onclick={(evt) => {
+														evt.preventDefault();
+														evt.stopPropagation();
+													}}
+												/>
+											{/if}
+
+											{#if inlineTextEdit.value}
+												{@const editingLayer = view(
+													['layers', 'items', L.find((el) => el.id === inlineTextEdit.value.id)],
+													doc
+												)}
+												{@const editingBounds = textEditorBounds(
+													editingLayer.value,
+													inlineTextEdit.value.bounds ?? textBounds.value[inlineTextEdit.value.id],
+													cameraScale.value,
+													inlineTextEdit.value.body
+												)}
+												{#if editingLayer.value?.text && editingBounds}
+													<g transform={rotationTransform.value}>
+														<rect
+															class="inline-text-editor-rect"
+															rx="5"
+															ry="5"
+															transform={layerMoveTransform(
+																inlineTextEdit.value.id,
+																layersInOrder.value
+															)}
+															x={editingBounds.x}
+															y={editingBounds.y}
+															width={editingBounds.width}
+															height={editingBounds.height}
+														></rect>
+														<foreignObject
+															class="inline-text-editor-object"
+															transform={layerMoveTransform(
+																inlineTextEdit.value.id,
+																layersInOrder.value
+															)}
+															x={editingBounds.x}
+															y={editingBounds.y}
+															width={editingBounds.width}
+															height={editingBounds.height}
+														>
+															<textarea
+																class="inline-text-editor-control"
+																rows={textEditorRows(inlineTextEdit.value.body)}
+																wrap="off"
+																spellcheck="false"
+																style:font-size={textEditorFontSize(editingLayer.value)}
+																style:font-family={editingLayer.value.text?.style?.font_family ??
+																	'sans-serif'}
+																style:font-weight={editingLayer.value.text?.style?.bold
+																	? 'bold'
+																	: 'normal'}
+																style:font-style={editingLayer.value.text?.style?.italic
+																	? 'italic'
+																	: 'normal'}
+																style:color={editingLayer.value.text?.style?.text_color ?? 'black'}
+																value={inlineTextEdit.value.body}
+																use:focusInlineTextEditor
+																use:commitInlineTextEditOnOutsidePointer={cast}
+																onpointerdown={(evt) => evt.stopPropagation()}
+																onblur={(evt) => commitInlineTextEdit(cast)}
+																onclick={(evt) => evt.stopPropagation()}
+																oninput={(evt) => {
+																	updateInlineTextEdit(evt.currentTarget.value);
+																	updateText(editingLayer.value.id, evt.currentTarget.value);
+																}}
+																onkeydown={(evt) => {
+																	evt.stopPropagation();
+																	if (evt.key === 'Escape') {
+																		evt.preventDefault();
+																		commitInlineTextEdit(cast);
+																	}
+																	if ((evt.ctrlKey || evt.metaKey) && evt.key === 'Enter') {
+																		evt.preventDefault();
+																		commitInlineTextEdit(cast);
+																	}
+																}}
+															></textarea>
+														</foreignObject>
+													</g>
+												{/if}
+											{/if}
+
+											{#if targetLocationEdit.value}
+												{@const targetEditLayerInfo = layersInOrder.value.find(
+													(entry) => entry.id === targetLocationEdit.value.id
+												)}
+												{@const targetEditLayer = view(
+													[
+														'layers',
+														'items',
+														L.find((el) => el.id === targetLocationEdit.value.id)
+													],
+													doc
+												)}
+												{@const targetEditBox = targetEditLayerInfo
+													? layerBox(targetEditLayerInfo, targetEditLayer.value, textBounds.value)
+													: null}
+												{#if targetEditBox}
+													{@const fieldHeight = 24 * cameraScale.value}
+													{@const fieldWidth = Math.max(
+														targetEditBox.maxX - targetEditBox.minX,
+														160 * cameraScale.value
+													)}
+													<g transform={rotationTransform.value}>
+														<foreignObject
+															class="inline-target-editor-object"
+															transform={layerMoveTransform(
+																targetLocationEdit.value.id,
+																layersInOrder.value
+															)}
+															x={targetEditBox.minX}
+															y={targetEditBox.minY}
+															width={fieldWidth}
+															height={fieldHeight}
+														>
+															<input
+																class="inline-target-editor-control"
+																type="text"
+																placeholder="Target location"
+																style:font-size="{13 * cameraScale.value}px"
+																value={targetLocationEdit.value.value}
+																use:focusInlineTextEditor
+																use:commitTargetLocationEditOnOutsidePointer={cast}
+																onpointerdown={(evt) => evt.stopPropagation()}
+																onclick={(evt) => evt.stopPropagation()}
+																onblur={() => commitTargetLocationEdit(cast)}
+																oninput={(evt) => updateTargetLocationEdit(evt.currentTarget.value)}
+																onkeydown={(evt) => {
+																	evt.stopPropagation();
+																	if (evt.key === 'Enter') {
+																		evt.preventDefault();
+																		commitTargetLocationEdit(cast);
+																	}
+																	if (evt.key === 'Escape') {
+																		evt.preventDefault();
+																		cancelTargetLocationEdit();
+																	}
+																}}
+															/>
+														</foreignObject>
+													</g>
+												{/if}
+											{/if}
+
+											{#if activeTool.value === 'select'}
+												<g transform={rotationTransform.value} opacity="0.7">
+													{#each selectedLayers.value as id (id)}
+														{@const el = view(
+															['layers', 'items', L.find((el) => el.id == id)],
+															doc
+														)}
+
+														{@const deep_bounding = view(
+															[L.find((el) => el.id == id && el.has_children), 'deep_bounding'],
+															layersInOrder
+														).value}
+
+														{#if deep_bounding}
+															<rect
+																stroke="#0af"
+																cursor="default"
+																stroke-dasharray="{cameraScale.value * 2} {cameraScale.value * 2}"
+																stroke-width={cameraScale.value * 2}
+																x={deep_bounding.minX -
+																	3 * cameraScale.value +
+																	groupDragDelta.value.x}
+																y={deep_bounding.minY -
+																	3 * cameraScale.value +
+																	groupDragDelta.value.y}
+																width={deep_bounding.maxX -
+																	deep_bounding.minX +
+																	6 * cameraScale.value}
+																height={deep_bounding.maxY -
+																	deep_bounding.minY +
+																	6 * cameraScale.value}
+																fill="#0af5"
+																pointer-events="none"
+															/>
+														{/if}
+													{/each}
+												</g>
+											{/if}
+											{#if activeTool.value === 'select'}
+												<g transform={rotationTransform.value}>
+													<!-- svelte-ignore a11y_no_static_element_interactions -->
+													{#each edgeHandleLayerIds(selectedLayers.value) as id (id)}
+														{@const el = view(
+															['layers', 'items', L.find((el) => el.id == id)],
+															doc
+														)}
+														{@const waypoints = view(['edge', localProp('waypoints')], el)}
+														{@const persistentWaypoints = view(
+															L.filter(waypointHandleVisible),
+															waypoints
+														)}
+														{#if el.value?.edge}
+															{@const selectedPreviewEdge = renderedEdgePreview(
+																el.value,
+																doc.value,
+																layersInOrder.value,
+																groupDrag.value,
+																groupDragDelta.value
+															)}
+															{@const selectedPreviewWaypoints =
+																L.get(localProp('waypoints'), selectedPreviewEdge) ??
+																selectedPreviewEdge?.waypoints ??
+																[]}
+															{@const isElbowEdge =
+																selectedPreviewEdge?.style?.smoothness === 'elbow'}
+															{@const selectedPreviewWaypointProposals = isElbowEdge
+																? []
+																: edgeWaypointProposals(selectedPreviewEdge)}
+															{#if activeTool.value === 'select'}
+																{#if isElbowEdge}
+																	{#each elbowHandlePoints(selectedPreviewEdge, selectedPreviewWaypoints) as handle, hi (hi)}
+																		<g
+																			role="button"
+																			tabindex="-1"
+																			onpointerdown={(evt) =>
+																				beginElbowHandleDrag(
+																					evt,
+																					liveLenses,
+																					el.value,
+																					handle,
+																					selectedPreviewEdge,
+																					selectedPreviewWaypoints,
+																					cast,
+																					dispatch,
+																					doc,
+																					layersInOrder.value,
+																					waypoints
+																				)}
+																		>
+																			<circle
+																				fill="none"
+																				stroke="none"
+																				pointer-events="all"
+																				cursor="move"
+																				r={9 * cameraScale.value}
+																				cx={handle.x}
+																				cy={handle.y}
+																			/>
+																			<circle
+																				fill="#ffeb3b"
+																				stroke="#111"
+																				stroke-width="1.5"
+																				vector-effect="non-scaling-stroke"
+																				pointer-events="none"
+																				r={4 * cameraScale.value}
+																				cx={handle.x}
+																				cy={handle.y}
+																			/>
+																		</g>
+																	{/each}
+																{/if}
+																<path
+																	d={edgePath[selectedPreviewEdge?.style?.smoothness ?? 'linear'](
+																		selectedPreviewEdge,
+																		selectedPreviewWaypoints
+																	)}
+																	transform={edgePreviewTransform(
+																		id,
+																		layersInOrder.value,
+																		el.value.edge,
+																		selectedPreviewEdge
+																	)}
+																	tabindex="-1"
+																	onkeydown={(evt) => {
+																		if (evt.key === 'Escape' || evt.key === 'Esc') {
+																			cancelLayerMove(evt);
+																		}
+																	}}
+																	stroke={'transparent'}
+																	fill={selectedPreviewEdge?.cyclic
+																		? (el.value?.style?.background_color ?? 'none')
+																		: 'none'}
+																	fill-opacity="0"
+																	stroke-width={(selectedPreviewEdge?.style?.stroke_width ?? 1) *
+																		1 +
+																		10 * cameraScale.value}
+																	stroke-linejoin={selectedPreviewEdge?.style?.stroke_join ??
+																		'miter'}
+																	stroke-linecap={selectedPreviewEdge?.style?.stroke_cap ?? 'butt'}
+																	style:pointer-events="painted"
+																	cursor="default"
+																	onpointerdown={(evt) =>
+																		beginLayerMove(
+																			evt,
+																			liveLenses,
+																			el.value.id,
+																			layersInOrder.value,
+																			doc.value
+																		)}
+																	onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
+																	onpointermove={(evt) =>
+																		updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
+																	onpointerup={(evt) =>
+																		finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
+																	onpointercancel={cancelLayerMove}
+																	onlostpointercapture={cancelLayerMove}
+																/>
+																{#if isElbowEdge}
+																	{#each elbowHandlePoints(selectedPreviewEdge, selectedPreviewWaypoints) as handle, hi (hi)}
+																		<g
+																			role="button"
+																			tabindex="-1"
+																			onpointerdown={(evt) =>
+																				beginElbowHandleDrag(
+																					evt,
+																					liveLenses,
+																					el.value,
+																					handle,
+																					selectedPreviewEdge,
+																					selectedPreviewWaypoints,
+																					cast,
+																					dispatch,
+																					doc,
+																					layersInOrder.value,
+																					waypoints
+																				)}
+																		>
+																			<circle
+																				fill="none"
+																				stroke="none"
+																				pointer-events="all"
+																				cursor="move"
+																				r={9 * cameraScale.value}
+																				cx={handle.x}
+																				cy={handle.y}
+																			/>
+																		</g>
+																	{/each}
+																{/if}
+															{/if}
+															{#if activeTool.value === 'select' && isPolygonLayer(el.value)}
+																{@const polygonHandlePos = polygonScaleHandlePosition(
+																	selectedPreviewEdge,
+																	8 * cameraScale.value
+																)}
+																{#if polygonHandlePos}
+																	{@const polygonHandleDisplayPos =
+																		polygonScaleHandleDisplayPosition(id, polygonHandlePos)}
 																	<g
+																		transform={edgePreviewTransform(
+																			id,
+																			layersInOrder.value,
+																			el.value.edge,
+																			selectedPreviewEdge
+																		)}
 																		role="button"
 																		tabindex="-1"
 																		onpointerdown={(evt) =>
-																			beginElbowHandleDrag(
+																			beginPolygonScaleHandle(
 																				evt,
 																				liveLenses,
 																				el.value,
-																				handle,
 																				selectedPreviewEdge,
-																				selectedPreviewWaypoints,
-																				cast,
-																				dispatch,
-																				doc,
+																				polygonHandlePos,
 																				layersInOrder.value,
-																				waypoints
+																				doc.value
 																			)}
+																		onpointermove={(evt) => {
+																			if (
+																				updateSelectionMoveFromHandle(
+																					evt,
+																					liveLenses,
+																					doc,
+																					layersInOrder.value
+																				)
+																			) {
+																				return;
+																			}
+																			updatePolygonScaleHandle(evt, liveLenses);
+																		}}
+																		onpointerup={(evt) => {
+																			if (
+																				finishSelectionMoveFromHandle(
+																					evt,
+																					dispatch,
+																					doc,
+																					layersInOrder.value
+																				)
+																			) {
+																				return;
+																			}
+																			finishPolygonScaleHandle(evt, dispatch, liveLenses);
+																		}}
+																		onpointercancel={(evt) => cancelPolygonScaleHandle(evt)}
+																		onlostpointercapture={(evt) => cancelPolygonScaleHandle(evt)}
+																		onclick={(evt) => {
+																			evt.stopPropagation();
+																		}}
+																		onkeydown={(evt) => {
+																			if (cancelSelectionMoveFromHandle(evt)) {
+																				return;
+																			}
+
+																			if (evt.key === 'Escape' || evt.key === 'Esc') {
+																				evt.stopPropagation();
+																				cancelPolygonScaleHandle(evt);
+																			}
+																		}}
 																	>
 																		<circle
 																			fill="none"
 																			stroke="none"
 																			pointer-events="all"
-																			cursor="move"
-																			r={9 * cameraScale.value}
-																			cx={handle.x}
-																			cy={handle.y}
+																			cursor="default"
+																			r={4 * cameraScale.value}
+																			cx={polygonHandleDisplayPos.x}
+																			cy={polygonHandleDisplayPos.y}
 																		/>
 																		<circle
 																			fill="#ffeb3b"
@@ -13058,98 +14315,73 @@
 																			vector-effect="non-scaling-stroke"
 																			pointer-events="none"
 																			r={4 * cameraScale.value}
-																			cx={handle.x}
-																			cy={handle.y}
+																			cx={polygonHandleDisplayPos.x}
+																			cy={polygonHandleDisplayPos.y}
 																		/>
 																	</g>
-																{/each}
+																{/if}
 															{/if}
-															<path
-																d={edgePath[selectedPreviewEdge?.style?.smoothness ?? 'linear'](
-																	selectedPreviewEdge,
-																	selectedPreviewWaypoints
-																)}
-																transform={edgePreviewTransform(
-																	id,
-																	layersInOrder.value,
-																	el.value.edge,
-																	selectedPreviewEdge
-																)}
-																tabindex="-1"
-																onkeydown={(evt) => {
-																	if (evt.key === 'Escape' || evt.key === 'Esc') {
-																		cancelLayerMove(evt);
-																	}
-																}}
-																stroke={'transparent'}
-																fill={selectedPreviewEdge?.cyclic
-																	? (el.value?.style?.background_color ?? 'none')
-																	: 'none'}
-																fill-opacity="0"
-																stroke-width={(selectedPreviewEdge?.style?.stroke_width ?? 1) * 1 +
-																	10 * cameraScale.value}
-																stroke-linejoin={selectedPreviewEdge?.style?.stroke_join ?? 'miter'}
-																stroke-linecap={selectedPreviewEdge?.style?.stroke_cap ?? 'butt'}
-																style:pointer-events="painted"
-																cursor="default"
-																onpointerdown={(evt) =>
-																	beginLayerMove(
-																		evt,
-																		liveLenses,
-																		el.value.id,
-																		layersInOrder.value,
-																		doc.value
-																	)}
-																onclick={(evt) => clickSelectedLayer(evt, cast, el.value.id)}
-																onpointermove={(evt) =>
-																	updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
-																onpointerup={(evt) =>
-																	finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
-																onpointercancel={cancelLayerMove}
-																onlostpointercapture={cancelLayerMove}
-															/>
-								{#if isElbowEdge}
-									{#each elbowHandlePoints(selectedPreviewEdge, selectedPreviewWaypoints) as handle, hi (hi)}
-										<g
-											role="button"
-											tabindex="-1"
-											onpointerdown={(evt) =>
-												beginElbowHandleDrag(
-													evt,
-													liveLenses,
-													el.value,
-													handle,
-													selectedPreviewEdge,
-													selectedPreviewWaypoints,
-													cast,
-													dispatch,
-													doc,
-													layersInOrder.value,
-													waypoints
-												)}
-										>
-											<circle
-												fill="none"
-												stroke="none"
-												pointer-events="all"
-												cursor="move"
-												r={9 * cameraScale.value}
-												cx={handle.x}
-												cy={handle.y}
-											/>
-										</g>
-									{/each}
-								{/if}
-														{/if}
-														{#if activeTool.value === 'select' && isPolygonLayer(el.value)}
-															{@const polygonHandlePos = polygonScaleHandlePosition(
-																selectedPreviewEdge,
-																8 * cameraScale.value
-															)}
-															{#if polygonHandlePos}
-																{@const polygonHandleDisplayPos = polygonScaleHandleDisplayPosition(
-																	id,
-																	polygonHandlePos
+															{#each selectedPreviewWaypointProposals as wp_proposal, wi (wp_proposal.id_before)}
+																{@const draftWaypointId = localWaypointIdForProposal(wp_proposal)}
+																{@const pos = view(
+																	[
+																		L.lens(
+																			(list) => {
+																				const sourceList = Array.isArray(list) ? list : [];
+																				const i =
+																					R.findIndex(
+																						R.propEq(wp_proposal.id_before, 'id'),
+																						sourceList
+																					) + 1;
+																				if (
+																					sourceList[i] &&
+																					(!sourceList[i].id ||
+																						sourceList[i].id === draftWaypointId)
+																				) {
+																					return sourceList[i];
+																				} else {
+																					return undefined;
+																				}
+																			},
+																			(n, list) => {
+																				const sourceList = Array.isArray(list) ? list : [];
+																				const i =
+																					R.findIndex(
+																						R.propEq(wp_proposal.id_before, 'id'),
+																						sourceList
+																					) + 1;
+																				const draftAtIndex =
+																					sourceList[i] &&
+																					(!sourceList[i].id ||
+																						sourceList[i].id === draftWaypointId);
+																				if (draftAtIndex) {
+																					if (n === undefined || R.equals(wp_proposal, n)) {
+																						return [
+																							...sourceList.slice(0, i),
+																							...sourceList.slice(i + 1)
+																						];
+																					} else {
+																						return [
+																							...sourceList.slice(0, i),
+																							{ ...n, id: draftWaypointId },
+																							...sourceList.slice(i + 1)
+																						];
+																					}
+																				} else {
+																					if (n === undefined) {
+																						return sourceList;
+																					} else {
+																						return [
+																							...sourceList.slice(0, i),
+																							{ ...n, id: draftWaypointId },
+																							...sourceList.slice(i)
+																						];
+																					}
+																				}
+																			}
+																		)
+																	],
+																	waypoints
 																)}
 																<g
 																	transform={edgePreviewTransform(
@@ -13158,18 +14390,921 @@
 																		el.value.edge,
 																		selectedPreviewEdge
 																	)}
+																	onclick={(evt) => {
+																		evt.stopPropagation();
+																		backoffValue.value = undefined;
+																	}}
+																	onkeydown={(evt) => {
+																		if (cancelSelectionMoveFromHandle(evt)) {
+																			return;
+																		}
+
+																		if (evt.key === 'Escape' || evt.key === 'Esc') {
+																			if (!backoffValue.value) {
+																				return;
+																			}
+																			evt.stopPropagation();
+																			waypoints.value = localProp.reset;
+																			evt.currentTarget.releasePointerCapture(
+																				evt.currentTarget.currentPointerId
+																			);
+																		}
+																	}}
 																	role="button"
 																	tabindex="-1"
-																	onpointerdown={(evt) =>
-																		beginPolygonScaleHandle(
+																	onpointerdown={(evt) => {
+																		if (evt.isPrimary && E.isLeftButton(evt)) {
+																			evt.preventDefault();
+																			evt.currentTarget.focus({
+																				preventScroll: true
+																			});
+																			waypoints.value = localProp.reset;
+																			evt.currentTarget.setPointerCapture(evt.pointerId);
+																			evt.currentTarget.currentPointerId = evt.pointerId;
+																			backoffValue.value = wp_proposal;
+																			pointerOffset.value = Geo.diff2d(
+																				wp_proposal,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			);
+
+																			pos.value = {
+																				...Geo.translate(
+																					pointerOffset.value,
+																					liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																				),
+																				id: draftWaypointId
+																			};
+																		}
+																	}}
+																	onpointermove={(evt) => {
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			pos.value = {
+																				...Geo.translate(
+																					pointerOffset.value,
+																					liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																				),
+																				id: draftWaypointId
+																			};
+																		}
+																	}}
+																	onpointerup={(evt) => {
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			const finalPosition = waypointPositionPayload(pos.value);
+																			const committedWaypoints = pendingWaypointPreview(
+																				selectedPreviewWaypoints,
+																				{
+																					layerId: el.value.id,
+																					afterWaypointId: waypointServerId(wp_proposal.id_before),
+																					current: finalPosition,
+																					moved: true
+																				},
+																				el.value.id
+																			);
+																			const action = cast('create_waypoint', {
+																				layer_id: el.value.id,
+																				after_waypoint_id: waypointServerId(wp_proposal.id_before),
+																				position: finalPosition
+																			});
+																			holdCommittedEdgeWaypointPreview(
+																				el.value.id,
+																				selectedPreviewEdge,
+																				committedWaypoints,
+																				action,
+																				doc
+																			);
+																			evt.currentTarget.releasePointerCapture(evt.pointerId);
+																			evt.currentTarget.blur();
+																			backoffValue.value = undefined;
+																		}
+																	}}
+																>
+																	<circle
+																		fill="none"
+																		cursor="default"
+																		stroke="none"
+																		r={12 * cameraScale.value}
+																		cx={wp_proposal.x}
+																		cy={wp_proposal.y}
+																		pointer-events="all"
+																	/>
+																	<circle
+																		fill="white"
+																		cursor="default"
+																		stroke="#7af"
+																		stroke-width="2"
+																		pointer-events="none"
+																		vector-effect="non-scaling-stroke"
+																		r={4 * cameraScale.value}
+																		cx={wp_proposal.x}
+																		cy={wp_proposal.y}
+																	/>
+																	<path
+																		d="M {wp_proposal.x -
+																			3 * cameraScale.value} {wp_proposal.y} H {wp_proposal.x +
+																			3 * cameraScale.value} M {wp_proposal.x} {wp_proposal.y -
+																			3 * cameraScale.value} V {wp_proposal.y +
+																			3 * cameraScale.value}"
+																		stroke="#7af"
+																		stroke-width="1.5"
+																		vector-effect="non-scaling-stroke"
+																		pointer-events="none"
+																	/></g
+																>
+															{/each}
+															{#each isElbowEdge ? [] : persistentWaypoints.value as wp, wi (wp.id)}
+																{@const previewWp = previewWaypointPosition(
+																	selectedPreviewWaypoints,
+																	wp
+																)}
+																{@const pos = view(
+																	[
+																		L.find(R.whereEq({ id: wp.id }), { hint: wi }),
+																		L.removable('x', 'y'),
+																		L.props('x', 'y')
+																	],
+																	waypoints
+																)}
+																<g
+																	transform={edgePreviewTransform(
+																		id,
+																		layersInOrder.value,
+																		el.value.edge,
+																		selectedPreviewEdge
+																	)}
+																	onclick={(evt) => {
+																		backoffValue.value = undefined;
+																		evt.stopPropagation();
+																	}}
+																	ondblclick={(evt) => {
+																		evt.stopPropagation();
+
+																		if (document.activeElement === evt.currentTarget) {
+																			pos.value = undefined;
+																			cast('delete_waypoint', {
+																				layer_id: el.value.id,
+																				waypoint_id: wp.id
+																			});
+																		}
+																	}}
+																	onpointerdown={(evt) => {
+																		if (evt.isPrimary && E.isLeftButton(evt)) {
+																			evt.preventDefault();
+																			evt.currentTarget.focus({
+																				preventScroll: true
+																			});
+																			evt.currentTarget.setPointerCapture(evt.pointerId);
+																			evt.currentTarget.currentPointerId = evt.pointerId;
+																			waypoints.value = localProp.reset;
+																			pos.value = previewWp;
+																			backoffValue.value = previewWp;
+																			pointerOffset.value = Geo.diff2d(
+																				previewWp,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			);
+																		}
+																	}}
+																	onpointermove={(evt) => {
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			pos.value = Geo.translate(
+																				pointerOffset.value,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			);
+																		}
+																	}}
+																	onpointerup={(evt) => {
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			const newPos = Geo.translate(
+																				pointerOffset.value,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			);
+																			if (
+																				backoffValue.value.x != newPos.x ||
+																				backoffValue.value.y != newPos.y
+																			) {
+																				evt.preventDefault();
+																				const committedWaypoints = selectedPreviewWaypoints.map(
+																					(waypoint) =>
+																						waypoint?.id === wp.id
+																							? { ...waypoint, x: newPos.x, y: newPos.y }
+																							: waypoint
+																				);
+																				const action = cast('update_waypoint_position', {
+																					layer_id: el.value.id,
+																					waypoint_id: wp.id,
+																					value: newPos
+																				});
+																				holdCommittedEdgeWaypointPreview(
+																					el.value.id,
+																					selectedPreviewEdge,
+																					committedWaypoints,
+																					action,
+																					doc
+																				);
+																				evt.currentTarget.blur();
+																			}
+																			evt.currentTarget.releasePointerCapture(evt.pointerId);
+																			backoffValue.value = undefined;
+																		}
+																	}}
+																	onkeydown={(evt) => {
+																		if (cancelSelectionMoveFromHandle(evt)) {
+																			return;
+																		}
+
+																		if (evt.key === 'Escape' || evt.key === 'Esc') {
+																			if (!backoffValue.value) {
+																				return;
+																			}
+																			evt.stopPropagation();
+																			evt.currentTarget.releasePointerCapture(
+																				evt.currentTarget.currentPointerId
+																			);
+																			waypoints.value = localProp.reset;
+																		}
+																	}}
+																	role="button"
+																	tabindex="-1"
+																>
+																	<circle
+																		fill="none"
+																		cursor="default"
+																		stroke="none"
+																		r={12 * cameraScale.value}
+																		cx={previewWp.x}
+																		cy={previewWp.y}
+																		pointer-events="all"
+																	/>
+																	<rect
+																		fill="white"
+																		cursor="default"
+																		stroke="#7af"
+																		stroke-width="2"
+																		vector-effect="non-scaling-stroke"
+																		x={previewWp.x - 5 * cameraScale.value}
+																		y={previewWp.y - 5 * cameraScale.value}
+																		width={10 * cameraScale.value}
+																		height={10 * cameraScale.value}
+																		pointer-events="none"
+																	/></g
+																>
+															{/each}
+
+															{@const source_pos = view(
+																['edge', L.pick({ x: 'source_x', y: 'source_y' })],
+																el
+															)}
+															{@const target_pos = view(
+																['edge', L.pick({ x: 'target_x', y: 'target_y' })],
+																el
+															)}
+															<g
+																transform={edgePreviewTransform(
+																	id,
+																	layersInOrder.value,
+																	el.value.edge,
+																	selectedPreviewEdge
+																)}
+																onclick={(evt) => {
+																	evt.stopPropagation();
+																}}
+																ondblclick={(evt) => {
+																	evt.preventDefault();
+																	evt.stopPropagation();
+																	removeEdgeEndpoint(
+																		el.value,
+																		'source',
+																		waypoints.value,
+																		dispatch,
+																		cast
+																	);
+																}}
+																onpointerdown={(evt) => {
+																	beginEdgeEndpointHandle(
+																		evt,
+																		liveLenses,
+																		source_pos,
+																		el.value,
+																		'source'
+																	);
+																}}
+																onpointermove={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		const handle = evt.currentTarget;
+																		updateEdgeEndpointHandle(
 																			evt,
 																			liveLenses,
+																			source_pos,
 																			el.value,
-																			selectedPreviewEdge,
-																			polygonHandlePos,
-																			layersInOrder.value,
-																			doc.value
-																		)}
+																			'source',
+																			undefined,
+																			undefined,
+																			undefined,
+																			undefined,
+																			waypoints
+																		);
+																		Promise.all([data.socket_schemas, currentSyntaxValue])
+																			.then(([socketSchemas, syntax]) => {
+																				if (!handle.hasPointerCapture(evt.pointerId)) {
+																					return;
+																				}
+																				updateEdgeEndpointHandle(
+																					evt,
+																					liveLenses,
+																					source_pos,
+																					el.value,
+																					'source',
+																					socketSchemas,
+																					syntax,
+																					doc.value,
+																					layersInOrder.value,
+																					waypoints
+																				);
+																			})
+																			.catch(() => {});
+																	}
+																}}
+																onpointerup={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId) &&
+																		prepareEdgeEndpointFinish(evt)
+																	) {
+																		Promise.all([data.socket_schemas, currentSyntaxValue])
+																			.then(([socketSchemas, syntax]) => {
+																				finishEdgeEndpointHandle(
+																					evt,
+																					liveLenses,
+																					source_pos,
+																					el.value,
+																					'source',
+																					socketSchemas,
+																					syntax,
+																					doc.value,
+																					layersInOrder.value,
+																					doc,
+																					dispatch,
+																					cast,
+																					waypoints
+																				);
+																			})
+																			.catch((error) => {
+																				cancelEdgeEndpointHandle(evt, source_pos, waypoints);
+																				queueError(error, 'Edge endpoint could not be changed');
+																			});
+																	}
+																}}
+																onkeydown={(evt) => {
+																	if (cancelSelectionMoveFromHandle(evt)) {
+																		return;
+																	}
+
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		cancelEdgeEndpointHandle(evt, source_pos, waypoints);
+																	}
+																}}
+																onpointercancel={(evt) =>
+																	cancelEdgeEndpointHandle(evt, source_pos, waypoints)}
+																onlostpointercapture={(evt) =>
+																	cancelEdgeEndpointHandle(evt, source_pos, waypoints)}
+																role="button"
+																tabindex="-1"
+															>
+																<circle
+																	fill="none"
+																	cursor="default"
+																	stroke="none"
+																	pointer-events="all"
+																	r={7 * cameraScale.value}
+																	cx={edgeEndpointHandlePoint(
+																		id,
+																		'source',
+																		source_pos.value,
+																		selectedPreviewEdge
+																	)?.x}
+																	cy={edgeEndpointHandlePoint(
+																		id,
+																		'source',
+																		source_pos.value,
+																		selectedPreviewEdge
+																	)?.y}
+																/><rect
+																	fill={isFreePointEdge(el.value) ? 'white' : '#35a66a'}
+																	cursor="default"
+																	pointer-events="none"
+																	stroke={isFreePointEdge(el.value) ? '#111' : '#1f7048'}
+																	stroke-width="1.5"
+																	vector-effect="non-scaling-stroke"
+																	x={edgeEndpointHandlePoint(
+																		id,
+																		'source',
+																		source_pos.value,
+																		selectedPreviewEdge
+																	)?.x -
+																		4 * cameraScale.value}
+																	y={edgeEndpointHandlePoint(
+																		id,
+																		'source',
+																		source_pos.value,
+																		selectedPreviewEdge
+																	)?.y -
+																		4 * cameraScale.value}
+																	width={8 * cameraScale.value}
+																	height={8 * cameraScale.value}
+																/></g
+															>
+															<g
+																transform={edgePreviewTransform(
+																	id,
+																	layersInOrder.value,
+																	el.value.edge,
+																	selectedPreviewEdge
+																)}
+																onclick={(evt) => {
+																	evt.stopPropagation();
+																}}
+																ondblclick={(evt) => {
+																	evt.preventDefault();
+																	evt.stopPropagation();
+																	removeEdgeEndpoint(
+																		el.value,
+																		'target',
+																		waypoints.value,
+																		dispatch,
+																		cast
+																	);
+																}}
+																onpointerdown={(evt) => {
+																	beginEdgeEndpointHandle(
+																		evt,
+																		liveLenses,
+																		target_pos,
+																		el.value,
+																		'target'
+																	);
+																}}
+																onpointermove={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId)
+																	) {
+																		const handle = evt.currentTarget;
+																		updateEdgeEndpointHandle(
+																			evt,
+																			liveLenses,
+																			target_pos,
+																			el.value,
+																			'target',
+																			undefined,
+																			undefined,
+																			undefined,
+																			undefined,
+																			waypoints
+																		);
+																		Promise.all([data.socket_schemas, currentSyntaxValue])
+																			.then(([socketSchemas, syntax]) => {
+																				if (!handle.hasPointerCapture(evt.pointerId)) {
+																					return;
+																				}
+																				updateEdgeEndpointHandle(
+																					evt,
+																					liveLenses,
+																					target_pos,
+																					el.value,
+																					'target',
+																					socketSchemas,
+																					syntax,
+																					doc.value,
+																					layersInOrder.value,
+																					waypoints
+																				);
+																			})
+																			.catch(() => {});
+																	}
+																}}
+																onpointerup={(evt) => {
+																	if (
+																		evt.isPrimary &&
+																		evt.currentTarget.hasPointerCapture(evt.pointerId) &&
+																		prepareEdgeEndpointFinish(evt)
+																	) {
+																		Promise.all([data.socket_schemas, currentSyntaxValue])
+																			.then(([socketSchemas, syntax]) => {
+																				finishEdgeEndpointHandle(
+																					evt,
+																					liveLenses,
+																					target_pos,
+																					el.value,
+																					'target',
+																					socketSchemas,
+																					syntax,
+																					doc.value,
+																					layersInOrder.value,
+																					doc,
+																					dispatch,
+																					cast,
+																					waypoints
+																				);
+																			})
+																			.catch((error) => {
+																				cancelEdgeEndpointHandle(evt, target_pos, waypoints);
+																				queueError(error, 'Edge endpoint could not be changed');
+																			});
+																	}
+																}}
+																onkeydown={(evt) => {
+																	if (cancelSelectionMoveFromHandle(evt)) {
+																		return;
+																	}
+
+																	if (evt.key === 'Escape' || evt.key === 'Esc') {
+																		cancelEdgeEndpointHandle(evt, target_pos, waypoints);
+																	}
+																}}
+																onpointercancel={(evt) =>
+																	cancelEdgeEndpointHandle(evt, target_pos, waypoints)}
+																onlostpointercapture={(evt) =>
+																	cancelEdgeEndpointHandle(evt, target_pos, waypoints)}
+																role="button"
+																tabindex="-1"
+															>
+																<circle
+																	fill="none"
+																	stroke="none"
+																	cursor="default"
+																	pointer-events="all"
+																	r={7 * cameraScale.value}
+																	cx={edgeEndpointHandlePoint(
+																		id,
+																		'target',
+																		target_pos.value,
+																		selectedPreviewEdge
+																	)?.x}
+																	cy={edgeEndpointHandlePoint(
+																		id,
+																		'target',
+																		target_pos.value,
+																		selectedPreviewEdge
+																	)?.y}
+																/><rect
+																	fill={isFreePointEdge(el.value) ? 'white' : '#35a66a'}
+																	stroke={isFreePointEdge(el.value) ? '#111' : '#1f7048'}
+																	cursor="default"
+																	stroke-width="1.5"
+																	pointer-events="none"
+																	vector-effect="non-scaling-stroke"
+																	x={edgeEndpointHandlePoint(
+																		id,
+																		'target',
+																		target_pos.value,
+																		selectedPreviewEdge
+																	)?.x -
+																		4 * cameraScale.value}
+																	y={edgeEndpointHandlePoint(
+																		id,
+																		'target',
+																		target_pos.value,
+																		selectedPreviewEdge
+																	)?.y -
+																		4 * cameraScale.value}
+																	width={8 * cameraScale.value}
+																	height={8 * cameraScale.value}
+																/></g
+															>
+														{/if}
+													{/each}
+												</g>
+											{/if}
+											{#if activeTool.value === 'select'}
+												<g transform={rotationTransform.value}>
+													<!-- svelte-ignore a11y_no_static_element_interactions -->
+													{#each selectedLayers.value as id (id)}
+														{@const el = view(
+															['layers', 'items', L.find((el) => el.id == id)],
+															doc
+														)}
+														{@const corners = {
+															topLeft: {
+																dx: -1,
+																dy: -1,
+																lens: L.pick({
+																	x: [
+																		L.lens(
+																			(o) => o && o.position_x,
+																			(n, o) => {
+																				const d = Math.min(n - o.position_x, o.width);
+
+																				return {
+																					...o,
+																					position_x: o.position_x + d,
+																					width: o.width - d
+																				};
+																			}
+																		)
+																	],
+																	y: [
+																		L.lens(
+																			(o) => o && o.position_y,
+																			(n, o) => {
+																				const d = Math.min(n - o.position_y, o.height);
+
+																				return {
+																					...o,
+																					position_y: o.position_y + d,
+																					height: o.height - d
+																				};
+																			}
+																		)
+																	]
+																})
+															},
+															topCenter: {
+																dx: 0,
+																dy: -1,
+																lens: L.pick({
+																	x: L.lens(
+																		(o) => o && o.position_x + o.width / 2,
+																		(_n, o) => o
+																	),
+																	y: [
+																		L.lens(
+																			(o) => o && o.position_y,
+																			(n, o) => {
+																				const d = Math.min(n - o.position_y, o.height);
+
+																				return {
+																					...o,
+																					position_y: o.position_y + d,
+																					height: o.height - d
+																				};
+																			}
+																		)
+																	]
+																})
+															},
+															topRight: {
+																dx: 1,
+																dy: -1,
+																lens: L.pick({
+																	x: [
+																		L.lens(
+																			(o) => o && o.position_x,
+																			(n, o) => {
+																				const d = Math.min(n - o.position_x, o.width);
+
+																				return {
+																					...o,
+																					position_x: o.position_x + d,
+																					width: o.width - d
+																				};
+																			}
+																		)
+																	],
+																	y: L.choose((b) => [
+																		'height',
+																		L.normalize(R.max(0)),
+																		L.add(b ? b.position_y : 0)
+																	])
+																})
+															},
+															middleLeft: {
+																dx: -1,
+																dy: 0,
+																lens: L.pick({
+																	x: [
+																		L.lens(
+																			(o) => o && o.position_x,
+																			(n, o) => {
+																				const d = Math.min(n - o.position_x, o.width);
+
+																				return {
+																					...o,
+																					position_x: o.position_x + d,
+																					width: o.width - d
+																				};
+																			}
+																		)
+																	],
+																	y: L.lens(
+																		(o) => o && o.position_y + o.height / 2,
+																		(_n, o) => o
+																	)
+																})
+															},
+															middleRight: {
+																dx: 1,
+																dy: 0,
+																lens: L.pick({
+																	x: L.choose((b) => [
+																		'width',
+																		L.normalize(R.max(0)),
+																		L.add(b ? b.position_x : 0)
+																	]),
+																	y: L.lens(
+																		(o) => o && o.position_y + o.height / 2,
+																		(_n, o) => o
+																	)
+																})
+															},
+															bottomLeft: {
+																dx: -1,
+																dy: 1,
+																lens: L.pick({
+																	y: [
+																		L.lens(
+																			(o) => o && o.position_y,
+																			(n, o) => {
+																				const d = Math.min(n - o.position_y, o.height);
+
+																				return {
+																					...o,
+																					position_y: o.position_y + d,
+																					height: o.height - d
+																				};
+																			}
+																		)
+																	],
+																	x: L.choose((b) => [
+																		'width',
+																		L.normalize(R.max(0)),
+																		L.add(b ? b.position_x : 0)
+																	])
+																})
+															},
+															bottomRight: {
+																dx: 1,
+																dy: 1,
+																lens: L.pick({
+																	x: L.choose((b) => [
+																		'width',
+																		L.normalize(R.max(0)),
+																		L.add(b ? b.position_x : 0)
+																	]),
+																	y: L.choose((b) => [
+																		'height',
+																		L.normalize(R.max(0)),
+																		L.add(b ? b.position_y : 0)
+																	])
+																})
+															},
+															bottomCenter: {
+																dx: 0,
+																dy: 1,
+																lens: L.pick({
+																	x: L.lens(
+																		(o) => o && o.position_x + o.width / 2,
+																		(_n, o) => o
+																	),
+																	y: L.choose((b) => [
+																		'height',
+																		L.normalize(R.max(0)),
+																		L.add(b ? b.position_y : 0)
+																	])
+																})
+															}
+														}}
+														{@const boxDim = viewCombined(
+															[
+																L.cond(
+																	[
+																		R.path(['el', 'box']),
+																		[
+																			'el',
+																			'box',
+																			L.pick({
+																				x: 'position_x',
+																				y: 'position_y',
+																				width: 'width',
+																				height: 'height'
+																			})
+																		]
+																	],
+																	[
+																		(x, i) => R.path(['el', 'text']),
+																		[
+																			L.choose(({ el }) =>
+																				el ? ['textBounds', L.prop(el.id)] : L.zero
+																			)
+																		]
+																	]
+																)
+															],
+															{ el, textBounds }
+														)}
+														<rect
+															{...boxDim.value}
+															transform={layerMoveTransform(id, layersInOrder.value)}
+															fill="none"
+															class="draggable"
+															oncontextmenu={(evt) => {
+																if (
+																	el.value?.text &&
+																	beginContextTextEdit(evt, el.value, boxDim.value, cast)
+																) {
+																	return;
+																}
+																if (
+																	beginDirectInscriptionEdit(
+																		evt,
+																		el.value,
+																		liveLenses,
+																		dispatch,
+																		cast,
+																		doc.value,
+																		boxDim.value
+																	)
+																) {
+																	return;
+																}
+																openTargetLocationOrDirectModification(evt, el.value, cast);
+															}}
+															onpointerdown={(evt) =>
+																beginLayerMove(
+																	evt,
+																	liveLenses,
+																	el.value.id,
+																	layersInOrder.value,
+																	doc.value
+																)}
+															onpointermove={(evt) =>
+																updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
+															onpointerup={(evt) =>
+																finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
+															onpointercancel={cancelLayerMove}
+															onlostpointercapture={cancelLayerMove}
+															onclick={(evt) => clickSelectedLayerHitbox(evt, cast, el.value.id)}
+															onkeydown={(evt) => {
+																if (evt.key === 'Escape' || evt.key === 'Esc') {
+																	cancelLayerMove(evt);
+																}
+															}}
+															role="button"
+															tabindex="-1"
+														/>
+														{#each selectionHandlesForLayer(el.value) as handle (handle.type)}
+															{#if boxDim.value}
+																{@const posVal = selectionHandlePosition(boxDim.value, handle)}
+																{@const canResizeHandle = selectionHandleCanResize(el.value)}
+																{@const handleInteractive =
+																	canResizeHandle || selectedLayers.value.length > 1}
+																<g
+																	onpointerdown={(evt) => {
+																		if (!handleInteractive) {
+																			return;
+																		}
+
+																		if (
+																			beginSelectionMoveFromHandle(
+																				evt,
+																				liveLenses,
+																				el.value.id,
+																				layersInOrder.value,
+																				doc.value
+																			)
+																		) {
+																			return;
+																		}
+
+																		if (!canResizeHandle) {
+																			return;
+																		}
+
+																		if (evt.isPrimary && E.isLeftButton(evt)) {
+																			evt.preventDefault();
+																			evt.currentTarget.focus({
+																				preventScroll: true
+																			});
+																			evt.currentTarget.setPointerCapture(evt.pointerId);
+																			evt.currentTarget.currentPointerId = evt.pointerId;
+																			backoffValue.value = normalizeResizeRect(boxDim.value);
+																			pointerOffset.value = Geo.diff2d(
+																				posVal,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			);
+																			resizeHandleDrag.value = {
+																				layerId: el.value.id,
+																				startRect: normalizeResizeRect(boxDim.value),
+																				currentRect: normalizeResizeRect(boxDim.value),
+																				dx: handle.dx,
+																				dy: handle.dy,
+																				pointerOffset: pointerOffset.value
+																			};
+																		}
+																	}}
 																	onpointermove={(evt) => {
 																		if (
 																			updateSelectionMoveFromHandle(
@@ -13181,7 +15316,26 @@
 																		) {
 																			return;
 																		}
-																		updatePolygonScaleHandle(evt, liveLenses);
+
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			const drag = resizeHandleDrag.value;
+																			if (!drag || drag.layerId !== el.value.id) {
+																				return;
+																			}
+																			const pointer = Geo.translate(
+																				drag.pointerOffset,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			);
+																			const rect = resizeRectFromHandle(drag, pointer, evt);
+																			resizeHandleDrag.value = {
+																				...drag,
+																				currentRect: rect
+																			};
+																			previewLayerResize(doc, el.value, rect);
+																		}
 																	}}
 																	onpointerup={(evt) => {
 																		if (
@@ -13194,12 +15348,22 @@
 																		) {
 																			return;
 																		}
-																		finishPolygonScaleHandle(evt, dispatch, liveLenses);
+
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			const rect =
+																				resizeHandleDrag.value?.currentRect ??
+																				normalizeResizeRect(boxDim.value);
+																			commitLayerResize(cast, el.value, rect);
+																			resizeHandleDrag.value = undefined;
+																		}
 																	}}
-																	onpointercancel={(evt) => cancelPolygonScaleHandle(evt)}
-																	onlostpointercapture={(evt) => cancelPolygonScaleHandle(evt)}
 																	onclick={(evt) => {
 																		evt.stopPropagation();
+																		backoffValue.value = undefined;
+																		resizeHandleDrag.value = undefined;
 																	}}
 																	onkeydown={(evt) => {
 																		if (cancelSelectionMoveFromHandle(evt)) {
@@ -13207,1236 +15371,52 @@
 																		}
 
 																		if (evt.key === 'Escape' || evt.key === 'Esc') {
+																			if (!backoffValue.value) {
+																				return;
+																			}
 																			evt.stopPropagation();
-																			cancelPolygonScaleHandle(evt);
+																			evt.currentTarget.releasePointerCapture(
+																				evt.currentTarget.currentPointerId
+																			);
+																			previewLayerResize(doc, el.value, backoffValue.value);
+																			resizeHandleDrag.value = undefined;
 																		}
 																	}}
+																	role="button"
+																	tabindex="-1"
+																	transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
 																>
-																	<circle
+																	<rect
 																		fill="none"
 																		stroke="none"
-																		pointer-events="all"
 																		cursor="default"
-																		r={4 * cameraScale.value}
-																		cx={polygonHandleDisplayPos.x}
-																		cy={polygonHandleDisplayPos.y}
-																	/>
-																	<circle
-																		fill="#ffeb3b"
-																		stroke="#111"
-																		stroke-width="1.5"
+																		pointer-events={handleInteractive ? 'all' : 'none'}
 																		vector-effect="non-scaling-stroke"
+																		x={posVal.x - cameraScale.value * 6}
+																		y={posVal.y - cameraScale.value * 6}
+																		width={cameraScale.value * 12}
+																		height={cameraScale.value * 12}
+																	/>
+																	<rect
+																		fill={canResizeHandle ? 'white' : 'none'}
+																		stroke="#111"
+																		cursor="default"
 																		pointer-events="none"
-																		r={4 * cameraScale.value}
-																		cx={polygonHandleDisplayPos.x}
-																		cy={polygonHandleDisplayPos.y}
+																		vector-effect="non-scaling-stroke"
+																		stroke-width="1.5"
+																		x={posVal.x - cameraScale.value * 4}
+																		y={posVal.y - cameraScale.value * 4}
+																		width={cameraScale.value * 8}
+																		height={cameraScale.value * 8}
 																	/>
 																</g>
 															{/if}
-														{/if}
-														{#each selectedPreviewWaypointProposals as wp_proposal, wi (wp_proposal.id_before)}
-															{@const draftWaypointId = localWaypointIdForProposal(wp_proposal)}
-															{@const pos = view(
-																[
-																	L.lens(
-																		(list) => {
-																			const sourceList = Array.isArray(list) ? list : [];
-																			const i =
-																				R.findIndex(
-																					R.propEq(wp_proposal.id_before, 'id'),
-																					sourceList
-																				) + 1;
-																			if (
-																				sourceList[i] &&
-																				(!sourceList[i].id || sourceList[i].id === draftWaypointId)
-																			) {
-																				return sourceList[i];
-																			} else {
-																				return undefined;
-																			}
-																		},
-																		(n, list) => {
-																			const sourceList = Array.isArray(list) ? list : [];
-																			const i =
-																				R.findIndex(
-																					R.propEq(wp_proposal.id_before, 'id'),
-																					sourceList
-																				) + 1;
-																			const draftAtIndex =
-																				sourceList[i] &&
-																				(!sourceList[i].id || sourceList[i].id === draftWaypointId);
-																			if (draftAtIndex) {
-																				if (n === undefined || R.equals(wp_proposal, n)) {
-																					return [
-																						...sourceList.slice(0, i),
-																						...sourceList.slice(i + 1)
-																					];
-																				} else {
-																					return [
-																						...sourceList.slice(0, i),
-																						{ ...n, id: draftWaypointId },
-																						...sourceList.slice(i + 1)
-																					];
-																				}
-																			} else {
-																				if (n === undefined) {
-																					return sourceList;
-																				} else {
-																					return [
-																						...sourceList.slice(0, i),
-																						{ ...n, id: draftWaypointId },
-																						...sourceList.slice(i)
-																					];
-																				}
-																			}
-																		}
-																	)
-																],
-																waypoints
-															)}
-															<g
-																transform={edgePreviewTransform(
-																	id,
-																	layersInOrder.value,
-																	el.value.edge,
-																	selectedPreviewEdge
-																)}
-																onclick={(evt) => {
-																	evt.stopPropagation();
-																	backoffValue.value = undefined;
-																}}
-																onkeydown={(evt) => {
-																	if (cancelSelectionMoveFromHandle(evt)) {
-																		return;
-																	}
-
-																	if (evt.key === 'Escape' || evt.key === 'Esc') {
-																		if (!backoffValue.value) {
-																			return;
-																		}
-																		evt.stopPropagation();
-																		waypoints.value = localProp.reset;
-																		evt.currentTarget.releasePointerCapture(
-																			evt.currentTarget.currentPointerId
-																		);
-																	}
-																}}
-																role="button"
-																tabindex="-1"
-																onpointerdown={(evt) => {
-																	if (evt.isPrimary && E.isLeftButton(evt)) {
-																		evt.preventDefault();
-																		evt.currentTarget.focus({
-																			preventScroll: true
-																		});
-																		waypoints.value = localProp.reset;
-																		evt.currentTarget.setPointerCapture(evt.pointerId);
-																		evt.currentTarget.currentPointerId = evt.pointerId;
-																		backoffValue.value = wp_proposal;
-																		pointerOffset.value = Geo.diff2d(
-																			wp_proposal,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-
-																		pos.value = {
-																			...Geo.translate(
-																				pointerOffset.value,
-																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																			),
-																			id: draftWaypointId
-																		};
-																	}
-																}}
-																onpointermove={(evt) => {
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		pos.value = {
-																			...Geo.translate(
-																				pointerOffset.value,
-																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																			),
-																			id: draftWaypointId
-																		};
-																	}
-																}}
-																onpointerup={(evt) => {
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		const finalPosition = waypointPositionPayload(pos.value);
-																		const committedWaypoints = pendingWaypointPreview(
-																			selectedPreviewWaypoints,
-																			{
-																				layerId: el.value.id,
-																				afterWaypointId: waypointServerId(wp_proposal.id_before),
-																				current: finalPosition,
-																				moved: true
-																			},
-																			el.value.id
-																		);
-																		const action = cast('create_waypoint', {
-																			layer_id: el.value.id,
-																			after_waypoint_id: waypointServerId(wp_proposal.id_before),
-																			position: finalPosition
-																		});
-																		holdCommittedEdgeWaypointPreview(
-																			el.value.id,
-																			selectedPreviewEdge,
-																			committedWaypoints,
-																			action,
-																			doc
-																		);
-																		evt.currentTarget.releasePointerCapture(evt.pointerId);
-																		evt.currentTarget.blur();
-																		backoffValue.value = undefined;
-																	}
-																}}
-															>
-																<circle
-																	fill="none"
-																	cursor="default"
-																	stroke="none"
-																	r={12 * cameraScale.value}
-																	cx={wp_proposal.x}
-																	cy={wp_proposal.y}
-																	pointer-events="all"
-																/>
-																<circle
-																	fill="white"
-																	cursor="default"
-																	stroke="#7af"
-																	stroke-width="2"
-																	pointer-events="none"
-																	vector-effect="non-scaling-stroke"
-																	r={4 * cameraScale.value}
-																	cx={wp_proposal.x}
-																	cy={wp_proposal.y}
-																/>
-																<path
-																	d="M {wp_proposal.x -
-																		3 * cameraScale.value} {wp_proposal.y} H {wp_proposal.x +
-																		3 * cameraScale.value} M {wp_proposal.x} {wp_proposal.y -
-																		3 * cameraScale.value} V {wp_proposal.y +
-																		3 * cameraScale.value}"
-																	stroke="#7af"
-																	stroke-width="1.5"
-																	vector-effect="non-scaling-stroke"
-																	pointer-events="none"
-																/></g
-															>
 														{/each}
-														{#each isElbowEdge ? [] : persistentWaypoints.value as wp, wi (wp.id)}
-															{@const previewWp = previewWaypointPosition(
-																selectedPreviewWaypoints,
-																wp
-															)}
-															{@const pos = view(
-																[
-																	L.find(R.whereEq({ id: wp.id }), { hint: wi }),
-																	L.removable('x', 'y'),
-																	L.props('x', 'y')
-																],
-																waypoints
-															)}
-															<g
-																transform={edgePreviewTransform(
-																	id,
-																	layersInOrder.value,
-																	el.value.edge,
-																	selectedPreviewEdge
-																)}
-																onclick={(evt) => {
-																	backoffValue.value = undefined;
-																	evt.stopPropagation();
-																}}
-																ondblclick={(evt) => {
-																	evt.stopPropagation();
-
-																	if (document.activeElement === evt.currentTarget) {
-																		pos.value = undefined;
-																		cast('delete_waypoint', {
-																			layer_id: el.value.id,
-																			waypoint_id: wp.id
-																		});
-																	}
-																}}
-																onpointerdown={(evt) => {
-																	if (evt.isPrimary && E.isLeftButton(evt)) {
-																		evt.preventDefault();
-																		evt.currentTarget.focus({
-																			preventScroll: true
-																		});
-																		evt.currentTarget.setPointerCapture(evt.pointerId);
-																		evt.currentTarget.currentPointerId = evt.pointerId;
-																		waypoints.value = localProp.reset;
-																		pos.value = previewWp;
-																		backoffValue.value = previewWp;
-																		pointerOffset.value = Geo.diff2d(
-																			previewWp,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-																	}
-																}}
-																onpointermove={(evt) => {
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		pos.value = Geo.translate(
-																			pointerOffset.value,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-																	}
-																}}
-																onpointerup={(evt) => {
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		const newPos = Geo.translate(
-																			pointerOffset.value,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-																		if (
-																			backoffValue.value.x != newPos.x ||
-																			backoffValue.value.y != newPos.y
-																		) {
-																			evt.preventDefault();
-																			const committedWaypoints = selectedPreviewWaypoints.map(
-																				(waypoint) =>
-																					waypoint?.id === wp.id
-																						? { ...waypoint, x: newPos.x, y: newPos.y }
-																						: waypoint
-																			);
-																			const action = cast('update_waypoint_position', {
-																				layer_id: el.value.id,
-																				waypoint_id: wp.id,
-																				value: newPos
-																			});
-																			holdCommittedEdgeWaypointPreview(
-																				el.value.id,
-																				selectedPreviewEdge,
-																				committedWaypoints,
-																				action,
-																				doc
-																			);
-																			evt.currentTarget.blur();
-																		}
-																		evt.currentTarget.releasePointerCapture(evt.pointerId);
-																		backoffValue.value = undefined;
-																	}
-																}}
-																onkeydown={(evt) => {
-																	if (cancelSelectionMoveFromHandle(evt)) {
-																		return;
-																	}
-
-																	if (evt.key === 'Escape' || evt.key === 'Esc') {
-																		if (!backoffValue.value) {
-																			return;
-																		}
-																		evt.stopPropagation();
-																		evt.currentTarget.releasePointerCapture(
-																			evt.currentTarget.currentPointerId
-																		);
-																		waypoints.value = localProp.reset;
-																	}
-																}}
-																role="button"
-																tabindex="-1"
-															>
-																<circle
-																	fill="none"
-																	cursor="default"
-																	stroke="none"
-																	r={12 * cameraScale.value}
-																	cx={previewWp.x}
-																	cy={previewWp.y}
-																	pointer-events="all"
-																/>
-																<rect
-																	fill="white"
-																	cursor="default"
-																	stroke="#7af"
-																	stroke-width="2"
-																	vector-effect="non-scaling-stroke"
-																	x={previewWp.x - 5 * cameraScale.value}
-																	y={previewWp.y - 5 * cameraScale.value}
-																	width={10 * cameraScale.value}
-																	height={10 * cameraScale.value}
-																	pointer-events="none"
-																/></g
-															>
-														{/each}
-
-														{@const source_pos = view(
-															['edge', L.pick({ x: 'source_x', y: 'source_y' })],
-															el
-														)}
-														{@const target_pos = view(
-															['edge', L.pick({ x: 'target_x', y: 'target_y' })],
-															el
-														)}
-														<g
-															transform={edgePreviewTransform(
-																id,
-																layersInOrder.value,
-																el.value.edge,
-																selectedPreviewEdge
-															)}
-															onclick={(evt) => {
-																evt.stopPropagation();
+														{#if el.value?.text && boxDim.value}
+															{@const fontHandlePos = {
+																x: boxDim.value.x,
+																y: boxDim.value.y + boxDim.value.height
 															}}
-															ondblclick={(evt) => {
-																evt.preventDefault();
-																evt.stopPropagation();
-																removeEdgeEndpoint(
-																	el.value,
-																	'source',
-																	waypoints.value,
-																	dispatch,
-																	cast
-																);
-															}}
-															onpointerdown={(evt) => {
-																beginEdgeEndpointHandle(
-																	evt,
-																	liveLenses,
-																	source_pos,
-																	el.value,
-																	'source'
-																);
-															}}
-															onpointermove={(evt) => {
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	const handle = evt.currentTarget;
-																	updateEdgeEndpointHandle(
-																		evt,
-																		liveLenses,
-																		source_pos,
-																		el.value,
-																		'source'
-																	);
-																	Promise.all([data.socket_schemas, currentSyntaxValue])
-																		.then(([socketSchemas, syntax]) => {
-																			if (!handle.hasPointerCapture(evt.pointerId)) {
-																				return;
-																			}
-																			updateEdgeEndpointHandle(
-																				evt,
-																				liveLenses,
-																				source_pos,
-																				el.value,
-																				'source',
-																				socketSchemas,
-																				syntax,
-																				doc.value,
-																				layersInOrder.value
-																			);
-																		})
-																		.catch(() => {});
-																}
-															}}
-															onpointerup={(evt) => {
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId) &&
-																	prepareEdgeEndpointFinish(evt)
-																) {
-																	Promise.all([data.socket_schemas, currentSyntaxValue])
-																		.then(([socketSchemas, syntax]) => {
-																			finishEdgeEndpointHandle(
-																				evt,
-																				liveLenses,
-																				source_pos,
-																				el.value,
-																				'source',
-																				socketSchemas,
-																				syntax,
-																				doc.value,
-																				layersInOrder.value,
-																				doc,
-																				dispatch,
-																				cast
-																			);
-																		})
-																		.catch((error) => {
-																			cancelEdgeEndpointHandle(evt, source_pos);
-																			queueError(error, 'Edge endpoint could not be changed');
-																		});
-																}
-															}}
-															onkeydown={(evt) => {
-																if (cancelSelectionMoveFromHandle(evt)) {
-																	return;
-																}
-
-																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	cancelEdgeEndpointHandle(evt, source_pos);
-																}
-															}}
-															onpointercancel={(evt) => cancelEdgeEndpointHandle(evt, source_pos)}
-															onlostpointercapture={(evt) =>
-																cancelEdgeEndpointHandle(evt, source_pos)}
-															role="button"
-															tabindex="-1"
-														>
-															<circle
-																fill="none"
-																cursor="default"
-																stroke="none"
-																pointer-events="all"
-																r={7 * cameraScale.value}
-																cx={edgeEndpointHandlePoint(
-																	id,
-																	'source',
-																	source_pos.value,
-																	selectedPreviewEdge
-																)?.x}
-																cy={edgeEndpointHandlePoint(
-																	id,
-																	'source',
-																	source_pos.value,
-																	selectedPreviewEdge
-																)?.y}
-															/><rect
-																fill={isFreePointEdge(el.value) ? 'white' : '#35a66a'}
-																cursor="default"
-																pointer-events="none"
-																stroke={isFreePointEdge(el.value) ? '#111' : '#1f7048'}
-																stroke-width="1.5"
-																vector-effect="non-scaling-stroke"
-																x={edgeEndpointHandlePoint(
-																	id,
-																	'source',
-																	source_pos.value,
-																	selectedPreviewEdge
-																)?.x -
-																	4 * cameraScale.value}
-																y={edgeEndpointHandlePoint(
-																	id,
-																	'source',
-																	source_pos.value,
-																	selectedPreviewEdge
-																)?.y -
-																	4 * cameraScale.value}
-																width={8 * cameraScale.value}
-																height={8 * cameraScale.value}
-															/></g
-														>
-														<g
-															transform={edgePreviewTransform(
-																id,
-																layersInOrder.value,
-																el.value.edge,
-																selectedPreviewEdge
-															)}
-															onclick={(evt) => {
-																evt.stopPropagation();
-															}}
-															ondblclick={(evt) => {
-																evt.preventDefault();
-																evt.stopPropagation();
-																removeEdgeEndpoint(
-																	el.value,
-																	'target',
-																	waypoints.value,
-																	dispatch,
-																	cast
-																);
-															}}
-															onpointerdown={(evt) => {
-																beginEdgeEndpointHandle(
-																	evt,
-																	liveLenses,
-																	target_pos,
-																	el.value,
-																	'target'
-																);
-															}}
-															onpointermove={(evt) => {
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	const handle = evt.currentTarget;
-																	updateEdgeEndpointHandle(
-																		evt,
-																		liveLenses,
-																		target_pos,
-																		el.value,
-																		'target'
-																	);
-																	Promise.all([data.socket_schemas, currentSyntaxValue])
-																		.then(([socketSchemas, syntax]) => {
-																			if (!handle.hasPointerCapture(evt.pointerId)) {
-																				return;
-																			}
-																			updateEdgeEndpointHandle(
-																				evt,
-																				liveLenses,
-																				target_pos,
-																				el.value,
-																				'target',
-																				socketSchemas,
-																				syntax,
-																				doc.value,
-																				layersInOrder.value
-																			);
-																		})
-																		.catch(() => {});
-																}
-															}}
-															onpointerup={(evt) => {
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId) &&
-																	prepareEdgeEndpointFinish(evt)
-																) {
-																	Promise.all([data.socket_schemas, currentSyntaxValue])
-																		.then(([socketSchemas, syntax]) => {
-																			finishEdgeEndpointHandle(
-																				evt,
-																				liveLenses,
-																				target_pos,
-																				el.value,
-																				'target',
-																				socketSchemas,
-																				syntax,
-																				doc.value,
-																				layersInOrder.value,
-																				doc,
-																				dispatch,
-																				cast
-																			);
-																		})
-																		.catch((error) => {
-																			cancelEdgeEndpointHandle(evt, target_pos);
-																			queueError(error, 'Edge endpoint could not be changed');
-																		});
-																}
-															}}
-															onkeydown={(evt) => {
-																if (cancelSelectionMoveFromHandle(evt)) {
-																	return;
-																}
-
-																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	cancelEdgeEndpointHandle(evt, target_pos);
-																}
-															}}
-															onpointercancel={(evt) => cancelEdgeEndpointHandle(evt, target_pos)}
-															onlostpointercapture={(evt) =>
-																cancelEdgeEndpointHandle(evt, target_pos)}
-															role="button"
-															tabindex="-1"
-														>
-															<circle
-																fill="none"
-																stroke="none"
-																cursor="default"
-																pointer-events="all"
-																r={7 * cameraScale.value}
-																cx={edgeEndpointHandlePoint(
-																	id,
-																	'target',
-																	target_pos.value,
-																	selectedPreviewEdge
-																)?.x}
-																cy={edgeEndpointHandlePoint(
-																	id,
-																	'target',
-																	target_pos.value,
-																	selectedPreviewEdge
-																)?.y}
-															/><rect
-																fill={isFreePointEdge(el.value) ? 'white' : '#35a66a'}
-																stroke={isFreePointEdge(el.value) ? '#111' : '#1f7048'}
-																cursor="default"
-																stroke-width="1.5"
-																pointer-events="none"
-																vector-effect="non-scaling-stroke"
-																x={edgeEndpointHandlePoint(
-																	id,
-																	'target',
-																	target_pos.value,
-																	selectedPreviewEdge
-																)?.x -
-																	4 * cameraScale.value}
-																y={edgeEndpointHandlePoint(
-																	id,
-																	'target',
-																	target_pos.value,
-																	selectedPreviewEdge
-																)?.y -
-																	4 * cameraScale.value}
-																width={8 * cameraScale.value}
-																height={8 * cameraScale.value}
-															/></g
-														>
-													{/if}
-												{/each}
-											</g>
-										{/if}
-										{#if activeTool.value === 'select'}
-											<g transform={rotationTransform.value}>
-												<!-- svelte-ignore a11y_no_static_element_interactions -->
-												{#each selectedLayers.value as id (id)}
-													{@const el = view(['layers', 'items', L.find((el) => el.id == id)], doc)}
-													{@const corners = {
-														topLeft: {
-															dx: -1,
-															dy: -1,
-															lens: L.pick({
-																x: [
-																	L.lens(
-																		(o) => o && o.position_x,
-																		(n, o) => {
-																			const d = Math.min(n - o.position_x, o.width);
-
-																			return {
-																				...o,
-																				position_x: o.position_x + d,
-																				width: o.width - d
-																			};
-																		}
-																	)
-																],
-																y: [
-																	L.lens(
-																		(o) => o && o.position_y,
-																		(n, o) => {
-																			const d = Math.min(n - o.position_y, o.height);
-
-																			return {
-																				...o,
-																				position_y: o.position_y + d,
-																				height: o.height - d
-																			};
-																		}
-																	)
-																]
-															})
-														},
-														topCenter: {
-															dx: 0,
-															dy: -1,
-															lens: L.pick({
-																x: L.lens(
-																	(o) => o && o.position_x + o.width / 2,
-																	(_n, o) => o
-																),
-																y: [
-																	L.lens(
-																		(o) => o && o.position_y,
-																		(n, o) => {
-																			const d = Math.min(n - o.position_y, o.height);
-
-																			return {
-																				...o,
-																				position_y: o.position_y + d,
-																				height: o.height - d
-																			};
-																		}
-																	)
-																]
-															})
-														},
-														topRight: {
-															dx: 1,
-															dy: -1,
-															lens: L.pick({
-																x: [
-																	L.lens(
-																		(o) => o && o.position_x,
-																		(n, o) => {
-																			const d = Math.min(n - o.position_x, o.width);
-
-																			return {
-																				...o,
-																				position_x: o.position_x + d,
-																				width: o.width - d
-																			};
-																		}
-																	)
-																],
-																y: L.choose((b) => [
-																	'height',
-																	L.normalize(R.max(0)),
-																	L.add(b ? b.position_y : 0)
-																])
-															})
-														},
-														middleLeft: {
-															dx: -1,
-															dy: 0,
-															lens: L.pick({
-																x: [
-																	L.lens(
-																		(o) => o && o.position_x,
-																		(n, o) => {
-																			const d = Math.min(n - o.position_x, o.width);
-
-																			return {
-																				...o,
-																				position_x: o.position_x + d,
-																				width: o.width - d
-																			};
-																		}
-																	)
-																],
-																y: L.lens(
-																	(o) => o && o.position_y + o.height / 2,
-																	(_n, o) => o
-																)
-															})
-														},
-														middleRight: {
-															dx: 1,
-															dy: 0,
-															lens: L.pick({
-																x: L.choose((b) => [
-																	'width',
-																	L.normalize(R.max(0)),
-																	L.add(b ? b.position_x : 0)
-																]),
-																y: L.lens(
-																	(o) => o && o.position_y + o.height / 2,
-																	(_n, o) => o
-																)
-															})
-														},
-														bottomLeft: {
-															dx: -1,
-															dy: 1,
-															lens: L.pick({
-																y: [
-																	L.lens(
-																		(o) => o && o.position_y,
-																		(n, o) => {
-																			const d = Math.min(n - o.position_y, o.height);
-
-																			return {
-																				...o,
-																				position_y: o.position_y + d,
-																				height: o.height - d
-																			};
-																		}
-																	)
-																],
-																x: L.choose((b) => [
-																	'width',
-																	L.normalize(R.max(0)),
-																	L.add(b ? b.position_x : 0)
-																])
-															})
-														},
-														bottomRight: {
-															dx: 1,
-															dy: 1,
-															lens: L.pick({
-																x: L.choose((b) => [
-																	'width',
-																	L.normalize(R.max(0)),
-																	L.add(b ? b.position_x : 0)
-																]),
-																y: L.choose((b) => [
-																	'height',
-																	L.normalize(R.max(0)),
-																	L.add(b ? b.position_y : 0)
-																])
-															})
-														},
-														bottomCenter: {
-															dx: 0,
-															dy: 1,
-															lens: L.pick({
-																x: L.lens(
-																	(o) => o && o.position_x + o.width / 2,
-																	(_n, o) => o
-																),
-																y: L.choose((b) => [
-																	'height',
-																	L.normalize(R.max(0)),
-																	L.add(b ? b.position_y : 0)
-																])
-															})
-														}
-													}}
-													{@const boxDim = viewCombined(
-														[
-															L.cond(
-																[
-																	R.path(['el', 'box']),
-																	[
-																		'el',
-																		'box',
-																		L.pick({
-																			x: 'position_x',
-																			y: 'position_y',
-																			width: 'width',
-																			height: 'height'
-																		})
-																	]
-																],
-																[
-																	(x, i) => R.path(['el', 'text']),
-																	[
-																		L.choose(({ el }) =>
-																			el ? ['textBounds', L.prop(el.id)] : L.zero
-																		)
-																	]
-																]
-															)
-														],
-														{ el, textBounds }
-													)}
-													<rect
-														{...boxDim.value}
-														transform={layerMoveTransform(id, layersInOrder.value)}
-														fill="none"
-														class="draggable"
-														oncontextmenu={(evt) => {
-															if (
-																el.value?.text &&
-																beginContextTextEdit(evt, el.value, boxDim.value, cast)
-															) {
-																return;
-															}
-															if (
-																beginDirectInscriptionEdit(
-																	evt,
-																	el.value,
-																	liveLenses,
-																	dispatch,
-																	cast,
-																	doc.value,
-																	boxDim.value
-																)
-															) {
-																return;
-															}
-															openTargetLocationOrDirectModification(evt, el.value, cast);
-														}}
-														onpointerdown={(evt) =>
-															beginLayerMove(
-																evt,
-																liveLenses,
-																el.value.id,
-																layersInOrder.value,
-																doc.value
-															)}
-														onpointermove={(evt) =>
-															updateLayerMove(evt, liveLenses, doc, layersInOrder.value)}
-														onpointerup={(evt) =>
-															finishLayerMove(evt, dispatch, doc, layersInOrder.value)}
-														onpointercancel={cancelLayerMove}
-														onlostpointercapture={cancelLayerMove}
-														onclick={(evt) => clickSelectedLayerHitbox(evt, cast, el.value.id)}
-														onkeydown={(evt) => {
-															if (evt.key === 'Escape' || evt.key === 'Esc') {
-																cancelLayerMove(evt);
-															}
-														}}
-														role="button"
-														tabindex="-1"
-													/>
-													{#each selectionHandlesForLayer(el.value) as handle (handle.type)}
-														{#if boxDim.value}
-															{@const posVal = selectionHandlePosition(boxDim.value, handle)}
-															{@const canResizeHandle = selectionHandleCanResize(el.value)}
-															{@const handleInteractive =
-																canResizeHandle || selectedLayers.value.length > 1}
-															<g
-																onpointerdown={(evt) => {
-																	if (!handleInteractive) {
-																		return;
-																	}
-
-																	if (
-																		beginSelectionMoveFromHandle(
-																			evt,
-																			liveLenses,
-																			el.value.id,
-																			layersInOrder.value,
-																			doc.value
-																		)
-																	) {
-																		return;
-																	}
-
-																	if (!canResizeHandle) {
-																		return;
-																	}
-
-																	if (evt.isPrimary && E.isLeftButton(evt)) {
-																		evt.preventDefault();
-																		evt.currentTarget.focus({
-																			preventScroll: true
-																		});
-																		evt.currentTarget.setPointerCapture(evt.pointerId);
-																		evt.currentTarget.currentPointerId = evt.pointerId;
-																		backoffValue.value = normalizeResizeRect(boxDim.value);
-																		pointerOffset.value = Geo.diff2d(
-																			posVal,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-																		resizeHandleDrag.value = {
-																			layerId: el.value.id,
-																			startRect: normalizeResizeRect(boxDim.value),
-																			currentRect: normalizeResizeRect(boxDim.value),
-																			dx: handle.dx,
-																			dy: handle.dy,
-																			pointerOffset: pointerOffset.value
-																		};
-																	}
-																}}
-																onpointermove={(evt) => {
-																	if (
-																		updateSelectionMoveFromHandle(
-																			evt,
-																			liveLenses,
-																			doc,
-																			layersInOrder.value
-																		)
-																	) {
-																		return;
-																	}
-
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		const drag = resizeHandleDrag.value;
-																		if (!drag || drag.layerId !== el.value.id) {
-																			return;
-																		}
-																		const pointer = Geo.translate(
-																			drag.pointerOffset,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-																		const rect = resizeRectFromHandle(drag, pointer, evt);
-																		resizeHandleDrag.value = {
-																			...drag,
-																			currentRect: rect
-																		};
-																		previewLayerResize(doc, el.value, rect);
-																	}
-																}}
-																onpointerup={(evt) => {
-																	if (
-																		finishSelectionMoveFromHandle(
-																			evt,
-																			dispatch,
-																			doc,
-																			layersInOrder.value
-																		)
-																	) {
-																		return;
-																	}
-
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		const rect =
-																			resizeHandleDrag.value?.currentRect ??
-																			normalizeResizeRect(boxDim.value);
-																		commitLayerResize(cast, el.value, rect);
-																		resizeHandleDrag.value = undefined;
-																	}
-																}}
-																onclick={(evt) => {
-																	evt.stopPropagation();
-																	backoffValue.value = undefined;
-																	resizeHandleDrag.value = undefined;
-																}}
-																onkeydown={(evt) => {
-																	if (cancelSelectionMoveFromHandle(evt)) {
-																		return;
-																	}
-
-																	if (evt.key === 'Escape' || evt.key === 'Esc') {
-																		if (!backoffValue.value) {
-																			return;
-																		}
-																		evt.stopPropagation();
-																		evt.currentTarget.releasePointerCapture(
-																			evt.currentTarget.currentPointerId
-																		);
-																		previewLayerResize(doc, el.value, backoffValue.value);
-																		resizeHandleDrag.value = undefined;
-																	}
-																}}
-																role="button"
-																tabindex="-1"
-																transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
-															>
-																<rect
-																	fill="none"
-																	stroke="none"
-																	cursor="default"
-																	pointer-events={handleInteractive ? 'all' : 'none'}
-																	vector-effect="non-scaling-stroke"
-																	x={posVal.x - cameraScale.value * 6}
-																	y={posVal.y - cameraScale.value * 6}
-																	width={cameraScale.value * 12}
-																	height={cameraScale.value * 12}
-																/>
-																<rect
-																	fill={canResizeHandle ? 'white' : 'none'}
-																	stroke="#111"
-																	cursor="default"
-																	pointer-events="none"
-																	vector-effect="non-scaling-stroke"
-																	stroke-width="1.5"
-																	x={posVal.x - cameraScale.value * 4}
-																	y={posVal.y - cameraScale.value * 4}
-																	width={cameraScale.value * 8}
-																	height={cameraScale.value * 8}
-																/>
-															</g>
-														{/if}
-													{/each}
-													{#if el.value?.text && boxDim.value}
-														{@const fontHandlePos = {
-															x: boxDim.value.x,
-															y: boxDim.value.y + boxDim.value.height
-														}}
-														<g
-															role="button"
-															tabindex="-1"
-															transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
-															onpointerdown={(evt) => {
-																if (
-																	beginSelectionMoveFromHandle(
-																		evt,
-																		liveLenses,
-																		el.value.id,
-																		layersInOrder.value,
-																		doc.value
-																	)
-																) {
-																	return;
-																}
-
-																if (evt.isPrimary && E.isLeftButton(evt)) {
-																	evt.preventDefault();
-																	evt.currentTarget.focus({ preventScroll: true });
-																	evt.currentTarget.setPointerCapture(evt.pointerId);
-																	evt.currentTarget.currentPointerId = evt.pointerId;
-																	attributeHandleDrag.value = {
-																		type: 'font_size',
-																		layerId: el.value.id,
-																		startPointer: liveLenses.clientToCanvas(
-																			evt.clientX,
-																			evt.clientY
-																		),
-																		startFontSize: textEditorNumericFontSize(el.value),
-																		value: textEditorNumericFontSize(el.value)
-																	};
-																}
-															}}
-															onpointermove={(evt) => {
-																if (
-																	updateSelectionMoveFromHandle(
-																		evt,
-																		liveLenses,
-																		doc,
-																		layersInOrder.value
-																	)
-																) {
-																	return;
-																}
-
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	const drag = attributeHandleDrag.value;
-																	if (drag?.type !== 'font_size' || drag.layerId !== el.value.id) {
-																		return;
-																	}
-																	const fontSize = textFontSizeFromDrag(
-																		drag,
-																		liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																	);
-																	attributeHandleDrag.value = { ...drag, value: fontSize };
-																	patchTextFontSizeLocally(doc, el.value.id, fontSize);
-																}
-															}}
-															onpointerup={(evt) => {
-																if (
-																	finishSelectionMoveFromHandle(
-																		evt,
-																		dispatch,
-																		doc,
-																		layersInOrder.value
-																	)
-																) {
-																	return;
-																}
-
-																if (
-																	evt.isPrimary &&
-																	evt.currentTarget.hasPointerCapture(evt.pointerId)
-																) {
-																	const fontSize =
-																		attributeHandleDrag.value?.value ??
-																		textEditorNumericFontSize(el.value);
-																	commitTextFontSize(cast, el.value, fontSize);
-																	attributeHandleDrag.value = undefined;
-																}
-															}}
-															onkeydown={(evt) => {
-																if (cancelSelectionMoveFromHandle(evt)) {
-																	return;
-																}
-
-																if (evt.key === 'Escape' || evt.key === 'Esc') {
-																	const drag = attributeHandleDrag.value;
-																	if (drag?.type !== 'font_size') {
-																		return;
-																	}
-																	evt.stopPropagation();
-																	evt.currentTarget.releasePointerCapture(
-																		evt.currentTarget.currentPointerId
-																	);
-																	patchTextFontSizeLocally(doc, el.value.id, drag.startFontSize);
-																	attributeHandleDrag.value = undefined;
-																}
-															}}
-														>
-															<circle
-																fill="none"
-																stroke="none"
-																cursor="default"
-																pointer-events="all"
-																r={cameraScale.value * 7}
-																cx={fontHandlePos.x}
-																cy={fontHandlePos.y}
-															/>
-															<circle
-																fill="#ffeb3b"
-																stroke="#111"
-																stroke-width="1.5"
-																vector-effect="non-scaling-stroke"
-																pointer-events="none"
-																r={cameraScale.value * 4}
-																cx={fontHandlePos.x}
-																cy={fontHandlePos.y}
-															/>
-														</g>
-													{/if}
-													{#await data.symbols then symbols}
-														{#if supportsRoundRadiusHandle(el.value, symbols)}
-															{@const radiusHandlePos = roundRadiusHandlePosition(el.value.box)}
 															<g
 																role="button"
 																tabindex="-1"
@@ -14460,10 +15440,14 @@
 																		evt.currentTarget.setPointerCapture(evt.pointerId);
 																		evt.currentTarget.currentPointerId = evt.pointerId;
 																		attributeHandleDrag.value = {
-																			type: 'round_radius',
+																			type: 'font_size',
 																			layerId: el.value.id,
-																			startRadii: boxRoundRadii(el.value.box),
-																			value: boxRoundRadii(el.value.box)
+																			startPointer: liveLenses.clientToCanvas(
+																				evt.clientX,
+																				evt.clientY
+																			),
+																			startFontSize: textEditorNumericFontSize(el.value),
+																			value: textEditorNumericFontSize(el.value)
 																		};
 																	}
 																}}
@@ -14485,17 +15469,17 @@
 																	) {
 																		const drag = attributeHandleDrag.value;
 																		if (
-																			drag?.type !== 'round_radius' ||
+																			drag?.type !== 'font_size' ||
 																			drag.layerId !== el.value.id
 																		) {
 																			return;
 																		}
-																		const radius = roundRadiusFromPointer(
-																			el.value.box,
+																		const fontSize = textFontSizeFromDrag(
+																			drag,
 																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																		);
-																		attributeHandleDrag.value = { ...drag, value: radius };
-																		patchBoxRoundRadiusLocally(doc, el.value.id, radius);
+																		attributeHandleDrag.value = { ...drag, value: fontSize };
+																		patchTextFontSizeLocally(doc, el.value.id, fontSize);
 																	}
 																}}
 																onpointerup={(evt) => {
@@ -14514,10 +15498,10 @@
 																		evt.isPrimary &&
 																		evt.currentTarget.hasPointerCapture(evt.pointerId)
 																	) {
-																		const radius =
+																		const fontSize =
 																			attributeHandleDrag.value?.value ??
-																			boxRoundRadii(el.value.box);
-																		commitBoxRoundRadius(cast, el.value, radius);
+																			textEditorNumericFontSize(el.value);
+																		commitTextFontSize(cast, el.value, fontSize);
 																		attributeHandleDrag.value = undefined;
 																	}
 																}}
@@ -14528,14 +15512,14 @@
 
 																	if (evt.key === 'Escape' || evt.key === 'Esc') {
 																		const drag = attributeHandleDrag.value;
-																		if (drag?.type !== 'round_radius') {
+																		if (drag?.type !== 'font_size') {
 																			return;
 																		}
 																		evt.stopPropagation();
 																		evt.currentTarget.releasePointerCapture(
 																			evt.currentTarget.currentPointerId
 																		);
-																		patchBoxRoundRadiusLocally(doc, el.value.id, drag.startRadii);
+																		patchTextFontSizeLocally(doc, el.value.id, drag.startFontSize);
 																		attributeHandleDrag.value = undefined;
 																	}
 																}}
@@ -14546,8 +15530,8 @@
 																	cursor="default"
 																	pointer-events="all"
 																	r={cameraScale.value * 7}
-																	cx={radiusHandlePos.x}
-																	cy={radiusHandlePos.y}
+																	cx={fontHandlePos.x}
+																	cy={fontHandlePos.y}
 																/>
 																<circle
 																	fill="#ffeb3b"
@@ -14556,16 +15540,287 @@
 																	vector-effect="non-scaling-stroke"
 																	pointer-events="none"
 																	r={cameraScale.value * 4}
-																	cx={radiusHandlePos.x}
-																	cy={radiusHandlePos.y}
+																	cx={fontHandlePos.x}
+																	cy={fontHandlePos.y}
 																/>
 															</g>
 														{/if}
-														{#if supportsPieAngleHandles(el.value, symbols)}
-															{#each ['start_angle', 'end_angle'] as angleKind (angleKind)}
-																{@const pieHandlePos = pieAngleHandlePosition(
+														{#await data.symbols then symbols}
+															{#if supportsRoundRadiusHandle(el.value, symbols)}
+																{@const radiusHandlePos = roundRadiusHandlePosition(el.value.box)}
+																<g
+																	role="button"
+																	tabindex="-1"
+																	transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
+																	onpointerdown={(evt) => {
+																		if (
+																			beginSelectionMoveFromHandle(
+																				evt,
+																				liveLenses,
+																				el.value.id,
+																				layersInOrder.value,
+																				doc.value
+																			)
+																		) {
+																			return;
+																		}
+
+																		if (evt.isPrimary && E.isLeftButton(evt)) {
+																			evt.preventDefault();
+																			evt.currentTarget.focus({ preventScroll: true });
+																			evt.currentTarget.setPointerCapture(evt.pointerId);
+																			evt.currentTarget.currentPointerId = evt.pointerId;
+																			attributeHandleDrag.value = {
+																				type: 'round_radius',
+																				layerId: el.value.id,
+																				startRadii: boxRoundRadii(el.value.box),
+																				value: boxRoundRadii(el.value.box)
+																			};
+																		}
+																	}}
+																	onpointermove={(evt) => {
+																		if (
+																			updateSelectionMoveFromHandle(
+																				evt,
+																				liveLenses,
+																				doc,
+																				layersInOrder.value
+																			)
+																		) {
+																			return;
+																		}
+
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			const drag = attributeHandleDrag.value;
+																			if (
+																				drag?.type !== 'round_radius' ||
+																				drag.layerId !== el.value.id
+																			) {
+																				return;
+																			}
+																			const radius = roundRadiusFromPointer(
+																				el.value.box,
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
+																			);
+																			attributeHandleDrag.value = { ...drag, value: radius };
+																			patchBoxRoundRadiusLocally(doc, el.value.id, radius);
+																		}
+																	}}
+																	onpointerup={(evt) => {
+																		if (
+																			finishSelectionMoveFromHandle(
+																				evt,
+																				dispatch,
+																				doc,
+																				layersInOrder.value
+																			)
+																		) {
+																			return;
+																		}
+
+																		if (
+																			evt.isPrimary &&
+																			evt.currentTarget.hasPointerCapture(evt.pointerId)
+																		) {
+																			const radius =
+																				attributeHandleDrag.value?.value ??
+																				boxRoundRadii(el.value.box);
+																			commitBoxRoundRadius(cast, el.value, radius);
+																			attributeHandleDrag.value = undefined;
+																		}
+																	}}
+																	onkeydown={(evt) => {
+																		if (cancelSelectionMoveFromHandle(evt)) {
+																			return;
+																		}
+
+																		if (evt.key === 'Escape' || evt.key === 'Esc') {
+																			const drag = attributeHandleDrag.value;
+																			if (drag?.type !== 'round_radius') {
+																				return;
+																			}
+																			evt.stopPropagation();
+																			evt.currentTarget.releasePointerCapture(
+																				evt.currentTarget.currentPointerId
+																			);
+																			patchBoxRoundRadiusLocally(doc, el.value.id, drag.startRadii);
+																			attributeHandleDrag.value = undefined;
+																		}
+																	}}
+																>
+																	<circle
+																		fill="none"
+																		stroke="none"
+																		cursor="default"
+																		pointer-events="all"
+																		r={cameraScale.value * 7}
+																		cx={radiusHandlePos.x}
+																		cy={radiusHandlePos.y}
+																	/>
+																	<circle
+																		fill="#ffeb3b"
+																		stroke="#111"
+																		stroke-width="1.5"
+																		vector-effect="non-scaling-stroke"
+																		pointer-events="none"
+																		r={cameraScale.value * 4}
+																		cx={radiusHandlePos.x}
+																		cy={radiusHandlePos.y}
+																	/>
+																</g>
+															{/if}
+															{#if supportsPieAngleHandles(el.value, symbols)}
+																{#each ['start_angle', 'end_angle'] as angleKind (angleKind)}
+																	{@const pieHandlePos = pieAngleHandlePosition(
+																		el.value.box,
+																		angleKind
+																	)}
+																	<g
+																		role="button"
+																		tabindex="-1"
+																		transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
+																		onpointerdown={(evt) => {
+																			if (
+																				beginSelectionMoveFromHandle(
+																					evt,
+																					liveLenses,
+																					el.value.id,
+																					layersInOrder.value,
+																					doc.value
+																				)
+																			) {
+																				return;
+																			}
+
+																			if (evt.isPrimary && E.isLeftButton(evt)) {
+																				evt.preventDefault();
+																				evt.currentTarget.focus({ preventScroll: true });
+																				evt.currentTarget.setPointerCapture(evt.pointerId);
+																				evt.currentTarget.currentPointerId = evt.pointerId;
+																				attributeHandleDrag.value = {
+																					type: 'pie_angle',
+																					angleKind,
+																					layerId: el.value.id,
+																					startAngle: pieAngleValue(el.value.box, angleKind),
+																					value: pieAngleValue(el.value.box, angleKind)
+																				};
+																			}
+																		}}
+																		onpointermove={(evt) => {
+																			if (
+																				updateSelectionMoveFromHandle(
+																					evt,
+																					liveLenses,
+																					doc,
+																					layersInOrder.value
+																				)
+																			) {
+																				return;
+																			}
+
+																			if (
+																				evt.isPrimary &&
+																				evt.currentTarget.hasPointerCapture(evt.pointerId)
+																			) {
+																				const drag = attributeHandleDrag.value;
+																				if (
+																					drag?.type !== 'pie_angle' ||
+																					drag.layerId !== el.value.id ||
+																					drag.angleKind !== angleKind
+																				) {
+																					return;
+																				}
+																				const angle = pieAngleFromPointer(
+																					el.value.box,
+																					liveLenses.clientToCanvas(evt.clientX, evt.clientY),
+																					evt.ctrlKey || evt.metaKey
+																				);
+																				attributeHandleDrag.value = { ...drag, value: angle };
+																				patchPieAngleLocally(doc, el.value.id, angleKind, angle);
+																			}
+																		}}
+																		onpointerup={(evt) => {
+																			if (
+																				finishSelectionMoveFromHandle(
+																					evt,
+																					dispatch,
+																					doc,
+																					layersInOrder.value
+																				)
+																			) {
+																				return;
+																			}
+
+																			if (
+																				evt.isPrimary &&
+																				evt.currentTarget.hasPointerCapture(evt.pointerId)
+																			) {
+																				const angle =
+																					attributeHandleDrag.value?.value ??
+																					pieAngleValue(el.value.box, angleKind);
+																				commitPieAngle(cast, el.value, angleKind, angle);
+																				attributeHandleDrag.value = undefined;
+																			}
+																		}}
+																		onkeydown={(evt) => {
+																			if (cancelSelectionMoveFromHandle(evt)) {
+																				return;
+																			}
+
+																			if (evt.key === 'Escape' || evt.key === 'Esc') {
+																				const drag = attributeHandleDrag.value;
+																				if (
+																					drag?.type !== 'pie_angle' ||
+																					drag.layerId !== el.value.id ||
+																					drag.angleKind !== angleKind
+																				) {
+																					return;
+																				}
+																				evt.stopPropagation();
+																				evt.currentTarget.releasePointerCapture(
+																					evt.currentTarget.currentPointerId
+																				);
+																				patchPieAngleLocally(
+																					doc,
+																					el.value.id,
+																					angleKind,
+																					drag.startAngle
+																				);
+																				attributeHandleDrag.value = undefined;
+																			}
+																		}}
+																	>
+																		<circle
+																			fill="none"
+																			stroke="none"
+																			cursor="default"
+																			pointer-events="all"
+																			r={cameraScale.value * 7}
+																			cx={pieHandlePos.x}
+																			cy={pieHandlePos.y}
+																		/>
+																		<circle
+																			fill="#ffeb3b"
+																			stroke="#111"
+																			stroke-width="1.5"
+																			vector-effect="non-scaling-stroke"
+																			pointer-events="none"
+																			r={cameraScale.value * 4}
+																			cx={pieHandlePos.x}
+																			cy={pieHandlePos.y}
+																		/>
+																	</g>
+																{/each}
+															{/if}
+															{#if supportsTriangleRotationHandle(el.value, symbols)}
+																{@const triangleRotationValue = triangleRotation(el.value, symbols)}
+																{@const triangleHandlePos = triangleRotationHandlePosition(
 																	el.value.box,
-																	angleKind
+																	triangleRotationValue,
+																	cameraScale.value * 8
 																)}
 																<g
 																	role="button"
@@ -14590,11 +15845,11 @@
 																			evt.currentTarget.setPointerCapture(evt.pointerId);
 																			evt.currentTarget.currentPointerId = evt.pointerId;
 																			attributeHandleDrag.value = {
-																				type: 'pie_angle',
-																				angleKind,
+																				type: 'triangle_rotation',
 																				layerId: el.value.id,
-																				startAngle: pieAngleValue(el.value.box, angleKind),
-																				value: pieAngleValue(el.value.box, angleKind)
+																				startRotation: triangleRotationValue,
+																				startShapeId: el.value.box.shape,
+																				value: triangleRotationValue
 																			};
 																		}
 																	}}
@@ -14616,19 +15871,24 @@
 																		) {
 																			const drag = attributeHandleDrag.value;
 																			if (
-																				drag?.type !== 'pie_angle' ||
-																				drag.layerId !== el.value.id ||
-																				drag.angleKind !== angleKind
+																				drag?.type !== 'triangle_rotation' ||
+																				drag.layerId !== el.value.id
 																			) {
 																				return;
 																			}
-																			const angle = pieAngleFromPointer(
+																			const rotation = triangleRotationFromPointer(
 																				el.value.box,
-																				liveLenses.clientToCanvas(evt.clientX, evt.clientY),
-																				evt.ctrlKey || evt.metaKey
+																				liveLenses.clientToCanvas(evt.clientX, evt.clientY)
 																			);
-																			attributeHandleDrag.value = { ...drag, value: angle };
-																			patchPieAngleLocally(doc, el.value.id, angleKind, angle);
+																			const shapeId = symbolIdByName(
+																				symbols,
+																				TRIANGLE_SHAPES[rotation]
+																			);
+																			if (!shapeId) {
+																				return;
+																			}
+																			attributeHandleDrag.value = { ...drag, value: rotation };
+																			patchTriangleShapeLocally(doc, el.value.id, shapeId);
 																		}
 																	}}
 																	onpointerup={(evt) => {
@@ -14647,10 +15907,9 @@
 																			evt.isPrimary &&
 																			evt.currentTarget.hasPointerCapture(evt.pointerId)
 																		) {
-																			const angle =
-																				attributeHandleDrag.value?.value ??
-																				pieAngleValue(el.value.box, angleKind);
-																			commitPieAngle(cast, el.value, angleKind, angle);
+																			const rotation =
+																				attributeHandleDrag.value?.value ?? triangleRotationValue;
+																			commitTriangleRotation(cast, el.value, symbols, rotation);
 																			attributeHandleDrag.value = undefined;
 																		}
 																	}}
@@ -14662,9 +15921,8 @@
 																		if (evt.key === 'Escape' || evt.key === 'Esc') {
 																			const drag = attributeHandleDrag.value;
 																			if (
-																				drag?.type !== 'pie_angle' ||
-																				drag.layerId !== el.value.id ||
-																				drag.angleKind !== angleKind
+																				drag?.type !== 'triangle_rotation' ||
+																				drag.layerId !== el.value.id
 																			) {
 																				return;
 																			}
@@ -14672,11 +15930,10 @@
 																			evt.currentTarget.releasePointerCapture(
 																				evt.currentTarget.currentPointerId
 																			);
-																			patchPieAngleLocally(
+																			patchTriangleShapeLocally(
 																				doc,
 																				el.value.id,
-																				angleKind,
-																				drag.startAngle
+																				drag.startShapeId
 																			);
 																			attributeHandleDrag.value = undefined;
 																		}
@@ -14688,8 +15945,8 @@
 																		cursor="default"
 																		pointer-events="all"
 																		r={cameraScale.value * 7}
-																		cx={pieHandlePos.x}
-																		cy={pieHandlePos.y}
+																		cx={triangleHandlePos.x}
+																		cy={triangleHandlePos.y}
 																	/>
 																	<circle
 																		fill="#ffeb3b"
@@ -14698,221 +15955,84 @@
 																		vector-effect="non-scaling-stroke"
 																		pointer-events="none"
 																		r={cameraScale.value * 4}
-																		cx={pieHandlePos.x}
-																		cy={pieHandlePos.y}
+																		cx={triangleHandlePos.x}
+																		cy={triangleHandlePos.y}
 																	/>
 																</g>
-															{/each}
-														{/if}
-														{#if supportsTriangleRotationHandle(el.value, symbols)}
-															{@const triangleRotationValue = triangleRotation(el.value, symbols)}
-															{@const triangleHandlePos = triangleRotationHandlePosition(
-																el.value.box,
-																triangleRotationValue,
-																cameraScale.value * 8
-															)}
-															<g
-																role="button"
-																tabindex="-1"
-																transform={layerMoveTransform(id, layersInOrder.value) ?? ''}
-																onpointerdown={(evt) => {
-																	if (
-																		beginSelectionMoveFromHandle(
-																			evt,
-																			liveLenses,
-																			el.value.id,
-																			layersInOrder.value,
-																			doc.value
-																		)
-																	) {
-																		return;
-																	}
+															{/if}
+														{/await}
+													{/each}
+												</g>
+											{/if}
+											{#if activeTool.value === 'edge' || activeTool.value === 'select'}
+												{#await data.socket_schemas then s}
+													{#await currentSyntaxValue then syntax}
+														{@const selectedEdgeSourceLayerIds = read(
+															L.reread(({ d, sl }) => syntaxEdgeSourceLayerIds(d, sl, syntax)),
+															combine({ d: doc, sl: selectedLayers })
+														)}
+														{@const visibleEdgeSourceLayerIds = read(
+															L.reread(({ d, inOrder }) =>
+																syntaxEdgeSourceLayerIds(d, visibleLayerIds(inOrder), syntax)
+															),
+															combine({ d: doc, inOrder: layersInOrder })
+														)}
+														{@const activeEdgeSemanticTag = activeEdgeValue(
+															'semantic_tag',
+															'de.renew.gui.ArcConnection'
+														)}
+														{@const activeEdgeSourceLayerIds = edgeToolIgnoresNetSyntax(
+															activeEdgeSemanticTag
+														)
+															? visibleLayerIds(layersInOrder.value)
+															: visibleEdgeSourceLayerIds.value}
+														{#if activeTool.value === 'edge' || selectedEdgeSourceLayerIds.value.length > 0}
+															<Edger
+																symbols={data.symbols}
+																sourceTipSymbolShapeId={activeEdgeValue(
+																	'source_tip_symbol_shape_id',
+																	syntaxEdgeTipSymbolShapeId(syntax, 'source_tip_symbol_shape_id')
+																)}
+																targetTipSymbolShapeId={activeEdgeValue(
+																	'target_tip_symbol_shape_id',
+																	syntaxEdgeTipSymbolShapeId(syntax, 'target_tip_symbol_shape_id')
+																)}
+																sourceLayerIds={activeTool.value === 'select'
+																	? selectedEdgeSourceLayerIds.value
+																	: activeEdgeSourceLayerIds}
+																selectionHandles={activeTool.value === 'select'}
+																loop={activeEdgeCreatesLoop()}
+																connectionLayout={activeEdgeConnectionLayout()}
+																createNodeOnEmpty={activeEdgeCreatesNodeOnEmpty()}
+																sockets={viewCombined(
+																	[
+																		L.reread(({ inOrder, flatLayers, dragState, moveDelta }) =>
+																			inOrder
+																				.filter(R.complement(R.prop('hidden')))
+																				.flatMap(({ index, id, depth, hidden }) => {
+																					const el = R.find((l) => l.id === id, flatLayers);
+																					const iid = el?.interface_id;
+																					const semantic_tag = el?.semantic_tag;
 
-																	if (evt.isPrimary && E.isLeftButton(evt)) {
-																		evt.preventDefault();
-																		evt.currentTarget.focus({ preventScroll: true });
-																		evt.currentTarget.setPointerCapture(evt.pointerId);
-																		evt.currentTarget.currentPointerId = evt.pointerId;
-																		attributeHandleDrag.value = {
-																			type: 'triangle_rotation',
-																			layerId: el.value.id,
-																			startRotation: triangleRotationValue,
-																			startShapeId: el.value.box.shape,
-																			value: triangleRotationValue
-																		};
-																	}
-																}}
-																onpointermove={(evt) => {
-																	if (
-																		updateSelectionMoveFromHandle(
-																			evt,
-																			liveLenses,
-																			doc,
-																			layersInOrder.value
-																		)
-																	) {
-																		return;
-																	}
+																					if (iid) {
+																						const socket_schema = s.get(iid);
+																						if (!socket_schema) {
+																							return [];
+																						}
 
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		const drag = attributeHandleDrag.value;
-																		if (
-																			drag?.type !== 'triangle_rotation' ||
-																			drag.layerId !== el.value.id
-																		) {
-																			return;
-																		}
-																		const rotation = triangleRotationFromPointer(
-																			el.value.box,
-																			liveLenses.clientToCanvas(evt.clientX, evt.clientY)
-																		);
-																		const shapeId = symbolIdByName(
-																			symbols,
-																			TRIANGLE_SHAPES[rotation]
-																		);
-																		if (!shapeId) {
-																			return;
-																		}
-																		attributeHandleDrag.value = { ...drag, value: rotation };
-																		patchTriangleShapeLocally(doc, el.value.id, shapeId);
-																	}
-																}}
-																onpointerup={(evt) => {
-																	if (
-																		finishSelectionMoveFromHandle(
-																			evt,
-																			dispatch,
-																			doc,
-																			layersInOrder.value
-																		)
-																	) {
-																		return;
-																	}
-
-																	if (
-																		evt.isPrimary &&
-																		evt.currentTarget.hasPointerCapture(evt.pointerId)
-																	) {
-																		const rotation =
-																			attributeHandleDrag.value?.value ?? triangleRotationValue;
-																		commitTriangleRotation(cast, el.value, symbols, rotation);
-																		attributeHandleDrag.value = undefined;
-																	}
-																}}
-																onkeydown={(evt) => {
-																	if (cancelSelectionMoveFromHandle(evt)) {
-																		return;
-																	}
-
-																	if (evt.key === 'Escape' || evt.key === 'Esc') {
-																		const drag = attributeHandleDrag.value;
-																		if (
-																			drag?.type !== 'triangle_rotation' ||
-																			drag.layerId !== el.value.id
-																		) {
-																			return;
-																		}
-																		evt.stopPropagation();
-																		evt.currentTarget.releasePointerCapture(
-																			evt.currentTarget.currentPointerId
-																		);
-																		patchTriangleShapeLocally(doc, el.value.id, drag.startShapeId);
-																		attributeHandleDrag.value = undefined;
-																	}
-																}}
-															>
-																<circle
-																	fill="none"
-																	stroke="none"
-																	cursor="default"
-																	pointer-events="all"
-																	r={cameraScale.value * 7}
-																	cx={triangleHandlePos.x}
-																	cy={triangleHandlePos.y}
-																/>
-																<circle
-																	fill="#ffeb3b"
-																	stroke="#111"
-																	stroke-width="1.5"
-																	vector-effect="non-scaling-stroke"
-																	pointer-events="none"
-																	r={cameraScale.value * 4}
-																	cx={triangleHandlePos.x}
-																	cy={triangleHandlePos.y}
-																/>
-															</g>
-														{/if}
-													{/await}
-												{/each}
-											</g>
-										{/if}
-										{#if activeTool.value === 'edge' || activeTool.value === 'select'}
-											{#await data.socket_schemas then s}
-												{#await currentSyntaxValue then syntax}
-													{@const selectedEdgeSourceLayerIds = read(
-														L.reread(({ d, sl }) => syntaxEdgeSourceLayerIds(d, sl, syntax)),
-														combine({ d: doc, sl: selectedLayers })
-													)}
-													{@const visibleEdgeSourceLayerIds = read(
-														L.reread(({ d, inOrder }) =>
-															syntaxEdgeSourceLayerIds(d, visibleLayerIds(inOrder), syntax)
-														),
-														combine({ d: doc, inOrder: layersInOrder })
-													)}
-													{#if activeTool.value === 'edge' || selectedEdgeSourceLayerIds.value.length > 0}
-														<Edger
-															symbols={data.symbols}
-															sourceTipSymbolShapeId={activeEdgeValue(
-																'source_tip_symbol_shape_id',
-																syntaxEdgeTipSymbolShapeId(syntax, 'source_tip_symbol_shape_id')
-															)}
-															targetTipSymbolShapeId={activeEdgeValue(
-																'target_tip_symbol_shape_id',
-																syntaxEdgeTipSymbolShapeId(syntax, 'target_tip_symbol_shape_id')
-															)}
-															sourceLayerIds={activeTool.value === 'select'
-																? selectedEdgeSourceLayerIds.value
-																: visibleEdgeSourceLayerIds.value}
-															selectionHandles={activeTool.value === 'select'}
-															loop={activeEdgeCreatesLoop()}
-															connectionLayout={activeEdgeConnectionLayout()}
-															createNodeOnEmpty={activeEdgeCreatesNodeOnEmpty()}
-															sockets={viewCombined(
-																[
-																	L.reread(({ inOrder, flatLayers, dragState, moveDelta }) =>
-																		inOrder
-																			.filter(R.complement(R.prop('hidden')))
-																			.flatMap(({ index, id, depth, hidden }) => {
-																				const el = R.find((l) => l.id === id, flatLayers);
-																				const iid = el?.interface_id;
-																				const semantic_tag = el?.semantic_tag;
-
-																				if (iid) {
-																					const socket_schema = s.get(iid);
-																					if (!socket_schema) {
-																						return [];
-																					}
-
-																					return (socket_schema.sockets ?? [])
-																						.map((sock) => {
-																							if (el.box) {
-																								const socketBox = movedSocketBox(
-																									{
-																										x: el.box.position_x,
-																										y: el.box.position_y,
-																										width: el.box.width,
-																										height: el.box.height,
-																										shape: el.box.shape,
-																										semantic_tag
-																									},
+																						return (socket_schema.sockets ?? [])
+																							.map((sock) => {
+																								const socketBox = layerSocketBox(
+																									el,
 																									id,
 																									inOrder,
 																									dragState,
 																									moveDelta
 																								);
+
+																								if (!socketBox) {
+																									return null;
+																								}
 
 																								return {
 																									id: {
@@ -14926,337 +16046,323 @@
 																									y: buildCoord(socketBox, 'y', false, sock.y),
 																									box: socketBox
 																								};
-																							} else if (el.text?.hint) {
-																								const socketBox = movedSocketBox(
-																									{
-																										x: el.text.hint.x,
-																										y: el.text.hint.y,
-																										width: el.text.hint.width,
-																										height: el.text.hint.height
-																									},
-																									id,
-																									inOrder,
-																									dragState,
-																									moveDelta
-																								);
-
-																								return {
-																									id: {
-																										socket: sock.id,
-																										layer: id,
-																										stencil: socket_schema.stencil
-																									},
-																									socket_schema,
-																									x: buildCoord(socketBox, 'x', false, sock.x),
-																									y: buildCoord(socketBox, 'y', false, sock.y)
-																								};
-																							} else {
-																								return null;
-																							}
-																						})
-																						.filter(R.identity);
-																				} else {
-																					return [];
-																				}
-																			})
-																	)
-																],
-																{
-																	inOrder: layersInOrder,
-																	flatLayers: read(['layers', 'items'], doc),
-																	dragState: groupDrag,
-																	moveDelta: groupDragDelta
-																}
-															)}
-															{frameBoxObject}
-															{frameBoxPath}
-															clientToCanvas={liveLenses.clientToCanvas}
-															{rotationTransform}
-															{cameraScale}
-															onCancelToSelect={resetToSelectTool}
-															validEdge={(source, target) =>
-																syntaxAllowsEdge(
-																	syntax,
-																	source,
-																	target,
-																	activeEdgeValue('semantic_tag', 'de.renew.gui.ArcConnection')
+																							})
+																							.filter(R.identity);
+																					} else {
+																						return [];
+																					}
+																				})
+																		)
+																	],
+																	{
+																		inOrder: layersInOrder,
+																		flatLayers: read(['layers', 'items'], doc),
+																		dragState: groupDrag,
+																		moveDelta: groupDragDelta
+																	}
 																)}
-															newEdge={(e, evt) => {
-																if (evt.shiftKey) {
-																	e = {
-																		...e,
-																		source: e.target,
-																		target: e.source
-																	};
-																}
-																if (
+																{frameBoxObject}
+																{frameBoxPath}
+																clientToCanvas={liveLenses.clientToCanvas}
+																{rotationTransform}
+																{cameraScale}
+																onCancelToSelect={resetToSelectTool}
+																validEdge={(source, target) =>
 																	syntaxAllowsEdge(
 																		syntax,
-																		e.source,
-																		e.target,
+																		source,
+																		target,
 																		activeEdgeValue('semantic_tag', 'de.renew.gui.ArcConnection')
-																	)
-																) {
-																	dispatch('create_layer', {
-																		base_layer_id: L.get('id', singleSelectedLayer.value),
-																		...activeEdgePayload(),
-																		source_tip_symbol_shape_id: activeEdgeValue(
-																			'source_tip_symbol_shape_id',
-																			syntaxEdgeTipSymbolShapeId(
-																				syntax,
-																				'source_tip_symbol_shape_id'
-																			)
-																		),
-																		target_tip_symbol_shape_id: activeEdgeValue(
-																			'target_tip_symbol_shape_id',
-																			syntaxEdgeTipSymbolShapeId(
-																				syntax,
-																				'target_tip_symbol_shape_id'
-																			)
-																		),
-																		style: activeEdgeStylePayload(),
-																		waypoints: activeEdgeCreatesLoop()
-																			? edgeLoopWaypoints(
-																					doc.value,
-																					e.source.layer,
-																					e.loopPosition,
-																					e.loopClick
+																	)}
+																newEdge={(e, evt) => {
+																	if (evt.shiftKey) {
+																		e = {
+																			...e,
+																			source: e.target,
+																			target: e.source
+																		};
+																	}
+																	if (
+																		syntaxAllowsEdge(
+																			syntax,
+																			e.source,
+																			e.target,
+																			activeEdgeValue('semantic_tag', 'de.renew.gui.ArcConnection')
+																		)
+																	) {
+																		dispatch('create_layer', {
+																			base_layer_id: L.get('id', singleSelectedLayer.value),
+																			...activeEdgePayload(),
+																			source_tip_symbol_shape_id: activeEdgeValue(
+																				'source_tip_symbol_shape_id',
+																				syntaxEdgeTipSymbolShapeId(
+																					syntax,
+																					'source_tip_symbol_shape_id'
 																				)
-																			: e.waypoints,
-																		semantic_tag: activeEdgeValue(
-																			'semantic_tag',
-																			'de.renew.gui.ArcConnection'
-																		),
-																		source: {
-																			socket_id: e.source.socket,
-																			layer_id: e.source.layer
-																		},
-																		target: { socket_id: e.target.socket, layer_id: e.target.layer }
-																	})
-																		.then(() => {
-																			publishSelection(cast, [e.target.layer]);
-																			resetTransientEdgeTool();
-																		})
-																		.catch((error) => {
-																			queueError(error, 'Edge could not be created');
-																		});
-																}
-															}}
-															newEdgeNode={(e, evt) => {
-																const autoNodeType = syntaxAutoEdgeNodeForSource(
-																	syntax,
-																	e.source,
-																	activeEdgeValue('semantic_tag', 'de.renew.gui.ArcConnection')
-																);
-
-																if (autoNodeType) {
-																	dispatch('create_layer', {
-																		base_layer_id: L.get(
-																			['id', L.valueOr(e.source.layer)],
-																			singleSelectedLayer.value
-																		),
-																		pos: e.newTarget,
-																		...autoNodeType.target,
-																		with_edge: {
+																			),
+																			target_tip_symbol_shape_id: activeEdgeValue(
+																				'target_tip_symbol_shape_id',
+																				syntaxEdgeTipSymbolShapeId(
+																					syntax,
+																					'target_tip_symbol_shape_id'
+																				)
+																			),
+																			style: activeEdgeStylePayload(),
+																			waypoints: activeEdgeCreatesLoop()
+																				? edgeLoopWaypoints(
+																						doc.value,
+																						e.source.layer,
+																						e.loopPosition,
+																						e.loopClick
+																					)
+																				: e.waypoints,
+																			semantic_tag: activeEdgeValue(
+																				'semantic_tag',
+																				'de.renew.gui.ArcConnection'
+																			),
 																			source: {
-																				...autoNodeType.edge.source,
+																				socket_id: e.source.socket,
 																				layer_id: e.source.layer
 																			},
 																			target: {
-																				...autoNodeType.edge.target
-																			},
-																			reverse: evt.shiftKey,
-																			target_tip_symbol_shape_id: activeEdgeValue(
-																				'target_tip_symbol_shape_id',
-																				autoNodeType.edge.target_tip_symbol_shape_id
-																			),
-																			source_tip_symbol_shape_id: activeEdgeValue(
-																				'source_tip_symbol_shape_id',
-																				autoNodeType.edge.source_tip_symbol_shape_id
-																			),
-																			semantic_tag: activeEdgeValue(
-																				'semantic_tag',
-																				autoNodeType.edge.semantic_tag
-																			)
-																		}
-																	})
-																		.then((l) => {
-																			publishSelection(cast, [
-																				createdAutoEdgeTargetLayerId(l, evt.shiftKey)
-																			]);
-																			resetTransientEdgeTool();
+																				socket_id: e.target.socket,
+																				layer_id: e.target.layer
+																			}
 																		})
-																		.catch((error) => {
-																			queueError(error, 'Edge could not be created');
-																		});
-																}
-															}}
-														/>
-													{/if}
+																			.then(() => {
+																				publishSelection(cast, [e.target.layer]);
+																				resetTransientEdgeTool();
+																			})
+																			.catch((error) => {
+																				queueError(error, 'Edge could not be created');
+																			});
+																	}
+																}}
+																newEdgeNode={(e, evt) => {
+																	const autoNodeType = syntaxAutoEdgeNodeForSource(
+																		syntax,
+																		e.source,
+																		activeEdgeValue('semantic_tag', 'de.renew.gui.ArcConnection')
+																	);
+
+																	if (autoNodeType) {
+																		dispatch('create_layer', {
+																			base_layer_id: L.get(
+																				['id', L.valueOr(e.source.layer)],
+																				singleSelectedLayer.value
+																			),
+																			pos: e.newTarget,
+																			...autoNodeType.target,
+																			with_edge: {
+																				source: {
+																					...autoNodeType.edge.source,
+																					layer_id: e.source.layer
+																				},
+																				target: {
+																					...autoNodeType.edge.target
+																				},
+																				reverse: evt.shiftKey,
+																				target_tip_symbol_shape_id: activeEdgeValue(
+																					'target_tip_symbol_shape_id',
+																					autoNodeType.edge.target_tip_symbol_shape_id
+																				),
+																				source_tip_symbol_shape_id: activeEdgeValue(
+																					'source_tip_symbol_shape_id',
+																					autoNodeType.edge.source_tip_symbol_shape_id
+																				),
+																				style: activeEdgeStylePayload(),
+																				waypoints: e.waypoints,
+																				semantic_tag: activeEdgeValue(
+																					'semantic_tag',
+																					autoNodeType.edge.semantic_tag
+																				)
+																			}
+																		})
+																			.then((l) => {
+																				publishSelection(cast, [
+																					createdAutoEdgeTargetLayerId(l, evt.shiftKey)
+																				]);
+																				resetTransientEdgeTool();
+																			})
+																			.catch((error) => {
+																				queueError(error, 'Edge could not be created');
+																			});
+																	}
+																}}
+															/>
+														{/if}
+													{/await}
 												{/await}
-											{/await}
-										{/if}
+											{/if}
 
-										{#if activeTool.value === 'pen'}
-											<Pen
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												{cameraScale}
-												{rotationTransform}
-												smoothnessAmount={penSmoothnessAmount.value}
-												onDraw={(points) => {
-													dispatch('create_layer', {
-														base_layer_id: L.get('id', singleSelectedLayer.value),
-														points,
-														style: {
-															smoothness: penSmoothness.value,
-															smoothness_amount: penSmoothnessAmount.value
+											{#if activeTool.value === 'pen'}
+												<Pen
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													{cameraScale}
+													{rotationTransform}
+													smoothnessAmount={penSmoothnessAmount.value}
+													onDraw={(points) => {
+														dispatch('create_layer', {
+															base_layer_id: L.get('id', singleSelectedLayer.value),
+															points,
+															style: {
+																smoothness: penSmoothness.value,
+																smoothness_amount: penSmoothnessAmount.value
+															}
+														}).then((l) => {
+															publishSelection(cast, [l.id]);
+														});
+													}}
+												/>
+											{/if}
+
+											{#if activeTool.value === 'magnifier'}
+												<Magnifier
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													cameraRotationLens={liveLenses.cameraRotationIso}
+													{cameraRotation}
+													onZoomDelta={navigationActions.zoomDelta}
+													onZoomFrame={navigationActions.zoomFrame}
+													{cameraScale}
+												/>
+											{/if}
+
+											{#if activeTool.value === 'paner'}
+												<Paner
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													onPan={navigationActions.panMove}
+												/>
+											{/if}
+
+											{#if activeTool.value === 'rotator'}
+												<Rotator
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													onRotate={navigationActions.rotate}
+													{rotationTransform}
+													{cameraScale}
+												/>
+											{/if}
+
+											{#if activeTool.value === 'zoomer'}
+												<Zoomer
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													onZoom={navigationActions.zoomDelta}
+													{rotationTransform}
+													{cameraScale}
+												/>
+											{/if}
+
+											{#if activeTool.value === 'polygon'}
+												<Polygon
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													{rotationTransform}
+													{cameraScale}
+													onDraw={(points, closed) => {
+														dispatch('create_layer', {
+															base_layer_id: L.get('id', singleSelectedLayer.value),
+															points,
+															cyclic: !!closed,
+															semantic_tag: closed
+																? 'CH.ifa.draw.figures.PolygonFigure'
+																: 'CH.ifa.draw.figures.PolyLineFigure',
+															style: {
+																smoothness: polygonSmoothness.value,
+																smoothness_amount: polygonSmoothnessAmount.value
+															},
+															layer_style: closed
+																? {
+																		background_color: '#70DB93',
+																		background_opacity: '1',
+																		border_color: 'black'
+																	}
+																: undefined
+														}).then((l) => {
+															publishSelection(cast, [l.id]);
+														});
+													}}
+												/>
+											{/if}
+
+											{#if activeTool.value === 'spacer'}
+												<Spacer
+													{frameBoxObject}
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													{rotationTransform}
+													{cameraScale}
+													makeSpace={({ base, dir, inverse }) => {
+														cast('make_space', {
+															base,
+															dir,
+															inverse
+														});
+													}}
+												/>
+											{/if}
+
+											{#if activeTool.value === 'spline'}
+												<Spline
+													{frameBoxPath}
+													clientToCanvas={liveLenses.clientToCanvas}
+													{rotationTransform}
+													{cameraScale}
+													onDraw={(path) => {
+														const points = splinePathToPolylinePoints(
+															path,
+															splineSampleCount.value
+														);
+														if (points.length < 2) {
+															return;
 														}
-													}).then((l) => {
-														publishSelection(cast, [l.id]);
+
+														dispatch('create_layer', {
+															base_layer_id: L.get('id', singleSelectedLayer.value),
+															points,
+															cyclic:
+																points.length > 2 &&
+																Math.hypot(
+																	points[0].x - points[points.length - 1].x,
+																	points[0].y - points[points.length - 1].y
+																) < 0.01,
+															style: {
+																smoothness: 'linear'
+															}
+														}).then((l) => {
+															publishSelection(cast, [l.id]);
+														});
+													}}
+												/>
+											{/if}
+
+											<MountTrigger
+												onMount={() => {
+													recentDocuments.value = loadRecentDocuments();
+													recentSimulations.value = loadRecentSimulations();
+													rememberCurrentDocument();
+													requestAnimationFrame(() => {
+														call((c) => {
+															c && c.resetCamera();
+														}, cameraScroller);
 													});
 												}}
 											/>
-										{/if}
-
-										{#if activeTool.value === 'magnifier'}
-											<Magnifier
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												cameraRotationLens={liveLenses.cameraRotationIso}
-												{cameraRotation}
-												onZoomDelta={navigationActions.zoomDelta}
-												onZoomFrame={navigationActions.zoomFrame}
-												{cameraScale}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'paner'}
-											<Paner
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												onPan={navigationActions.panMove}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'rotator'}
-											<Rotator
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												onRotate={navigationActions.rotate}
-												{rotationTransform}
-												{cameraScale}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'zoomer'}
-											<Zoomer
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												onZoom={navigationActions.zoomDelta}
-												{rotationTransform}
-												{cameraScale}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'polygon'}
-											<Polygon
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												{rotationTransform}
-												{cameraScale}
-												onDraw={(points, closed) => {
-													dispatch('create_layer', {
-														base_layer_id: L.get('id', singleSelectedLayer.value),
-														points,
-														cyclic: !!closed,
-														style: {
-															smoothness: polygonSmoothness.value,
-															smoothness_amount: polygonSmoothnessAmount.value
-														},
-														layer_style: closed
-															? {
-																	background_color: '#70DB93',
-																	background_opacity: '1',
-																	border_color: 'black'
-																}
-															: undefined
-													}).then((l) => {
-														publishSelection(cast, [l.id]);
-													});
-												}}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'spacer'}
-											<Spacer
-												{frameBoxObject}
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												{rotationTransform}
-												{cameraScale}
-												makeSpace={({ base, dir, inverse }) => {
-													cast('make_space', {
-														base,
-														dir,
-														inverse
-													});
-												}}
-											/>
-										{/if}
-
-										{#if activeTool.value === 'spline'}
-											<Spline
-												{frameBoxPath}
-												clientToCanvas={liveLenses.clientToCanvas}
-												{rotationTransform}
-												{cameraScale}
-												onDraw={(path) => {
-													const points = splinePathToPolylinePoints(path, splineSampleCount.value);
-													if (points.length < 2) {
-														return;
-													}
-
-													dispatch('create_layer', {
-														base_layer_id: L.get('id', singleSelectedLayer.value),
-														points,
-														cyclic:
-															points.length > 2 &&
-															Math.hypot(
-																points[0].x - points[points.length - 1].x,
-																points[0].y - points[points.length - 1].y
-															) < 0.01,
-														style: {
-															smoothness: 'linear'
-														}
-													}).then((l) => {
-														publishSelection(cast, [l.id]);
-													});
-												}}
-											/>
-										{/if}
-
-										<MountTrigger
-											onMount={() => {
-												recentDocuments.value = loadRecentDocuments();
-												rememberCurrentDocument();
-												requestAnimationFrame(() => {
-													call((c) => {
-														c && c.resetCamera();
-													}, cameraScroller);
-												});
-											}}
-										/>
-									{/snippet}
-								</Navigator>
-							</SVGViewport>
-						</CameraScroller>
-					</CanvasDropper>
+										{/snippet}
+									</Navigator>
+								</SVGViewport>
+							</CameraScroller>
+						</CanvasDropper>
+					{/if}
 				</div>
 
 				<div class="topbar" use:editorDropZone={{ dispatch, cast }}>
 					<div class="toolbar dense">
-						{#if ['pen', 'polygon', 'spline'].includes(activeTool.value)}
+						{#if !activeSimulationWorkspace.value && ['pen', 'polygon', 'spline'].includes(activeTool.value)}
 							<div class="toolbar-body tool-option-toolbar">
 								{#if activeTool.value === 'pen'}
 									<div class="pretty-checkbox-group">
@@ -17049,7 +18155,7 @@
 												'layer',
 												'background_color',
 												evt.currentTarget.value,
-												(layer) => !!(layer?.box || layer?.text)
+												layerHasFillStyle
 											)}
 									/>
 									<svg
@@ -17082,7 +18188,7 @@
 											'layer',
 											'background_color',
 											'transparent',
-											(layer) => !!(layer?.box || layer?.text)
+											layerHasFillStyle
 										)}
 								>
 									<svg
@@ -17122,7 +18228,7 @@
 												'layer',
 												'background_opacity',
 												val,
-												(layer) => !!(layer?.box || layer?.text)
+												layerHasFillStyle
 											);
 										}
 									}}
@@ -17146,7 +18252,7 @@
 												'layer',
 												'border_color',
 												evt.currentTarget.value,
-												(layer) => !!(layer?.box || layer?.text)
+												layerHasFillStyle
 											)}
 									/>
 									<svg
@@ -17178,7 +18284,7 @@
 											'layer',
 											'border_color',
 											'transparent',
-											(layer) => !!(layer?.box || layer?.text)
+											layerHasFillStyle
 										)}
 								>
 									<svg
@@ -17216,7 +18322,7 @@
 												'layer',
 												'border_width',
 												val,
-												(layer) => !!(layer?.box || layer?.text)
+												layerHasFillStyle
 											);
 										}
 									}}
@@ -17714,7 +18820,11 @@
 								</select>
 							</label>
 						{/snippet}
-						<div class="attribute-toolbar-body" use:attributeTooltips>
+						<div
+							class="attribute-toolbar-body"
+							use:attributeTooltips
+							use:editorDropZone={{ dispatch, cast }}
+						>
 							{@render multiProps()}
 						</div>
 					</div>
@@ -18851,6 +19961,18 @@
 		text-overflow: ellipsis;
 	}
 
+	.document-tab-main {
+		min-width: 0;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		overflow: hidden;
+		cursor: pointer;
+	}
+
 	.document-tab-close {
 		width: 1.1rem;
 		height: 1.1rem;
@@ -18861,6 +19983,26 @@
 		font: inherit;
 		line-height: 1;
 		cursor: pointer;
+	}
+
+	.embedded-simulation-workspace {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		display: grid;
+		grid-template-rows: 1fr;
+		background: #fff;
+		border: 0;
+		box-shadow: none;
+		pointer-events: auto;
+	}
+
+	.embedded-simulation-frame {
+		width: 100%;
+		height: 100%;
+		border: 0;
+		background: transparent;
+		display: block;
 	}
 
 	.header-titel {
@@ -19146,6 +20288,12 @@
 		flex-direction: inherit;
 		padding: 1em;
 		gap: 0.5ex;
+	}
+
+	.simulation-workbench-controls {
+		padding: 0.35rem 0.45rem;
+		gap: 0.35rem;
+		flex-wrap: wrap;
 	}
 
 	.attribute-toolbar-body {
@@ -19907,6 +21055,34 @@
 	}
 
 	.inline-text-editor-control:focus {
+		outline: 2px solid #23875d;
+		outline-offset: 0;
+	}
+
+	.inline-target-editor-object {
+		overflow: visible;
+		pointer-events: all;
+	}
+
+	.inline-target-editor-control {
+		width: 100%;
+		height: 100%;
+		box-sizing: border-box;
+		padding: 0 4px;
+		border: 1px solid #23875d;
+		border-radius: 2px;
+		background: #fff;
+		color: #000;
+		line-height: 1.2;
+		font-family: sans-serif;
+		pointer-events: all;
+		touch-action: auto !important;
+		user-select: text !important;
+		-webkit-user-select: text !important;
+		-webkit-user-modify: read-write !important;
+	}
+
+	.inline-target-editor-control:focus {
 		outline: 2px solid #23875d;
 		outline-offset: 0;
 	}

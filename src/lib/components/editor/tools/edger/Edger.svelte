@@ -3,6 +3,7 @@
 	import * as R from 'ramda';
 	import * as E from '$lib/dom/events.js';
 	import { atom, view, combine, read } from '$lib/reactivity/atom.svelte.js';
+	import { elbowControlPoint, elbowPoints } from '$lib/components/renew/edges.js';
 	import Symbol from '$lib/components/renew/Symbol.svelte';
 
 	const {
@@ -96,7 +97,9 @@
 		combine({ n: sockets, t: draftTarget })
 	);
 	const draftEdgeSourcePosition = view(
-		L.reread(({ source, pointer }) => (!selectionHandles && pointer ? pointer : source)),
+		L.reread(({ source, pointer, target }) =>
+			previewEndpoint(source, !selectionHandles && pointer ? pointer : source, target)
+		),
 		combine({
 			source: draftSourcePosition,
 			pointer: draftSourcePointerPosition,
@@ -104,7 +107,7 @@
 		})
 	);
 	const draftEdgeTargetPosition = view(
-		L.reread(({ target }) => target),
+		L.reread(({ source, target }) => previewEndpoint(target, target, source)),
 		combine({
 			source: draftSourcePosition,
 			target: draftTargetSnappedPosition
@@ -128,11 +131,73 @@
 		return Math.abs(socket.x - centerX) < 0.001 && Math.abs(socket.y - centerY) < 0.001;
 	}
 
-	function edgeArrowPoint(source, target, reverse = false) {
+	function boxCenter(box) {
+		return {
+			x: box.x + box.width / 2,
+			y: box.y + box.height / 2
+		};
+	}
+
+	function isRoundedSocket(socket) {
+		const shape = `${socket?.box?.shape ?? ''} ${socket?.id?.semantic_tag ?? ''} ${
+			socket?.id?.stencil ?? ''
+		}`.toLowerCase();
+
+		return /ellipse|circle|place|state/.test(shape);
+	}
+
+	function boundaryPointOnBox(socket, toward) {
+		const box = socket?.box;
+
+		if (!box || !toward) {
+			return null;
+		}
+
+		const center = boxCenter(box);
+		const dx = toward.x - center.x;
+		const dy = toward.y - center.y;
+
+		if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) {
+			return center;
+		}
+
+		const halfWidth = Math.max(0.001, box.width / 2);
+		const halfHeight = Math.max(0.001, box.height / 2);
+
+		if (isRoundedSocket(socket)) {
+			const scale =
+				1 / Math.sqrt((dx * dx) / (halfWidth * halfWidth) + (dy * dy) / (halfHeight * halfHeight));
+			return {
+				x: center.x + dx * scale,
+				y: center.y + dy * scale
+			};
+		}
+
+		const scale = Math.min(
+			Math.abs(dx) > 0.001 ? halfWidth / Math.abs(dx) : Number.POSITIVE_INFINITY,
+			Math.abs(dy) > 0.001 ? halfHeight / Math.abs(dy) : Number.POSITIVE_INFINITY
+		);
+
+		if (!Number.isFinite(scale)) {
+			return center;
+		}
+
+		return {
+			x: center.x + dx * scale,
+			y: center.y + dy * scale
+		};
+	}
+
+	function previewEndpoint(socketOrPoint, fallback, toward) {
+		const snapped = boundaryPointOnBox(socketOrPoint, toward);
+		return snapped ?? fallback ?? socketOrPoint;
+	}
+
+	function edgeTipPoint(source, target, reverse = false) {
 		return reverse ? source : target;
 	}
 
-	function edgeArrowAngle(source, target, reverse = false) {
+	function edgeTipAngle(source, target, reverse = false) {
 		if (!source || !target) {
 			return 0;
 		}
@@ -141,11 +206,15 @@
 		const from = reverse ? points[1] : points[points.length - 2];
 		const to = reverse ? points[0] : points[points.length - 1];
 
+		if (!from || !to) {
+			return 0;
+		}
+
 		return (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
 	}
 
-	function edgeArrowBox(source, target, reverse = false) {
-		const point = edgeArrowPoint(source, target, reverse);
+	function edgeTipBox(source, target, reverse = false) {
+		const point = edgeTipPoint(source, target, reverse);
 		const size = defaultTipSize;
 
 		return {
@@ -154,6 +223,14 @@
 			width: 2 * size,
 			height: 2 * size
 		};
+	}
+
+	function previewTipSymbolId(reverse, atSource) {
+		if (reverse) {
+			return atSource ? targetTipSymbolShapeId : sourceTipSymbolShapeId;
+		}
+
+		return atSource ? sourceTipSymbolShapeId : targetTipSymbolShapeId;
 	}
 
 	/**
@@ -196,8 +273,24 @@
 		return `M ${to.x} ${to.y} L ${leftX} ${leftY} L ${innerX} ${innerY} L ${rightX} ${rightY} Z`;
 	}
 
-	function elbowWaypoints(source, target) {
+	function previewEdge(source, target) {
 		if (!source || !target) {
+			return null;
+		}
+
+		return {
+			source_x: source.x,
+			source_y: source.y,
+			target_x: target.x,
+			target_y: target.y,
+			style: { smoothness: connectionLayout }
+		};
+	}
+
+	function elbowControlWaypoints(source, target) {
+		const edge = previewEdge(source, target);
+
+		if (!edge) {
 			return [];
 		}
 
@@ -208,23 +301,22 @@
 			return [];
 		}
 
-		if (Math.abs(dx) >= Math.abs(dy)) {
-			const midX = source.x + dx / 2;
-			return [
-				{ x: midX, y: source.y },
-				{ x: midX, y: target.y }
-			];
-		}
+		const control = elbowControlPoint(edge, []);
 
-		const midY = source.y + dy / 2;
-		return [
-			{ x: source.x, y: midY },
-			{ x: target.x, y: midY }
-		];
+		return control ? [{ x: control.x, y: control.y }] : [];
 	}
 
 	function connectionWaypoints(source, target) {
-		return connectionLayout === 'elbow' ? elbowWaypoints(source, target) : [];
+		return connectionLayout === 'elbow' ? elbowControlWaypoints(source, target) : [];
+	}
+
+	function previewWaypoints(source, target) {
+		if (connectionLayout !== 'elbow') {
+			return [];
+		}
+
+		const edge = previewEdge(source, target);
+		return edge ? elbowPoints(edge, connectionWaypoints(source, target)) : [];
 	}
 
 	function previewPoints(source, target) {
@@ -232,7 +324,7 @@
 			return [];
 		}
 
-		return [source, ...connectionWaypoints(source, target), target];
+		return [source, ...previewWaypoints(source, target), target];
 	}
 
 	function previewPath(source, target) {
@@ -306,6 +398,16 @@
 			: socketBoxContainsPoint(socket, point);
 	}
 
+	function sameSocketLayer(left, right) {
+		return left?.layer !== undefined && right?.layer !== undefined && left.layer === right.layer;
+	}
+
+	function socketTargetDistance(socket, point) {
+		return socketTargetContainsPoint(socket, point)
+			? 0
+			: Math.hypot(socket.x - point.x, socket.y - point.y);
+	}
+
 	function socketAtPosition(position) {
 		const candidates = [];
 
@@ -347,14 +449,6 @@
 
 	function socketCenterRadius() {
 		return scaledRadius(selectionHandles ? selectionHandleCenterRadius : snapRadius / 2);
-	}
-
-	function previewTipSymbolId(reverse, atSource) {
-		if (reverse) {
-			return atSource ? targetTipSymbolShapeId : sourceTipSymbolShapeId;
-		}
-
-		return atSource ? sourceTipSymbolShapeId : targetTipSymbolShapeId;
 	}
 
 	function isClickGesture(evt) {
@@ -453,15 +547,12 @@
 
 				return (
 					!R.equals(node.id, draftSourceId.value) &&
+					!sameSocketLayer(node.id, draftSourceId.value) &&
 					validEdge(draftSourceId.value, node.id) &&
 					(socketTargetContainsPoint(node, worldPos) || distance < snapRadiusScaled.value)
 				);
 			})
-			.sort(
-				(a, b) =>
-					Math.hypot(a.x - worldPos.x, a.y - worldPos.y) -
-					Math.hypot(b.x - worldPos.x, b.y - worldPos.y)
-			)
+			.sort((a, b) => socketTargetDistance(a, worldPos) - socketTargetDistance(b, worldPos))
 			.map((node) => node.id);
 
 		if (closeTargets.length > 0) {
@@ -515,7 +606,11 @@
 				newEdgeNode(
 					{
 						source: draftSourceId.value,
-						newTarget: draftTargetPosition.value
+						newTarget: draftTargetPosition.value,
+						waypoints: connectionWaypoints(
+							draftEdgeSourcePosition.value,
+							draftEdgeTargetPosition.value
+						)
 					},
 					evt
 				);
@@ -587,6 +682,7 @@
 			<path
 				class={{ edge: true, valid: validConnection.value }}
 				stroke="black"
+				fill="none"
 				pointer-events="none"
 				d={previewPath(draftEdgeSourcePosition.value, draftEdgeTargetPosition.value)}
 			/>
@@ -594,50 +690,50 @@
 			{@const previewTargetTipSymbolId = previewTipSymbolId(reversePreview, false)}
 			{#if symbols && (previewSourceTipSymbolId || previewTargetTipSymbolId)}
 				{#if previewSourceTipSymbolId}
-					{@const sourceArrowPoint = edgeArrowPoint(
+					{@const sourceTipPoint = edgeTipPoint(
 						draftEdgeSourcePosition.value,
 						draftEdgeTargetPosition.value,
 						true
 					)}
 					<g
 						class="edge-arrow-symbol"
+						fill="black"
+						stroke="black"
 						pointer-events="none"
-						transform="rotate({edgeArrowAngle(
+						transform="rotate({edgeTipAngle(
 							draftEdgeSourcePosition.value,
 							draftEdgeTargetPosition.value,
 							true
-						)} {sourceArrowPoint.x} {sourceArrowPoint.y})"
+						)} {sourceTipPoint.x} {sourceTipPoint.y})"
 					>
 						<Symbol
 							{symbols}
 							symbolId={previewSourceTipSymbolId}
-							box={edgeArrowBox(draftEdgeSourcePosition.value, draftEdgeTargetPosition.value, true)}
+							box={edgeTipBox(draftEdgeSourcePosition.value, draftEdgeTargetPosition.value, true)}
 						/>
 					</g>
 				{/if}
 				{#if previewTargetTipSymbolId}
-					{@const targetArrowPoint = edgeArrowPoint(
+					{@const targetTipPoint = edgeTipPoint(
 						draftEdgeSourcePosition.value,
 						draftEdgeTargetPosition.value,
 						false
 					)}
 					<g
 						class="edge-arrow-symbol"
+						fill="black"
+						stroke="black"
 						pointer-events="none"
-						transform="rotate({edgeArrowAngle(
+						transform="rotate({edgeTipAngle(
 							draftEdgeSourcePosition.value,
 							draftEdgeTargetPosition.value,
 							false
-						)} {targetArrowPoint.x} {targetArrowPoint.y})"
+						)} {targetTipPoint.x} {targetTipPoint.y})"
 					>
 						<Symbol
 							{symbols}
 							symbolId={previewTargetTipSymbolId}
-							box={edgeArrowBox(
-								draftEdgeSourcePosition.value,
-								draftEdgeTargetPosition.value,
-								false
-							)}
+							box={edgeTipBox(draftEdgeSourcePosition.value, draftEdgeTargetPosition.value, false)}
 						/>
 					</g>
 				{/if}
@@ -717,6 +813,7 @@
 	}
 
 	.edge {
+		fill: none;
 		stroke-width: 1;
 		stroke: black;
 		stroke-linecap: butt;
@@ -747,10 +844,5 @@
 
 	.edge-arrow-symbol {
 		pointer-events: none;
-	}
-
-	.edge-arrow-symbol :global(path) {
-		fill: black;
-		stroke: black;
 	}
 </style>

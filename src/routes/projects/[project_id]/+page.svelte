@@ -19,8 +19,7 @@
 	<h2>Project Overview</h2>
 
 	<div style="display: flex; margin: 1ex; gap: 1ex">
-		<a href={resolve(`/projects/${project.id}/documents`)} class="action">View Documents</a>
-		<a href={resolve(`/projects/${project.id}/simulations`)} class="action">View Simulations</a>
+		<a href={resolve(`/projects/${project.id}/workspace`)} class="action">Open Workspace</a>
 		<a href={resolve(`/projects/${project.id}/settings`)} class="action">Project Settings</a>
 	</div>
 	<div style="display: flex; margin: 1ex; gap: 1ex">

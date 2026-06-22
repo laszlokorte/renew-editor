@@ -11,14 +11,15 @@ function elbowHorizontalDominant(edge) {
 // bonded figures move while still honouring a user-dragged crossbar.
 export function elbowControl(wps) {
 	const c = Array.isArray(wps)
-		? wps.find((w) => w && Number.isFinite(w.x) && Number.isFinite(w.y))
+		? wps.find((w) => !w?.__elbow_bend && w && Number.isFinite(w.x) && Number.isFinite(w.y))
 		: null;
 	return c ? { x: c.x, y: c.y, id: c.id } : null;
 }
 
-// The two bend points of the Z-shape, mirroring Renew's ElbowConnection.updatePoints()
-// (middle segment on a mid line), but the mid line can be shifted by the control
-// waypoint. Returns [] when the endpoints are axis-aligned (straight line).
+// The two bend points of the Z-shape, mirroring Renew's ElbowConnection.updatePoints().
+// A stored control waypoint represents the movable crossbar position. If there is no
+// stored control point, the crossbar is derived from the current endpoints.
+// Returns [] when the endpoints are axis-aligned (straight line).
 export function elbowPoints(edge, wps) {
 	if (!edge || !finite(edge.source_x, edge.source_y, edge.target_x, edge.target_y)) {
 		return [];
@@ -29,20 +30,20 @@ export function elbowPoints(edge, wps) {
 		return [];
 	}
 
-	const c = elbowControl(wps);
+	const control = elbowControl(wps);
 
 	if (elbowHorizontalDominant(edge)) {
-		const cx = c ? c.x : (sx + tx) / 2;
+		const cx = Number.isFinite(control?.x) ? control.x : (sx + tx) / 2;
 		return [
-			{ x: cx, y: sy },
-			{ x: cx, y: ty }
+			{ x: cx, y: sy, __elbow_bend: true },
+			{ x: cx, y: ty, __elbow_bend: true }
 		];
 	}
 
-	const cy = c ? c.y : (sy + ty) / 2;
+	const cy = Number.isFinite(control?.y) ? control.y : (sy + ty) / 2;
 	return [
-		{ x: sx, y: cy },
-		{ x: tx, y: cy }
+		{ x: sx, y: cy, __elbow_bend: true },
+		{ x: tx, y: cy, __elbow_bend: true }
 	];
 }
 

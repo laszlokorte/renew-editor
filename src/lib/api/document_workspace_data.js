@@ -5,7 +5,7 @@ import authState from '$lib/components/auth/local_state.svelte.js';
 import documentApi from '$lib/api/documents.js';
 import { cachedResource } from '$lib/api/resource_cache.js';
 import { downloadFile } from '$lib/io/download';
-import { describeError, errorPageBody, formatErrorMessage } from '$lib/errors';
+import { describeError, errorPageBody } from '$lib/errors';
 import defaultSyntax from './defaultSyntax.json';
 
 export const ssr = false;
@@ -51,17 +51,22 @@ function cachedLinkJson(api, link, label) {
 
 function createCommands(fetchFn, doc) {
 	const api = documentApi(fetchFn, authState.routes, authState.authHeader);
+	const projectId = doc.links.project.id;
+	const projectWorkspaceHref = () => resolve(`/projects/${projectId}/workspace`);
+	const documentWorkspaceHref = (documentId, suffix = '') =>
+		resolve(`/projects/${projectId}/workspace/${documentId}${suffix}`);
+	const simulationWorkspaceHref = (simulationId) => resolve(`/projects/${projectId}/workspace/${simulationId}`);
 
 	return {
 		deleteDocument() {
 			return api.deleteDocument(doc.id).then((r) => {
-				return goto(resolve(`/projects/${doc.links.project.id}/documents`));
+				return goto(projectWorkspaceHref());
 			});
 		},
 
 		duplicateDocument() {
 			return api.callJson(doc.links.duplicate).then((r) => {
-				return goto(resolve(`/documents/${r.id}/editor`));
+				return goto(documentWorkspaceHref(r.id));
 			});
 		},
 
@@ -69,7 +74,7 @@ function createCommands(fetchFn, doc) {
 			return api.loadJson(doc.links.project.href).then((project) =>
 				api.createDocument(project, documentData).then((r) => {
 					if (redirect) {
-						return goto(resolve(`/documents/${r.id}/editor`));
+						return goto(resolve(`/projects/${project.id}/workspace/${r.id}`));
 					}
 
 					return r;
@@ -78,6 +83,8 @@ function createCommands(fetchFn, doc) {
 		},
 
 		simulateDocument(formalism) {
+			return api.simulateDocument(doc, formalism);
+
 			const simWindow = new Promise((res, reject) => {
 				const w = window.open('', '_blank');
 				if (w) {
@@ -156,7 +163,7 @@ function createCommands(fetchFn, doc) {
 				.then((w) => {
 					sim
 						.then((r) => {
-							w.location = resolve(`/simulations/${r.id}/observer`);
+							w.location = simulationWorkspaceHref(r.id);
 						})
 						.catch((e) => {
 							console.error(e);
@@ -168,7 +175,7 @@ function createCommands(fetchFn, doc) {
 				})
 				.catch(() => {
 					return sim.then((r) => {
-						window.location = resolve(`/simulations/${r.id}/observer`);
+						window.location = simulationWorkspaceHref(r.id);
 
 						return r;
 					});
